@@ -10,7 +10,7 @@ import { PanelExclusion } from './panelExclusion'
  */
 const MODE_OPTIONS: readonly { mode: GameMode; label: string; hint: string }[] = [
   { mode: 'casual', label: '无限休闲', hint: '打开就钓,随时可停' },
-  { mode: 'timed', label: '限时挑战', hint: `${Math.round(TUNE.timed.duration / 60)} 分钟冲分,纪录独立保存` },
+  { mode: 'timed', label: '限时挑战', hint: `${Math.round(TUNE.timed.duration / 60)} 分钟冲分` },
 ]
 
 /**
