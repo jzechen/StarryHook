@@ -58,3 +58,55 @@ export const TUNE = {
     holdTime: 1.1,
   },
 } as const
+
+/** 绿条手感参数组(竿档携带,注入绿条物理) */
+export interface BarParams {
+  /** 绿条高度(占轨道比例) */
+  height: number
+  /** 按住时的目标上升速度(轨道/秒) */
+  vUp: number
+  /** 松开时的目标下沉速度(轨道/秒) */
+  vDown: number
+  /** 逼近目标速度的响应(1/s) */
+  response: number
+  /** 每次点按的瞬时上冲脉冲 */
+  tapBoost: number
+  /** 撞到轨道上下边缘的反弹系数 */
+  bounce: number
+}
+
+/** 一档鱼竿:解锁条件(等级制,商店购买路径待经济系统扩展)与整组绿条参数 */
+export interface RodDef {
+  id: string
+  name: string
+  /** 达到该等级即自动解锁并切换 */
+  unlockLevel: number
+  params: BarParams
+}
+
+/**
+ * 竿档表:3 档,解锁等级 L1/L3/L6 为起步调参值。
+ * 硬约束(spec #5):竹竿参数逐字等于现行 TUNE.bar(起点手感不变);
+ * 档间步进总幅度 ±15% 内,方向只会更容易(绿条更高 / 更快 / 反弹更收敛)。
+ */
+export const RODS: RodDef[] = [
+  {
+    id: 'zhugan',
+    name: '竹竿',
+    unlockLevel: 1,
+    // 逐字复制 TUNE.bar:竹竿 = 现行手感(结构上由 config.test.ts 锁定)
+    params: { ...TUNE.bar },
+  },
+  {
+    id: 'tangan',
+    name: '碳竿',
+    unlockLevel: 3,
+    params: { height: 0.3, vUp: 1.5, vDown: 1.22, response: 16, tapBoost: 0.58, bounce: 0.28 },
+  },
+  {
+    id: 'xinggou',
+    name: '星钩',
+    unlockLevel: 6,
+    params: { height: 0.32, vUp: 1.6, vDown: 1.3, response: 17, tapBoost: 0.62, bounce: 0.26 },
+  },
+]

@@ -1,7 +1,8 @@
 import { Application } from 'pixi.js'
-import { CollectionStore } from './core/collection'
+import { CollectionStore, type KvStorage } from './core/collection'
 import { CoreLoop } from './core/coreLoop'
 import { FISH } from './core/fishCatalog'
+import { ProgressionStore } from './core/progression'
 import { Rng } from './core/rng'
 import type { LoopPhase } from './core/types'
 import { PondScene } from './render/pondScene'
@@ -9,6 +10,26 @@ import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
 import { Hud } from './ui/hud'
 import { ToastLayer } from './ui/toastLayer'
+
+/** 浏览器 localStorage 适配器:读写两侧都吞异常(隐私模式/配额),游戏不受影响 */
+function localStorageKv(): KvStorage {
+  return {
+    get: key => {
+      try {
+        return localStorage.getItem(key)
+      } catch {
+        return null
+      }
+    },
+    set: (key, value) => {
+      try {
+        localStorage.setItem(key, value)
+      } catch {
+        // 写入失败不影响游戏
+      }
+    },
+  }
+}
 
 async function main(): Promise<void> {
   // ?seed=123 可复现整局(调手感时对比用)
@@ -32,25 +53,11 @@ async function main(): Promise<void> {
   if (seedEl) seedEl.textContent = `seed ${seed}`
 
   // 收集册:捕获自动登记,跨会话持久(隐私模式下写入失败自动降级为内存收集)
-  const collection = new CollectionStore(
-    FISH.map(f => f.id),
-    {
-      get: key => {
-        try {
-          return localStorage.getItem(key)
-        } catch {
-          return null
-        }
-      },
-      set: (key, value) => {
-        try {
-          localStorage.setItem(key, value)
-        } catch {
-          // 写入失败不影响游戏
-        }
-      },
-    },
-  )
+  const storage = localStorageKv()
+  const collection = new CollectionStore(FISH.map(f => f.id), storage)
+  // 成长:经验/等级/竿,独立键名跨会话持久;启动时从恢复的等级注入当前竿参数
+  const progression = new ProgressionStore(storage)
+  core.setRodParams(progression.rod().params)
   // 图鉴面板:只读消费收集册,入口常驻(可用性随阶段变化)
   const collectionPanel = new CollectionPanel(collection)
   // 轻提示层:新收录 / 池塘大满贯,顶部居中,不拦截游戏输入
@@ -100,7 +107,7 @@ async function main(): Promise<void> {
     }
 
     core.update(dt, { holding: mouseHold || keys.has('Space'), moveX: dx, moveY: dy })
-    // 结算捕获 → 登记进收集册(核心循环自身不感知图鉴)。
+    // 结算捕获 → 登记进收集册与成长(两系统无耦合,核心循环自身不感知)。
     // 顺序不可换:先读捕获前快照 → 登记 → 再读快照 → 按纯函数决策弹提示
     if (core.phase === 'caught' && prevPhase !== 'caught' && core.fish) {
       const fishId = core.fish.id
@@ -113,6 +120,9 @@ async function main(): Promise<void> {
         // 一辈子只弹一次:弹出的同时置持久化标记,重开/刷新后不再弹
         collection.acknowledgeCompletion()
       }
+      // 成长:按捕获分值登记经验(非幂等,每次都加);竿档变化 → 注入新参数
+      const progress = progression.recordCatch(core.fish.score)
+      if (progress.rodUnlocked) core.setRodParams(progress.rodUnlocked.params)
     }
     prevPhase = core.phase
     scene.update(core, tk.lastTime / 1000, dt)
