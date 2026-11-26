@@ -5,6 +5,7 @@ import { FISH } from './core/fishCatalog'
 import { Rng } from './core/rng'
 import type { LoopPhase } from './core/types'
 import { PondScene } from './render/pondScene'
+import { CollectionPanel } from './ui/collectionPanel'
 import { Hud } from './ui/hud'
 
 async function main(): Promise<void> {
@@ -48,6 +49,8 @@ async function main(): Promise<void> {
       },
     },
   )
+  // 图鉴面板:只读消费收集册,入口常驻(可用性随阶段变化)
+  const collectionPanel = new CollectionPanel(collection)
   let prevPhase: LoopPhase = core.phase
 
   // —— 输入:鼠标/触摸 + 键盘(空格 = 起竿,WASD/方向键 = 移动) ——
@@ -100,6 +103,8 @@ async function main(): Promise<void> {
     prevPhase = core.phase
     scene.update(core, tk.lastTime / 1000, dt)
     hud.update(core)
+    // 图鉴面板:入口可用性、自动收起、进度刷新(打开时核心循环照常推进)
+    collectionPanel.update(core)
   })
 }
 
