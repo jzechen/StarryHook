@@ -1,10 +1,13 @@
 import { TUNE } from '../config'
 import type { BarParams } from '../config'
-import { FISH } from './fishCatalog'
 import { stepCatchBar } from './catchBar'
+import { FISH } from './fishCatalog'
+import { computePoolWeights } from './fishPool'
 import { stepFish } from './fishMotion'
 import type { Rng } from './rng'
-import type { FishDef, LoopPhase, MinigameState } from './types'
+import { DEFAULT_AREA, waterAreaOf } from './waterAreas'
+import { daylightOf, seasonOf, sessionWeather } from './worldEnv'
+import type { EnvState, FishDef, LoopPhase, MinigameState, WaterAreaId, Weather } from './types'
 
 export interface UpdateInput {
   /** 指针/空格是否按住 */
@@ -12,6 +15,14 @@ export interface UpdateInput {
   /** 移动方向分量(x 已按宽高比折算,单位:屏幕高度/秒) */
   moveX: number
   moveY: number
+}
+
+/** 核心循环的世界注入项(系统边界,均可选;缺省 = 真实时钟 + 种子派生天气) */
+export interface CoreLoopWorld {
+  /** 时钟:返回当地真实时间(季节 = 月份、昼夜 = 小时由此派生);缺省 = 真实系统时钟 */
+  clock?: () => Date
+  /** 会话天气覆盖(测试固定环境用);缺省 = 会话开始由主种子派生的独立 Rng 抽样一次 */
+  weather?: Weather
 }
 
 /**
@@ -49,9 +60,37 @@ export class CoreLoop {
   private sincePress = 999
   /** waiting 中持续按住的秒数(收竿判定用) */
   private reelT = 0
+  /** 当前水域(世界状态;经 setWater 切换,垂钓进行中被拒) */
+  private areaId: WaterAreaId = DEFAULT_AREA
+  /** 会话天气:会话开始抽样一次,会话内恒定(重开计分会话不重抽,世界环境延续) */
+  readonly weather: Weather
+  /** 系统边界时钟(季节/昼夜的来源) */
+  private clock: () => Date
 
-  constructor(rng: Rng) {
+  constructor(rng: Rng, world: CoreLoopWorld = {}) {
     this.rng = rng
+    this.clock = world.clock ?? ((): Date => new Date())
+    // 天气:独立派生种子的 Rng 在会话开始抽样一次——主随机序列一个 draw 都不动,
+    // 既有固定种子测试的抽取序列保持逐位一致;同种子 → 同天气(?seed 可复现)
+    this.weather = world.weather ?? sessionWeather(rng.seed)
+  }
+
+  /** 当前水域(只读;切换走 setWater) */
+  get area(): WaterAreaId {
+    return this.areaId
+  }
+
+  /** 当前环境状态(季节/昼夜实时读时钟,天气为会话常量)——出鱼权重与顶栏徽章同源 */
+  get env(): EnvState {
+    const now = this.clock()
+    return { area: this.areaId, season: seasonOf(now), daylight: daylightOf(now), weather: this.weather }
+  }
+
+  /** 切换水域:仅待机(idle)可接受;垂钓进行中(含结算停留)拒绝并保持原水域 */
+  setWater(area: WaterAreaId): boolean {
+    if (this.phase !== 'idle') return false
+    this.areaId = area
+    return true
   }
 
   /** 设置当前竿参数(组合根在启动恢复与解锁时注入);仅换参数来源,状态机逻辑不变 */
@@ -125,7 +164,7 @@ export class CoreLoop {
     }
   }
 
-  /** 重开会话:得分清零,最高纪录保留 */
+  /** 重开会话:得分清零,最高纪录保留;世界环境延续(水域与天气不变) */
   resetSession(): void {
     this.score = 0
     this.fish = null
@@ -156,8 +195,9 @@ export class CoreLoop {
   }
 
   private cast(): void {
-    // 蓄力 → 出鱼权重:越有力越偏向行为更难(更活泼)的鱼
-    this.pool = FISH.map(f => 1 + this.power * TUNE.poolBias * f.difficulty)
+    // 出鱼权重 = 修正引擎(当前水域基底鱼池 × 抛竿时刻环境 × 蓄力);
+    // 现行「蓄力偏向难鱼」乘子已并入引擎,权重在抛竿时刻算定,咬钩时刻不再重算
+    this.pool = computePoolWeights(FISH, waterAreaOf(this.areaId).baseWeights, this.env, this.power)
     this.bobberDist = this.power
     this.castX = this.px
     this.castY = this.py
