@@ -1,14 +1,12 @@
 /**
- * 生成极简占位素材图集:public/sprites/scene-atlas.png(64×16,单行排布)。
+ * 生成道具图集:public/sprites/scene-atlas.png(16×16,单块)。
  *
- * 票 #9(视口与精灵化地基)用:目的是打通「素材文件 → 图集切片 → 精灵」管线,
- * 素材本身为脚本生成的自绘占位(无任何第三方版权,可视为 CC0 等效的自有素材);
- * 视觉打磨批一的后续票会用 OpenGameArt CC0 的 16x16 水面/岸块正式素材替换,
- * 届时只需重跑本脚本换像素画(或换成下载素材)并核对 textures.ts 的切片区域。
+ * 票 #10(场景换皮)起,水面/岸线/草地/角色已换为 OGA CC0 正式素材
+ * (见 public/sprites/README.md 的署名与派生说明),本图集只保留
+ * 自绘浮标贴图(红顶白底,与现行配色一致)。自绘无第三方版权,等效 CC0。
  *
- * 图集布局(区域常量与 src/render/textures.ts 保持一致):
- *   [0,16)   水面帧 A   [16,32)  水面帧 B(两帧交替 = 波光动画)
- *   [32,48)  草地岸块   [48,56)  浮标 8×12(纵向从 y=2 到 y=13)
+ * 图集布局:整块 16×16,浮标 8×12 居中(x 4..11,y 2..13),
+ * src/render/textures.ts 的 BOBBER_RECT 与此对应。
  *
  * 运行:node scripts/generate-placeholder-atlas.mjs(或 pnpm gen:placeholders)
  */
@@ -17,22 +15,11 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const W = 64
+const W = 16
 const H = 16
 
-/** 字符 → RGBA。基色取自现行几何渲染配色,换皮前后气质连续 */
+/** 字符 → RGBA(配色沿用原型几何渲染,换皮前后气质连续) */
 const PALETTE = {
-  // 水面
-  b: [23, 80, 107, 255], // 基色(原池塘填充 0x17506b)
-  d: [18, 67, 88, 255], // 深水斑
-  m: [30, 106, 134, 255], // 次级波
-  h: [159, 216, 232, 255], // 波光(原涟漪色 0x9fd8e8)
-  // 草地
-  g: [44, 59, 42, 255], // 基色(原岸地 0x2c3b2a)
-  G: [59, 82, 56, 255], // 亮草
-  k: [34, 48, 31, 255], // 暗草
-  L: [74, 106, 74, 255], // 草叶
-  // 浮标
   X: [42, 34, 38, 255], // 描边
   R: [228, 87, 61, 255], // 红顶(原浮标 0xe4573d)
   r: [240, 131, 106, 255], // 红顶高光
@@ -41,67 +28,7 @@ const PALETTE = {
   '.': [0, 0, 0, 0], // 透明
 }
 
-/** 水面帧 A:波光在第 2/11/4 列一带 */
-const WATER_A = [
-  'bbbbbbbbbbbbbbbb',
-  'bbbbbbbbbbbbdbbb',
-  'bbbbbbbbbbbbbbbb',
-  'bbhhhbbbbbbbbbbb',
-  'bbbbbbbbbbbbbbbb',
-  'bbbbbbbbmmmmbdbb',
-  'bbbbbbbbbbbbbbbb',
-  'bbbbbbbbbbbbbbbb',
-  'bbbbbbbbbbbhhbbb',
-  'bbbbbbbbbbbbbbbb',
-  'bbmmbbbbdbbbbbbb',
-  'bbbbbbbbbbbbbbbb',
-  'bbbbbbbbbbbbbbbb',
-  'bdbbhhhbbbbbbbbb',
-  'bbbbbbbbbbbbbbbb',
-  'bbbbbbbbbbbbbbbb',
-]
-
-/** 水面帧 B:波光平移 → 与 A 交替产生闪烁 */
-const WATER_B = [
-  'bbbbbbbbbbbbbbbb',
-  'bbdbbbbbbbbbbbbb',
-  'bbbbbbbbbbbbbbbb',
-  'bbbbbbbhhhbbbbbb',
-  'bbbbbbbbbbbbbbbb',
-  'bbmmmmbbbbbbbdbb',
-  'bbbbbbbbbbbbbbbb',
-  'bbbbbbbbbbbbbbbb',
-  'bbhhbbbbbbbbbbbb',
-  'bbbbbbbbbbbbbbbb',
-  'bbbbbbbbbmmmbbbb',
-  'bbbbbbbbbbbbbbbb',
-  'bbbbbbbbbbbbbbbb',
-  'bbbbbbbbbbbhbbbb',
-  'bbbbbbbdbbbbbbbb',
-  'bbbbbbbbbbbbbbbb',
-]
-
-/** 草地岸块:稀疏草叶与明暗斑 */
-const GRASS = [
-  'gggggggggggggggg',
-  'ggGggggggggggkgg',
-  'gggggggggggggggg',
-  'gggggggLgggggggg',
-  'gggggggggggggggg',
-  'ggggggggggGggggg',
-  'gggkgggggggggggg',
-  'gggggggggggggggg',
-  'gggggggggggggGgg',
-  'ggLggggggggggggg',
-  'gggggggggggggggg',
-  'gggggggggkgggggg',
-  'gggggggggggggggg',
-  'ggGggggggggggggg',
-  'gggggggLgggggggg',
-  'gggggggggggggggg',
-]
-
-/** 浮标 8×12(放在 y=2..13):红顶白底,中段一道水线 */
+/** 浮标 8×12:红顶白底,中段一道水线 */
 const BOBBER = [
   '..XXXX..',
   '.XRRRRX.',
@@ -117,10 +44,10 @@ const BOBBER = [
   '........',
 ]
 
-/** 拼出整行:水面 A | 水面 B | 草地 | 浮标 | 空垫 */
+/** 浮标居中放进 16×16:x 偏移 4,y 偏移 2 */
 function atlasRow(y) {
-  const bobber = y >= 2 && y <= 13 ? BOBBER[y - 2] : '........'
-  return WATER_A[y] + WATER_B[y] + GRASS[y] + bobber + '........'
+  if (y < 2 || y > 13) return '................'
+  return '....' + BOBBER[y - 2] + '....'
 }
 
 // —— PNG 编码(无三方依赖:zlib 原始扫描线 + 手写 CRC32) ——
