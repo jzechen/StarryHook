@@ -378,20 +378,34 @@ describe('模式层:互切与清理(接缝:setMode 双向,票 #23)', () => {
   })
 })
 
-describe('模式层:单局得分基线计法(接缝:roundScore,票 #23)', () => {
-  /** 自动玩到捕获一尾,返回该循环(停在结算停留相) */
-  function playUntilCatch(seed: number): CoreLoop {
-    for (let s = seed; s < seed + 80; s++) {
-      const l = newLoop(s)
-      castFull(l)
-      runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
-      l.update(DT, HOLD)
-      runUntil(l, 60, HOLD, x => x.phase === 'caught' || x.phase === 'escaped')
-      if (l.phase === 'caught' && l.score > 0) return l
-    }
-    throw new Error('80 个种子内未找到捕获')
+/** 自动玩到捕获一尾,返回该循环(停在结算停留相);限时变体见 playTimedUntilCatch */
+function playUntilCatch(seed: number): CoreLoop {
+  for (let s = seed; s < seed + 80; s++) {
+    const l = newLoop(s)
+    castFull(l)
+    runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
+    l.update(DT, HOLD)
+    runUntil(l, 60, HOLD, x => x.phase === 'caught' || x.phase === 'escaped')
+    if (l.phase === 'caught' && l.score > 0) return l
   }
+  throw new Error('80 个种子内未找到捕获')
+}
 
+/** 自动玩到捕获一尾的限时变体:开局限时后同款驱动(返回该循环,停在结算停留相) */
+function playTimedUntilCatch(seed: number): CoreLoop {
+  for (let s = seed; s < seed + 80; s++) {
+    const l = newLoop(s)
+    expect(l.setMode('timed')).toBe(true)
+    castFull(l)
+    runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
+    l.update(DT, HOLD)
+    runUntil(l, 60, HOLD, x => x.phase === 'caught' || x.phase === 'escaped')
+    if (l.phase === 'caught' && l.score > 0) return l
+  }
+  throw new Error('80 个种子内未找到限时捕获')
+}
+
+describe('模式层:单局得分基线计法(接缝:roundScore,票 #23)', () => {
   it('开局前已有会话得分:单局得分从 0 起算,只计开局后的新增(基线 = 当前累计)', () => {
     const l = playUntilCatch(1)
     const sessionScore = l.score
@@ -406,7 +420,9 @@ describe('模式层:单局得分基线计法(接缝:roundScore,票 #23)', () => 
     if (l.phase === 'caught') {
       expect(l.score).toBeGreaterThan(sessionScore) // 会话累计照常增长
       expect(l.roundScore).toBe(l.score - sessionScore) // 单局 = 累计 − 基线
-      expect(l.best).toBeGreaterThanOrEqual(l.score) // 无限会话纪录按累计口径照常
+      // 纪录双轨行为隔离(票 #22 review):限时局捕获不推高会话纪录,
+      // core.best 保持开局前的值(单局纪录走 TimedBestStore,组合根判定)
+      expect(l.best).toBe(sessionScore)
     }
   })
 
@@ -431,5 +447,30 @@ describe('模式层:单局得分基线计法(接缝:roundScore,票 #23)', () => 
       expect(l.timeRemaining).toBe(remaining) // 重开计分不清倒计时(限时局照旧)
       expect(l.roundActive).toBe(true)
     }
+  })
+})
+
+describe('模式层:纪录双轨行为隔离(接缝:settle 捕获计分,票 #22 review 缺口②)', () => {
+  it('限时局捕获不推高会话纪录:core.best 保持开局前的值(单局纪录走 TimedBestStore,行为层隔离)', () => {
+    const l = playUntilCatch(1) // casual 预热:会话累计与纪录同步涨到 S
+    const sessionScore = l.score
+    expect(sessionScore).toBeGreaterThan(0)
+    expect(l.best).toBe(sessionScore) // casual 现状:会话纪录 = 会话累计
+    run(l, 2) // 停留走完回待机
+    expect(l.setMode('timed')).toBe(true)
+    castFull(l)
+    runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
+    l.update(DT, HOLD)
+    runUntil(l, 60, HOLD, x => x.phase === 'caught' || x.phase === 'escaped')
+    if (l.phase === 'caught') {
+      expect(l.score).toBeGreaterThan(sessionScore) // 会话累计照常增长
+      expect(l.best).toBe(sessionScore) // 会话纪录不被限时捕获推高(锁定:core.best 不变)
+    }
+  })
+
+  it('从零会话直接开限时:捕获只进会话累计,会话纪录保持 0(从不推高)', () => {
+    const l = playTimedUntilCatch(1)
+    expect(l.score).toBeGreaterThan(0) // 会话累计照常
+    expect(l.best).toBe(0) // 会话纪录零增长(单局纪录的持久化判定在组合根 recordIfHigher)
   })
 })

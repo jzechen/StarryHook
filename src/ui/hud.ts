@@ -1,8 +1,14 @@
 import type { CoreLoop } from '../core/coreLoop'
+import type { TimedBestStore } from '../core/timedBest'
 import type { EnvState } from '../core/types'
 import { envBadgeText } from './envBadgeText'
+import { topBarScores } from './topBarScores'
 
-/** DOM 覆盖层:得分、最高纪录、倒计时、金币、等级/竿名、环境徽章、装备饵余量、操作提示、重开/静音按钮。 */
+/**
+ * DOM 覆盖层:得分、最高纪录、倒计时、金币、等级/竿名、环境徽章、装备饵余量、
+ * 操作提示、重开/静音按钮。得分/纪录为双轨口径(票 #22 review):随模式走,
+ * 限时显示单局得分与限时单局纪录,无限保持会话累计与会话纪录。
+ */
 export class Hud {
   private scoreEl: HTMLElement
   private bestEl: HTMLElement
@@ -27,6 +33,9 @@ export class Hud {
     onReset: () => void,
     // 执行一次静音切换并返回切换后的状态(状态机在组合根的 MuteStore,按钮只管展示)
     onToggleMute: () => boolean,
+    // 限时单局最高纪录来源(纪录双轨,票 #22/#23):限时模式下顶栏「最高纪录」轨
+    // 展示此值;只读消费,持久化判定(recordIfHigher)只在组合根归零结算接线
+    private timedBest: TimedBestStore,
   ) {
     this.scoreEl = document.getElementById('score')!
     this.bestEl = document.getElementById('best')!
@@ -112,13 +121,24 @@ export class Hud {
 
   update(core: CoreLoop): void {
     this.setEnv(core.env)
-    if (core.score !== this.lastScore) {
-      this.scoreEl.textContent = String(core.score)
-      this.lastScore = core.score
+    // 顶栏得分/纪录双轨口径(票 #22 review 缺口①):两轨随模式走——限时显示
+    // 本局得分(roundScore,开局基线差值,归零后定格)与限时单局纪录(timedBest,
+    // 只读展示不重复判定);无限保持现状(会话累计 + 会话纪录)。
+    // 守卫不变:内容变化才重写 DOM(轨道切换后数值不同自然触发重写)
+    const track = topBarScores({
+      mode: core.mode,
+      score: core.score,
+      best: core.best,
+      roundScore: core.roundScore,
+      timedBest: this.timedBest.best(),
+    })
+    if (track.score !== this.lastScore) {
+      this.scoreEl.textContent = String(track.score)
+      this.lastScore = track.score
     }
-    if (core.best !== this.lastBest) {
-      this.bestEl.textContent = String(core.best)
-      this.lastBest = core.best
+    if (track.best !== this.lastBest) {
+      this.bestEl.textContent = String(track.best)
+      this.lastBest = track.best
     }
 
     let hint = ''
