@@ -6,6 +6,7 @@ import { ProgressionStore } from './core/progression'
 import { Rng } from './core/rng'
 import type { LoopPhase } from './core/types'
 import { PondScene } from './render/pondScene'
+import { loadSceneTextures } from './render/textures'
 import { applyViewportToCanvas } from './render/viewport'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
@@ -56,7 +57,9 @@ async function main(): Promise<void> {
   window.addEventListener('resize', refitViewport)
 
   const core = new CoreLoop(new Rng(seed))
-  const scene = new PondScene(app)
+  // 场景素材:图集加载 + 切片(素材文件 → 图集 → 精灵 管线入口)
+  const textures = await loadSceneTextures()
+  const scene = new PondScene(app, textures)
   const hud = new Hud(() => core.resetSession())
   const seedEl = document.getElementById('seed')
   if (seedEl) seedEl.textContent = `seed ${seed}`
