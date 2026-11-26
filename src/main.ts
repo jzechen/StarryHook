@@ -16,6 +16,7 @@ import { loadSceneTextures } from './render/textures'
 import { applyViewportToCanvas } from './render/viewport'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
+import { baitEffectSource, buyBaitOutcome } from './ui/economyWiring'
 import { Hud } from './ui/hud'
 import { MuteStore } from './ui/muteStore'
 import { PanelExclusion } from './ui/panelExclusion'
@@ -101,17 +102,8 @@ async function main(): Promise<void> {
   // - 香饵:装备且消耗成功 → 等待时长减半(TUNE.wait.min/max 同乘 0.5,分布形状不变);
   // - 浓饵:装备且消耗成功 → 权重引擎浓饵入参生效,难鱼权重提升(等待不减半);
   // - 未装备/耗尽 → null,本竿无饵效果,自动回退现行。
-  // 互斥由装备槽既有语义保证(同一时间只装备一种,wallet.equip 切换不清余量);
-  // 生效判定 = equippedBait() 与 consumeBaitForCast() 同步配对(单线程内连续调用,
-  // consume 消耗的正是刚才读到的装备槽),boolean 返回值契约保持不变。
-  const SCENTED_BAIT_WAIT_SCALE = 0.5
-  core.setBaitEffectSource(() => {
-    const equipped = wallet.equippedBait()
-    const consumed = wallet.consumeBaitForCast() ? equipped : null
-    if (consumed === 'xianger') return { waitScale: SCENTED_BAIT_WAIT_SCALE, richBait: false }
-    if (consumed === 'nonger') return { waitScale: 1, richBait: true }
-    return null
-  })
+  // 接线本体抽至 ui/economyWiring(可测单源,组合层集成测试直接驱动同一段接线)
+  core.setBaitEffectSource(baitEffectSource(wallet))
   // 面板互斥协调器:任一面板打开即收起其余,右侧同位不重叠遮挡;
   // 面板构造时自注册,组合根不再串互斥回调,商店面板(GLOSSARY 经济与模式)注册即入
   const panelExclusion = new PanelExclusion()
@@ -135,13 +127,19 @@ async function main(): Promise<void> {
     hud.setProgression(progression.level(), progression.rod().name)
     return 'ok'
   }
-  // 购饵 = wallet.buyBait(价格扣款 + 库存增加一体);目录外/非法 id 映射为无意义购买
-  const buyBaitOutcome = (baitId: string): ShopBuyOutcome => {
-    const result = wallet.buyBait(baitId)
-    if (result.ok) return 'ok'
-    return result.reason === 'insufficient' ? 'insufficient' : 'meaningless'
-  }
-  const shopPanel = new ShopPanel(wallet, progression, buyRodOutcome, buyBaitOutcome, panelExclusion)
+  // 购饵 = wallet.buyBait(价格扣款 + 库存增加一体)+ 成功即自动装备(review 修复:
+  // 买到即生效,效果实玩可达);目录外/非法 id 映射为无意义购买。
+  // 装备切换同样经组合根回调接线 wallet.equip(装备槽一种,切换不清余量)——
+  // 面板保持只读消费钱包,写操作全走回调(与购竿/购饵同款纪律)
+  const equipBait = (baitId: string): void => wallet.equip(baitId)
+  const shopPanel = new ShopPanel(
+    wallet,
+    progression,
+    buyRodOutcome,
+    buyBaitOutcome(wallet),
+    equipBait,
+    panelExclusion,
+  )
   // 轻提示层:新收录 / 池塘大满贯,顶部居中,不拦截游戏输入
   const toasts = new ToastLayer()
   let prevPhase: LoopPhase = core.phase

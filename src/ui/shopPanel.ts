@@ -1,4 +1,4 @@
-import { BAITS, RODS } from '../config'
+import { BAITS, RODS, type BaitDef } from '../config'
 import type { CoreLoop } from '../core/coreLoop'
 import type { ProgressionStore } from '../core/progression'
 import type { WalletStore } from '../core/wallet'
@@ -14,22 +14,25 @@ export type ShopBuyOutcome = 'ok' | 'insufficient' | 'meaningless'
 /** 购买反馈的停留时长(行内提示自动消失;关闭面板立即清除) */
 const FEEDBACK_MS = 3000
 
-/** 商店一行(竿或饵)的 DOM 句柄:详情文案与购买钮由 refresh 按状态刷新,购买钮可为空(占位/已拥有行) */
+/** 商店一行(竿或饵)的 DOM 句柄:详情文案与按钮由 refresh 按状态刷新,购买钮可为空(已拥有行) */
 interface ShopRow {
   root: HTMLElement
   detailEl: HTMLElement
   buyBtn: HTMLButtonElement | null
+  /** 装备钮(仅饵行):「有余量且未装备」时显示,点击经组合根回调装备 */
+  equipBtn: HTMLButtonElement | null
 }
 
 /**
  * 商店面板(票 #20,spec #17 经济系统):顶栏入口 + 面板,浏览并购买竿与鱼饵。
- * 只读消费 WalletStore(金币余额/饵库存)与 ProgressionStore(竿可用性/当前竿);
- * 购买动作经组合根注入的回调接线到 wallet/progression 的既有公开方法
- * (购竿跨钱袋+成长+绿条参数+顶栏刷新,协调归组合根;面板只管展示与反馈)。
+ * 只读消费 WalletStore(金币余额/饵库存/装备槽)与 ProgressionStore(竿可用性/当前竿);
+ * 购买与装备动作经组合根注入的回调接线到 wallet/progression 的既有公开方法
+ * (购竿跨钱袋+成长+绿条参数+顶栏刷新、购饵成功即自动装备、装备切换不清余量,
+ * 协调归组合根;面板只管展示与反馈)。
  * 开关策略见 shopPanelPolicy——仅待机可开,打开时核心循环照常推进;
  * 经 PanelExclusion 自注册,与图鉴/换水域面板互斥(第三面板即插即用)。
  * 余额与饵余量常驻面板、购买后即时刷新(签名守卫,变化才写 DOM);
- * 不足/无意义购买给面板内行内提示(不用 alert)。
+ * 不足/无意义购买给面板内行内提示(不用 alert);装备中的饵行尾注「装备中」。
  */
 export class ShopPanel {
   private entryBtn: HTMLButtonElement
@@ -48,9 +51,11 @@ export class ShopPanel {
   constructor(
     private wallet: WalletStore,
     private progression: ProgressionStore,
-    // 购买回调:组合根接线(购竿 = 预检 → purchaseRod → spend → 换竿生效;购饵 = buyBait)
+    // 购买回调:组合根接线(购竿 = 预检 → purchaseRod → spend → 换竿生效;购饵 = buyBait + 自动装备)
     private onBuyRod: (rodId: string) => ShopBuyOutcome,
     private onBuyBait: (baitId: string) => ShopBuyOutcome,
+    // 装备回调:组合根接线 wallet.equip(装备槽一种,切换不清余量——既有语义)
+    private onEquipBait: (baitId: string) => void,
     // 面板互斥协调器:构造时自注册,打开时经它收起其余面板(图鉴/换水域)
     private exclusion?: PanelExclusion,
   ) {
@@ -77,12 +82,17 @@ export class ShopPanel {
       this.rows.push(row)
     }
     // 饵两行(行序 = BAITS 序):香饵与浓饵均已上架(#19/#21),占位分支已随上架删除;
-    // 价格 + 单次竿数 + 当前库存(库存由 refresh 按钱包刷新)+ 购买钮
+    // 详情 = 价格 + 单次竿数 + 库存(装备中的行尾注「装备中」,refresh 按钱包刷新)+
+    // 装备钮(「有余量且未装备」时显示)+ 购买钮
     for (const bait of BAITS) {
-      const row = this.buildRow(
-        bait.name,
-        `${bait.price} 金币 · 单次 ${bait.charges} 竿 · 库存 ${this.wallet.baitCount(bait.id)}`,
-      )
+      const row = this.buildRow(bait.name, this.baitDetail(bait))
+      const equipBtn = this.buildBuyBtn('装备', () => {
+        this.onEquipBait(bait.id)
+        equipBtn.blur()
+      })
+      equipBtn.hidden = !this.equipVisible(bait)
+      row.root.appendChild(equipBtn)
+      row.equipBtn = equipBtn
       const buyBtn = this.buildBuyBtn('购买', () => {
         this.report(this.onBuyBait(bait.id), `已购入「${bait.name}」+${bait.charges} 竿`, bait.name)
         buyBtn.blur()
@@ -120,6 +130,18 @@ export class ShopPanel {
     this.setOpen(false)
   }
 
+  /** 饵行详情:价格 · 单次竿数 · 库存;装备中的行尾注「装备中」(refresh 随装备槽/库存刷新) */
+  private baitDetail(bait: BaitDef): string {
+    const equipped = this.wallet.equippedBait() === bait.id
+    const suffix = equipped ? ' · 装备中' : ''
+    return `${bait.price} 金币 · 单次 ${bait.charges} 竿 · 库存 ${this.wallet.baitCount(bait.id)}${suffix}`
+  }
+
+  /** 装备钮可见性:有余量且未装备(已购未装备可点装备;装备中与未拥有隐藏) */
+  private equipVisible(bait: BaitDef): boolean {
+    return this.wallet.equippedBait() !== bait.id && this.wallet.baitCount(bait.id) > 0
+  }
+
   /** 组一行:名称 + 详情(右对齐),购买钮由调用方按需追加 */
   private buildRow(name: string, detail: string): ShopRow {
     const root = document.createElement('div')
@@ -131,7 +153,7 @@ export class ShopPanel {
     detailEl.className = 'shop-detail'
     detailEl.textContent = detail
     root.append(nameEl, detailEl)
-    return { root, detailEl, buyBtn: null }
+    return { root, detailEl, buyBtn: null, equipBtn: null }
   }
 
   /** 组购买钮:点击走组合根注入的回调,结果经 report 落成行内反馈 */
@@ -177,10 +199,11 @@ export class ShopPanel {
     else this.exclusion?.notifyOpened(this)
   }
 
-  /** 内容签名:余额/饵库存/竿可用性/当前竿任一变化才重写 DOM(与图鉴渲染守卫同思路) */
+  /** 内容签名:余额/饵库存/装备槽/竿可用性/当前竿任一变化才重写 DOM(与图鉴渲染守卫同思路) */
   private renderSignature(): string {
     const parts: string[] = [String(this.wallet.coins())]
     for (const bait of BAITS) parts.push(String(this.wallet.baitCount(bait.id)))
+    parts.push(this.wallet.equippedBait() ?? '-')
     for (const rod of RODS) parts.push(this.progression.isRodUnlocked(rod.id) ? '1' : '0')
     parts.push(this.progression.rod().id)
     return parts.join('|')
@@ -201,11 +224,12 @@ export class ShopPanel {
       row.detailEl.textContent = unlocked ? '已拥有' : `${rod.price} 金币`
       if (row.buyBtn && !unlocked) row.buyBtn.disabled = this.wallet.coins() < rod.price
     }
-    // 饵行:库存随钱包刷新(香饵与浓饵均已上架)
+    // 饵行:库存与「装备中」尾注随钱包刷新;装备钮按可见性谓词显隐
     for (let i = 0; i < BAITS.length; i++) {
       const bait = BAITS[i]!
       const row = this.rows[RODS.length + i]!
-      row.detailEl.textContent = `${bait.price} 金币 · 单次 ${bait.charges} 竿 · 库存 ${this.wallet.baitCount(bait.id)}`
+      row.detailEl.textContent = this.baitDetail(bait)
+      if (row.equipBtn) row.equipBtn.hidden = !this.equipVisible(bait)
     }
   }
 }
