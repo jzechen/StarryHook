@@ -58,3 +58,33 @@ describe('绿条物理 stepCatchBar(接缝:手感规格)', () => {
     expect(m.barV).toBeLessThan(0)
   })
 })
+
+describe('绿条参数注入(接缝:竿档)', () => {
+  it('缺省形参 = 显式传现行配置:逐帧结果完全一致(默认 = 现行手感)', () => {
+    const implicit = mg()
+    const explicit = mg()
+    for (let i = 0; i < 120; i++) {
+      const holding = i % 7 !== 0
+      const pressed = i % 11 === 0
+      stepCatchBar(implicit, 1 / 60, holding, pressed)
+      stepCatchBar(explicit, 1 / 60, holding, pressed, TUNE.bar)
+    }
+    expect(explicit.barY).toBe(implicit.barY)
+    expect(explicit.barV).toBe(implicit.barV)
+  })
+
+  it('注入更高绿条(height 0.5):顶部钳制按注入高度生效,现行高度下不触发', () => {
+    const m = mg()
+    const taller = { ...TUNE.bar, height: 0.5 }
+    m.barY = 0.6 // 独立字面量:0.6 > 1 − 0.5,但 < 1 − 0.28(现行)
+    stepCatchBar(m, 0.1, true, false, taller)
+    expect(m.barY).toBe(0.5)
+  })
+
+  it('注入更快响应(response 30):同帧速度恰好到达目标的一半,比现行(1/4)更跟手', () => {
+    const m = mg()
+    const snappier = { ...TUNE.bar, response: 30 }
+    stepCatchBar(m, 1 / 60, false, false, snappier)
+    expect(m.barV).toBeCloseTo(-0.575, 10) // 独立手算:−1.15 × (30/60)
+  })
+})

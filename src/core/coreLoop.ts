@@ -1,4 +1,5 @@
 import { TUNE } from '../config'
+import type { BarParams } from '../config'
 import { FISH } from './fishCatalog'
 import { stepCatchBar } from './catchBar'
 import { stepFish } from './fishMotion'
@@ -39,6 +40,8 @@ export class CoreLoop {
   private rng: Rng
   /** 本次抛竿的出鱼权重(蓄力时算出) */
   private pool: number[] = []
+  /** 当前竿的绿条参数(默认 = 现行手感;成长系统经 setRodParams 注入) */
+  private barParams: BarParams = TUNE.bar
   private waitTime = 0
   private settleTime = 0
   private holding = false
@@ -49,6 +52,11 @@ export class CoreLoop {
 
   constructor(rng: Rng) {
     this.rng = rng
+  }
+
+  /** 设置当前竿参数(组合根在启动恢复与解锁时注入);仅换参数来源,状态机逻辑不变 */
+  setRodParams(params: BarParams): void {
+    this.barParams = params
   }
 
   /** 每帧推进 */
@@ -169,7 +177,7 @@ export class CoreLoop {
     this.mg = {
       t: 0,
       timer: 0,
-      barY: (1 - TUNE.bar.height) / 2,
+      barY: (1 - this.barParams.height) / 2,
       barV: 0,
       fishY: this.rng.range(0.35, 0.65),
       fishTarget: 0.5,
@@ -183,12 +191,13 @@ export class CoreLoop {
     const M = TUNE.minigame
     mg.t += dt
 
-    stepCatchBar(mg, dt, this.holding, pressed)
+    stepCatchBar(mg, dt, this.holding, pressed, this.barParams)
     stepFish(mg, dt, this.fish!, this.rng)
 
     // 进度:罩住上涨,脱开流失
     const overlap =
-      mg.fishY + M.fishHalf >= mg.barY && mg.fishY - M.fishHalf <= mg.barY + TUNE.bar.height
+      mg.fishY + M.fishHalf >= mg.barY &&
+      mg.fishY - M.fishHalf <= mg.barY + this.barParams.height
     mg.progress += (overlap ? M.gain : -M.drain) * dt
     if (mg.progress >= 1) this.settle(true)
     else if (mg.progress <= 0) this.settle(false)

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CoreLoop, type UpdateInput } from './coreLoop'
 import { Rng } from './rng'
-import { TUNE } from '../config'
+import { TUNE, type BarParams } from '../config'
 
 const DT = 1 / 60
 const HOLD: UpdateInput = { holding: true, moveX: 0, moveY: 0 }
@@ -212,5 +212,33 @@ describe('核心循环状态机(接缝:CoreLoop)', () => {
       if (fishAtBite(s, false) === 'shandiansuo') light++
     }
     expect(full).toBeGreaterThan(light)
+  })
+})
+
+describe('竿档注入(接缝:换竿 → 物理生效)', () => {
+  /** 组合根时序:先注入竿参数,再进入小游戏(解锁当竿 / 启动恢复同款) */
+  function enterMinigame(seed: number, rod?: BarParams): CoreLoop {
+    const l = newLoop(seed)
+    if (rod) l.setRodParams(rod)
+    castFull(l)
+    runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
+    l.update(DT, HOLD)
+    expect(l.phase).toBe('minigame')
+    return l
+  }
+
+  it('未注入 = 现行手感:初始位置按现行绿条高度(0.36 = (1 − 0.28) / 2)', () => {
+    const l = enterMinigame(42)
+    expect(l.mg!.barY).toBeCloseTo(0.36, 10)
+  })
+
+  it('注入更高绿条(height 0.4):初始位置 0.3,同行输入下轨迹与现行竿分岔', () => {
+    const taller: BarParams = { ...TUNE.bar, height: 0.4 }
+    const a = enterMinigame(42, taller)
+    expect(a.mg!.barY).toBeCloseTo(0.3, 10)
+    const b = enterMinigame(42)
+    run(a, 1, HOLD)
+    run(b, 1, HOLD)
+    expect(a.mg!.barY).not.toBe(b.mg!.barY)
   })
 })
