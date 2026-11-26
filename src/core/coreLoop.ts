@@ -17,6 +17,17 @@ export interface UpdateInput {
   moveY: number
 }
 
+/**
+ * 本竿饵效果(单缝返回值,票 #19/#21 两缝合一):抛竿时刻由饵效果来源产出一次,
+ * 同时驱动等待分布与浓饵权重入参——核心循环不感知饵种、库存与消耗时机。
+ */
+export interface BaitEffect {
+  /** 等待时长修正系数(须为正;1 = 现行分布,香饵 = 0.5) */
+  waitScale: number
+  /** 浓饵是否生效(权重引擎的浓饵修正入参;浓饵不减半等待,香饵不提升权重) */
+  richBait: boolean
+}
+
 /** 核心循环的世界注入项(系统边界,均可选;缺省 = 真实时钟 + 种子派生天气) */
 export interface CoreLoopWorld {
   /** 时钟:返回当地真实时间(季节 = 月份、昼夜 = 小时由此派生);缺省 = 真实系统时钟 */
@@ -56,18 +67,13 @@ export class CoreLoop {
   /** 本竿剩余等待秒数(waiting 中逐帧递减,咬钩判定用;抛竿时刻由等待时长参数源算定) */
   private waitRemaining = 0
   /**
-   * 等待时长修正系数来源:抛竿时刻调用一次,返回本竿系数(须为正数;1 = 现行分布)。
-   * 默认恒 1 —— 现行分布逐帧一致,主随机序列一个 draw 都不动;
-   * 组合根据此接线香饵(票 #19,票 #21 起只读本竿生效标记,不再自行消耗——见下)。
+   * 本竿饵效果来源(单缝,票 #19/#21 两缝合一):抛竿时刻调用恰好一次,返回值
+   * 同时驱动等待分布(waitScale)与浓饵权重入参(richBait);null = 本竿无饵效果。
+   * 默认恒 null —— 现行权重与等待分布逐位一致,主随机序列一个 draw 都不动。
+   * 单缝消除旧双缝的调用次序契约:饵的消耗接线归组合根的来源闭包,
+   * 一次消耗同时产出两个效果入参,核心循环只见效果、不见库存。
    */
-  private waitTimeScale: () => number = () => 1
-  /**
-   * 浓饵生效标记来源(票 #21):抛竿时刻调用一次,返回值作为权重修正引擎的
-   * 浓饵修正入参(computePoolWeights 第 5 参)。默认恒 false = 现行权重逐位一致。
-   * 调用次序:cast 内权重计算(本来源)先于等待时长来源——组合根的饵消耗接线
-   * 归本来源(每竿恰好消耗一支),等待时长来源只读本竿生效标记。
-   */
-  private richBaitActive: () => boolean = () => false
+  private baitEffect: () => BaitEffect | null = () => null
   private settleTime = 0
   private holding = false
   /** 距上次按下经过的秒数(输入缓冲用) */
@@ -113,22 +119,13 @@ export class CoreLoop {
   }
 
   /**
-   * 设置等待时长修正系数来源(组合根在启动时注入一次,来源内部读实时库存状态);
-   * 仅换时长来源,状态机逻辑不变。来源在每次抛竿时刻被调用一次,
-   * 其返回值即本竿系数——调用次数由核心循环保证。
+   * 注入「本竿饵效果」单一来源(组合根在启动时注入一次,来源内部读实时库存状态);
+   * 仅换效果来源,状态机逻辑不变。来源在每次抛竿时刻被调用恰好一次——
+   * 调用次数由核心循环保证,组合根的消耗接线因此每竿只扣一支饵;
+   * 返回 null = 本竿无饵效果(现行行为)。
    */
-  setWaitTimeScale(source: () => number): void {
-    this.waitTimeScale = source
-  }
-
-  /**
-   * 设置浓饵生效标记来源(票 #21,组合根在启动时注入一次;与 #19 等待时长来源
-   * 同款 cast 内来源闭包模式);仅换标记来源,状态机逻辑不变。
-   * 来源在每次抛竿时刻被调用一次,返回值即本竿浓饵是否生效——
-   * 组合根在此做一次性消耗(每竿恰一支),不会被多扣。
-   */
-  setRichBaitSource(source: () => boolean): void {
-    this.richBaitActive = source
+  setBaitEffectSource(source: () => BaitEffect | null): void {
+    this.baitEffect = source
   }
 
   /** 当前竿参数只读暴露:渲染层(绿条绘制)与物理同源,换竿即视觉跟随 */
@@ -233,23 +230,22 @@ export class CoreLoop {
   }
 
   private cast(): void {
+    // 本竿饵效果:单缝来源在抛竿时刻调用恰好一次(默认 null = 现行行为逐位一致)。
     // 出鱼权重 = 修正引擎(当前水域基底鱼池 × 抛竿时刻环境 × 蓄力 × 浓饵标记);
     // 现行「蓄力偏向难鱼」乘子已并入引擎,权重在抛竿时刻算定,咬钩时刻不再重算。
-    // 浓饵来源(第 5 参)在本行内被调用,先于下方等待时长来源——
-    // 组合根的消耗接线挂在这里,一次消耗同时喂浓饵与香饵两个效果(见 main.ts)
+    const bait = this.baitEffect()
     this.pool = computePoolWeights(
       FISH,
       waterAreaOf(this.areaId).baseWeights,
       this.env,
       this.power,
-      this.richBaitActive(),
+      bait?.richBait ?? false,
     )
     this.bobberDist = this.power
     this.castX = this.px
     this.castY = this.py
-    // 等待时长 = 现行分布 × 本竿修正系数(来源在抛竿时刻调用一次;
-    // min/max 同乘系数,分布形状不变,抽取序列不增不减)
-    const scale = this.waitTimeScale()
+    // 等待时长 = 现行分布 × 本竿修正系数(min/max 同乘,分布形状不变,抽取序列不增不减)
+    const scale = bait?.waitScale ?? 1
     this.waitRemaining = this.rng.range(TUNE.wait.min * scale, TUNE.wait.max * scale)
     this.reelT = 0
     this.fish = null
