@@ -12,7 +12,7 @@ import { FISH_FRAME_COUNT, FISH_FRAME_SIZE, FISH_SHAPE_ROW } from './fishAtlas'
  * - grass.png           派生自 OGA「16x16 tileset: water, grass and sand」(1,0) 纯草块,整体压暗
  * - character.png       派生自 OGA「Character sprite + walk animation」ch003.png
  *                       (32x32 四向行走帧众数降采样为 16x16)
- * - scene-atlas.png     自绘浮标道具图集(scripts/generate-placeholder-atlas.mjs 生成,无第三方版权)
+ * - scene-atlas.png     自绘浮标图集(scripts/generate-bobber-atlas.mjs 生成,无第三方版权)
  * - fish-atlas.png      自绘鱼精灵图集(scripts/generate-fish-atlas.mjs 生成,无第三方版权)
  *
  * 基线像素密度:16x16(spec #8 统一约定),480×270 = 30×17 tile。

@@ -1,14 +1,16 @@
 /**
- * 生成道具图集:public/sprites/scene-atlas.png(16×16,单块)。
+ * 生成浮标图集:public/sprites/scene-atlas.png(16×16,单块)。
  *
  * 票 #10(场景换皮)起,水面/岸线/草地/角色已换为 OGA CC0 正式素材
  * (见 public/sprites/README.md 的署名与派生说明),本图集只保留
  * 自绘浮标贴图(红顶白底,与现行配色一致)。自绘无第三方版权,等效 CC0。
  *
- * 图集布局:整块 16×16,浮标 8×12 居中(x 4..11,y 2..13),
- * src/render/textures.ts 的 BOBBER_RECT 与此对应。
+ * 图集布局:整块 16×16,浮标 8×12 居中(x 4..11,y 2..13),四周留透明。
+ * 消费端 src/render/textures.ts 把整块直接作为浮标贴图
+ * (bobber = slice(props.source, Rectangle(0, 0, TILE, TILE)),
+ * 占满整块图集,故不需要单独的切片矩形常量)。
  *
- * 运行:node scripts/generate-placeholder-atlas.mjs(或 pnpm gen:placeholders)
+ * 运行:node scripts/generate-bobber-atlas.mjs(或 pnpm gen:bobber-atlas)
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'

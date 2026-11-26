@@ -15,7 +15,7 @@
 | `shoreline-waves.png` | 派生自 OGA「16x16 Shoreline Wave Animation Tiles」,作者 Zabin,<https://opengameart.org/content/16x16-shoreline-wave-animation-tiles> | CC0 | 见下方派生规则 |
 | `grass.png` | 派生自 OGA「16x16 tileset: water, grass and sand」,作者 Syrsly,<https://opengameart.org/content/16x16-tileset-water-grass-and-sand> | CC0 | 见下方派生规则 |
 | `character.png` | 派生自 OGA「Character sprite + walk animation」,作者 Flixberry Entertainment,<https://opengameart.org/content/character-sprite-walk-animation> | CC0 | 见下方派生规则 |
-| `scene-atlas.png` | 自绘浮标道具图集 | 无第三方版权(等效 CC0) | 由 `scripts/generate-placeholder-atlas.mjs` 生成 |
+| `scene-atlas.png` | 自绘浮标图集 | 无第三方版权(等效 CC0) | 由 `scripts/generate-bobber-atlas.mjs` 生成 |
 | `fish-atlas.png` | 自绘鱼精灵图集(5 种鱼 × 2 帧,32×80) | 无第三方版权(等效 CC0) | 由 `scripts/generate-fish-atlas.mjs` 手绘像素矩阵生成;行序契约见 `src/render/fishAtlas.ts` |
 | `oga-src/` | 上列 OGA 素材的原始下载件 | CC0 | 原样保存,作派生来源与溯源凭据 |
 
