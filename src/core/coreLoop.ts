@@ -406,7 +406,10 @@ export class CoreLoop {
   private settle(caught: boolean): void {
     if (caught && this.fish) {
       this.score += this.fish.score
-      this.best = Math.max(this.best, this.score)
+      // 会话纪录只属无限休闲(纪录双轨行为层隔离,票 #22 review):限时局捕获
+      // 不推高 core.best——单局纪录的持久化判定在组合根归零结算处
+      // (TimedBestStore.recordIfHigher),两轨各走各的,此处不重复判定。
+      if (this.modeId === 'casual') this.best = Math.max(this.best, this.score)
     }
     this.settleTime = TUNE.resolution.holdTime
     this.phase = caught ? 'caught' : 'escaped'
