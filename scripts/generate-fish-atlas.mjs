@@ -11,11 +11,11 @@
  *
  * 运行:node scripts/generate-fish-atlas.mjs(或 pnpm gen:fish-atlas)
  */
-import { deflateSync } from 'node:zlib'
 import { writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FISH_SPRITES, OUTLINE, GLINT, PALETTES } from './fish-sprite-data.mjs'
+import { encodePng } from './png-encode.mjs'
 
 const FRAME = 16
 /** 预览放大倍数(人工把关用) */
@@ -50,52 +50,7 @@ function encodeFrame(matrix, shape) {
   return px
 }
 
-// —— PNG 编码(无三方依赖:zlib 原始扫描线 + 手写 CRC32,与 #9 占位图生成器同工艺) ——
-const CRC_TABLE = (() => {
-  const t = new Uint32Array(256)
-  for (let n = 0; n < 256; n++) {
-    let c = n
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
-    t[n] = c >>> 0
-  }
-  return t
-})()
-
-function crc32(bytes) {
-  let c = 0xffffffff
-  for (const b of bytes) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8)
-  return (c ^ 0xffffffff) >>> 0
-}
-
-function chunk(type, data) {
-  const out = Buffer.alloc(12 + data.length)
-  out.writeUInt32BE(data.length, 0)
-  out.write(type, 4, 'ascii')
-  data.copy(out, 8)
-  out.writeUInt32BE(crc32(out.subarray(4, 8 + data.length)), 8 + data.length)
-  return out
-}
-
-/** RGBA 像素数组 → PNG Buffer */
-function encodePng(width, height, px) {
-  const ihdr = Buffer.alloc(13)
-  ihdr.writeUInt32BE(width, 0)
-  ihdr.writeUInt32BE(height, 4)
-  ihdr[8] = 8 // 位深
-  ihdr[9] = 6 // RGBA
-  const raw = Buffer.alloc(height * (1 + width * 4))
-  for (let y = 0; y < height; y++) {
-    const off = y * (1 + width * 4)
-    raw[off] = 0 // 过滤器:None
-    px.copy ? px.copy(raw, off + 1, y * width * 4, (y + 1) * width * 4) : raw.set(px.subarray(y * width * 4, (y + 1) * width * 4), off + 1)
-  }
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', ihdr),
-    chunk('IDAT', deflateSync(raw, { level: 9 })),
-    chunk('IEND', Buffer.alloc(0)),
-  ])
-}
+// PNG 编码统一走 scripts/png-encode.mjs(共享工艺,产物字节不变)
 
 const rows = FISH_SPRITES.length
 

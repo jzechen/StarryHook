@@ -65,7 +65,9 @@
       .fish-item.locked .fish-detail { font-size: 12px; }
       /* 条目鱼精灵(票 #11):fish-atlas.png 作 CSS sprite,2x 放大 + pixelated;
          2 帧游动动画与小游戏同周期(0.2s/帧);background-position-y 由
-         collectionPanel.ts 按图集行序(fishAtlas.ts 契约)逐条写入 */
+         collectionPanel.ts 消费 fishAtlas.ts 的 fishSpriteOffsetY 逐条写入。
+         本组尺寸 32px、背景尺寸 64×160、帧位移 -32px 均为「16px 基线 × 2x」的
+         CSS 侧同值,倍率单源见 collectionPanel.ts 的 SPRITE_SCALE(注释互指) */
       .fish-sprite {
         flex: none; align-self: center;
         width: 32px; height: 32px;

@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "gen:placeholders": "node scripts/generate-placeholder-atlas.mjs",
+    "gen:bobber-atlas": "node scripts/generate-bobber-atlas.mjs",
     "gen:fish-atlas": "node scripts/generate-fish-atlas.mjs"
   },
   "dependencies": {

@@ -46,7 +46,7 @@
 | `public/sprites/shoreline-waves.png` | `oga-src/cc0waveanimtiles16x16.png` | OGA「16x16 Shoreline Wave Animation Tiles」,Zabin,<https://opengameart.org/content/16x16-shoreline-wave-animation-tiles> | **CC0 1.0** | 派生:抠透明 + 旋转四边(规则见 sprites README) |
 | `public/sprites/grass.png` | `oga-src/voda_pesok_trava_revision_2.png` | OGA「16x16 tileset: water, grass and sand」,Syrsly,<https://opengameart.org/content/16x16-tileset-water-grass-and-sand> | **CC0 1.0** | 派生:取纯草块并压暗(RGB × 0.78) |
 | `public/sprites/character.png` | `oga-src/ch003.png` | OGA「Character sprite + walk animation」,Flixberry Entertainment,<https://opengameart.org/content/character-sprite-walk-animation> | **CC0 1.0** | 派生:32×32 → 16×16 众数降采样 |
-| `public/sprites/scene-atlas.png` | —(自绘) | `scripts/generate-placeholder-atlas.mjs` 生成 | 无第三方版权(等效 CC0) | 脚本生成 |
+| `public/sprites/scene-atlas.png` | —(自绘) | `scripts/generate-bobber-atlas.mjs` 生成 | 无第三方版权(等效 CC0) | 脚本生成 |
 | `public/sprites/oga-src/` | — | 上列 OGA 素材的原始下载件 | **CC0 1.0** | 原样保存,作派生来源与溯源凭据 |
 
 ## 代码依赖
