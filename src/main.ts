@@ -9,6 +9,7 @@ import { PondScene } from './render/pondScene'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
 import { Hud } from './ui/hud'
+import { progressionToastText } from './ui/progressionToastPolicy'
 import { ToastLayer } from './ui/toastLayer'
 
 /** 浏览器 localStorage 适配器:读写两侧都吞异常(隐私模式/配额),游戏不受影响 */
@@ -55,9 +56,11 @@ async function main(): Promise<void> {
   // 收集册:捕获自动登记,跨会话持久(隐私模式下写入失败自动降级为内存收集)
   const storage = localStorageKv()
   const collection = new CollectionStore(FISH.map(f => f.id), storage)
-  // 成长:经验/等级/竿,独立键名跨会话持久;启动时从恢复的等级注入当前竿参数
+  // 成长:经验/等级/竿,独立键名跨会话持久;启动时从恢复的等级注入当前竿参数,
+  // 顶栏同步显示恢复的真实等级/竿(老玩家上线即见,不从 1 级竹竿开始闪)
   const progression = new ProgressionStore(storage)
   core.setRodParams(progression.rod().params)
+  hud.setProgression(progression.level(), progression.rod().name)
   // 图鉴面板:只读消费收集册,入口常驻(可用性随阶段变化)
   const collectionPanel = new CollectionPanel(collection)
   // 轻提示层:新收录 / 池塘大满贯,顶部居中,不拦截游戏输入
@@ -123,6 +126,17 @@ async function main(): Promise<void> {
       // 成长:按捕获分值登记经验(非幂等,每次都加);竿档变化 → 注入新参数
       const progress = progression.recordCatch(core.fish.score)
       if (progress.rodUnlocked) core.setRodParams(progress.rodUnlocked.params)
+      // 成长反馈:升级增量喂文案纯函数(未升级 → null 不弹),顶栏即时刷新。
+      // 提示走轻提示层顶部居中,不占蓄力条/绿条/进度条/底部提示的位置
+      if (progress.levelsGained > 0) {
+        const toastText = progressionToastText({
+          levelsGained: progress.levelsGained,
+          rodName: progress.rodUnlocked?.name ?? null,
+          level: progression.level(),
+        })
+        if (toastText) toasts.showText(toastText)
+        hud.setProgression(progression.level(), progression.rod().name)
+      }
     }
     prevPhase = core.phase
     scene.update(core, tk.lastTime / 1000, dt)

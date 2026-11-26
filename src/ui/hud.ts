@@ -1,22 +1,33 @@
 import type { CoreLoop } from '../core/coreLoop'
 
-/** DOM 覆盖层:得分、最高纪录、操作提示、重开按钮。 */
+/** DOM 覆盖层:得分、最高纪录、等级/竿名、操作提示、重开按钮。 */
 export class Hud {
   private scoreEl: HTMLElement
   private bestEl: HTMLElement
   private hintEl: HTMLElement
+  private rodStatusEl: HTMLElement
   private lastScore = -1
   private lastBest = -1
+  private lastRodStatus = ''
 
   constructor(onReset: () => void) {
     this.scoreEl = document.getElementById('score')!
     this.bestEl = document.getElementById('best')!
     this.hintEl = document.getElementById('hint')!
+    this.rodStatusEl = document.getElementById('rod-status')!
     document.getElementById('reset')!.addEventListener('click', () => {
       onReset()
       // 移除按钮焦点,避免之后按空格误触"重开"
       ;(document.activeElement as HTMLElement | null)?.blur()
     })
+  }
+
+  /** 成长常驻展示「等级 N · 竿名」:启动恢复与升级/换竿后各刷新一次,内容不变时不重写 */
+  setProgression(level: number, rodName: string): void {
+    const text = `等级 ${level} · ${rodName}`
+    if (text === this.lastRodStatus) return
+    this.rodStatusEl.textContent = text
+    this.lastRodStatus = text
   }
 
   update(core: CoreLoop): void {

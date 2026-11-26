@@ -25,9 +25,18 @@ export class ToastLayer {
   private container = document.getElementById('toast-layer')!
 
   show(kind: ToastKind): void {
+    this.showText(TOAST_TEXT[kind], kind)
+  }
+
+  /**
+   * 自定义文案的轻提示(如成长系统的升级提示,文案由纯函数给出)。
+   * modifier 可选:追加 toast--{modifier} 类以套用专属样式;省略即默认胶囊样式。
+   * 动画与生命周期与固定种类完全一致。
+   */
+  showText(text: string, modifier?: string): void {
     const el = document.createElement('div')
-    el.className = `toast toast--${kind}`
-    el.textContent = TOAST_TEXT[kind]
+    el.className = modifier ? `toast toast--${modifier}` : 'toast'
+    el.textContent = text
     el.style.animation = `toast-in ${TOAST_FADE_IN_MS}ms ease-out, toast-out ${TOAST_FADE_OUT_MS}ms ease-in ${
       TOAST_LIFETIME_MS - TOAST_FADE_OUT_MS
     }ms forwards`
