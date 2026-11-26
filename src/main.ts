@@ -1,6 +1,9 @@
 import { Application } from 'pixi.js'
+import { CollectionStore } from './core/collection'
 import { CoreLoop } from './core/coreLoop'
+import { FISH } from './core/fishCatalog'
 import { Rng } from './core/rng'
+import type { LoopPhase } from './core/types'
 import { PondScene } from './render/pondScene'
 import { Hud } from './ui/hud'
 
@@ -24,6 +27,28 @@ async function main(): Promise<void> {
   const hud = new Hud(() => core.resetSession())
   const seedEl = document.getElementById('seed')
   if (seedEl) seedEl.textContent = `seed ${seed}`
+
+  // 收集册:捕获自动登记,跨会话持久(隐私模式下写入失败自动降级为内存收集)
+  const collection = new CollectionStore(
+    FISH.map(f => f.id),
+    {
+      get: key => {
+        try {
+          return localStorage.getItem(key)
+        } catch {
+          return null
+        }
+      },
+      set: (key, value) => {
+        try {
+          localStorage.setItem(key, value)
+        } catch {
+          // 写入失败不影响游戏
+        }
+      },
+    },
+  )
+  let prevPhase: LoopPhase = core.phase
 
   // —— 输入:鼠标/触摸 + 键盘(空格 = 起竿,WASD/方向键 = 移动) ——
   const keys = new Set<string>()
@@ -68,6 +93,11 @@ async function main(): Promise<void> {
     }
 
     core.update(dt, { holding: mouseHold || keys.has('Space'), moveX: dx, moveY: dy })
+    // 结算捕获 → 登记进收集册(核心循环自身不感知图鉴)
+    if (core.phase === 'caught' && prevPhase !== 'caught' && core.fish) {
+      collection.recordCatch(core.fish.id)
+    }
+    prevPhase = core.phase
     scene.update(core, tk.lastTime / 1000, dt)
     hud.update(core)
   })
