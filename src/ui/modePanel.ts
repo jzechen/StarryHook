@@ -3,6 +3,7 @@ import type { CoreLoop, GameMode } from '../core/coreLoop'
 import type { TimedBestStore } from '../core/timedBest'
 import { modePanelAllowed } from './modePanelPolicy'
 import { PanelExclusion } from './panelExclusion'
+import { roundJustEnded } from './roundEdgePolicy'
 
 /**
  * 模式选项行(行序固定:无限休闲在上,限时挑战在下);
@@ -114,12 +115,13 @@ export class ModePanel {
     this.entryBtn.disabled = !allowed
     if (this.open && !allowed) this.setOpen(false)
 
-    // 局毕自动回面板(票 #24):roundActive true→false 且模式仍为限时 = 归零强制
-    // 结算完成(核心里 endRound 不改模式;setMode('casual') 也会置否 roundActive,
-    // 但那是玩家在面板里主动选了休闲,不算「一局结束」,不该再弹)。
+    // 局毕自动回面板(票 #24):局毕边沿判定单源在 roundJustEnded(roundEdgePolicy,
+    // 与组合根结算反馈两处消费同一份)——上一帧局进行中、本帧已结束且模式仍为限时
+    // (核心里 endRound 不改模式;setMode('casual') 也会置否 roundActive,但那是玩家
+    // 在面板里主动选了休闲,不算「一局结束」,不该再弹)。
     // 垂钓收尾未完(小游戏脱钩/捕获停留)不打断:先记 pendingReopen,回待机帧再弹。
     const active = core.roundActive
-    if (this.prevRoundActive && !active && core.mode === 'timed') this.pendingReopen = true
+    if (roundJustEnded(this.prevRoundActive, core)) this.pendingReopen = true
     this.prevRoundActive = active
     if (this.pendingReopen && core.phase === 'idle') {
       this.pendingReopen = false

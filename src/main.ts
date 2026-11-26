@@ -25,6 +25,7 @@ import { ModePanel } from './ui/modePanel'
 import { MuteStore } from './ui/muteStore'
 import { PanelExclusion } from './ui/panelExclusion'
 import { progressionToastText } from './ui/progressionToastPolicy'
+import { roundJustEnded } from './ui/roundEdgePolicy'
 import { roundSettlementText } from './ui/roundSettlementText'
 import { AudioSfxPlayer, MuteAwareSfxPlayer } from './ui/sfx'
 import { sfxForEvent } from './ui/sfxMapping'
@@ -160,8 +161,8 @@ async function main(): Promise<void> {
   // 轻提示层:新收录 / 池塘大满贯,顶部居中,不拦截游戏输入
   const toasts = new ToastLayer()
   let prevPhase: LoopPhase = core.phase
-  // 限时局进行中边沿基准(票 #24):true→false 且模式仍限时 = 归零强制结算完成,
-  // 结算提示恰好触发一次(切回无限也置否 roundActive,但 mode 已变,不在此列)
+  // 限时局进行中边沿基准(票 #24):判定单源在 roundJustEnded(roundEdgePolicy),
+  // 此处只存上一帧局标志——true→false 且模式仍限时 = 归零强制结算完成
   let prevRoundActive = core.roundActive
 
   // —— 输入:鼠标/触摸 + 键盘(空格 = 起竿,WASD/方向键 = 移动) ——
@@ -264,13 +265,14 @@ async function main(): Promise<void> {
       }
     }
     prevPhase = core.phase
-    // —— 限时局结算反馈(票 #24):归零强制结算完成(roundActive true→false 且模式
-    // 仍限时)触发恰好一次。切回无限同样会置否 roundActive,但 mode 已变且 setMode
-    // 已把定格分清零——那是玩家主动放弃,不算「一局结束」,不弹。
+    // —— 限时局结算反馈(票 #24):归零强制结算完成触发恰好一次。局毕边沿判定
+    // 单源在 roundJustEnded(roundEdgePolicy,与模式面板两处消费同一份):
+    // 上一帧局进行中、本帧已结束且模式仍限时。切回无限同样会置否 roundActive,
+    // 但 mode 已变且 setMode 已把定格分清零——那是玩家主动放弃,不算「一局结束」,不弹。
     // 本局得分读归零定格分(roundActive 已置否,roundScore 返回定格值,不再漂移);
     // 破纪录判定源 = recordIfHigher 返回值,在定格分上恰好调用一次(严格更高才 true,
     // 持平/更低不更新),「破纪录!」只随真实破纪录追加
-    if (prevRoundActive && !core.roundActive && core.mode === 'timed') {
+    if (roundJustEnded(prevRoundActive, core)) {
       const score = core.roundScore
       const recordBroken = timedBest.recordIfHigher(score)
       toasts.showText(roundSettlementText(score, recordBroken))
