@@ -95,13 +95,24 @@ async function main(): Promise<void> {
   // 经济(票 #18):金币/鱼饵钱包,独立键名跨会话持久(损坏按初始状态降级);
   // 本票接捕获入账与香饵抛竿消耗,商店购竿与购饵 UI 属后续票
   const wallet = new WalletStore(storage)
-  // 香饵生效(票 #19):核心循环的等待时长修正系数来源在抛竿时刻(进入 waiting 边沿,
-  // 核心 cast 内)恰好调用一次 —— 装备香饵且 consumeBaitForCast() 消耗成功(返回 true)
-  // 则本竿等待时长减半(TUNE.wait.min/max 同乘 0.5,分布形状不变);
-  // 未装备或余量耗尽 → 返回 false → 系数 1 = 现行等待分布,自动回退。
-  // 调用次数由核心循环保证每竿一次,余量不会被多扣
+  // 鱼饵生效(票 #19 香饵 + 票 #21 浓饵):核心循环在抛竿时刻(进入 waiting 边沿,
+  // core cast 内)依次调用两个来源闭包——先浓饵标记来源(权重计算点),后等待时长来源。
+  // 本竿饵消耗恰好一次,由先被调用的浓饵来源执行,结果存入 castBait 供两个效果共享:
+  // - 浓饵:装备浓饵且消耗成功 → 权重引擎浓饵入参生效,难鱼权重提升;
+  //   未装备/耗尽 → false,权重 = 现行,自动回退。
+  // - 香饵:装备香饵且消耗成功 → 等待时长减半(TUNE.wait.min/max 同乘 0.5,分布形状不变)。
+  // 浓饵不减半等待、香饵不提升难鱼权重;互斥由装备槽既有语义保证(同一时间只装备一种,
+  // wallet.equip 切换不清余量)。生效判定 = equippedBait() 与 consumeBaitForCast()
+  // 同步配对(单线程内连续调用,consume 消耗的正是刚才读到的装备槽),
+  // 故 wallet.consumeBaitForCast 的 boolean 返回值契约保持不变。
   const SCENTED_BAIT_WAIT_SCALE = 0.5
-  core.setWaitTimeScale(() => (wallet.consumeBaitForCast() ? SCENTED_BAIT_WAIT_SCALE : 1))
+  let castBait: string | null = null
+  core.setRichBaitSource(() => {
+    const equipped = wallet.equippedBait()
+    castBait = wallet.consumeBaitForCast() ? equipped : null
+    return castBait === 'nonger'
+  })
+  core.setWaitTimeScale(() => (castBait === 'xianger' ? SCENTED_BAIT_WAIT_SCALE : 1))
   // 面板互斥协调器:任一面板打开即收起其余,右侧同位不重叠遮挡;
   // 面板构造时自注册,组合根不再串互斥回调,商店面板(GLOSSARY 经济与模式)注册即入
   const panelExclusion = new PanelExclusion()

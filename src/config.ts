@@ -53,6 +53,8 @@ export const TUNE = {
   },
   /** 蓄力对出鱼权重的影响强度:weight = 1 + power × poolBias × difficulty */
   poolBias: 0.9,
+  /** 浓饵对出鱼权重的修正强度(票 #21):装备生效时 weight ×(1 + richBaitBias × difficulty)——难度 1 ×1.2、难度 3 ×1.6、难度 5 ×2.0,恒 > 1 永不归零 */
+  richBaitBias: 0.2,
   world: {
     /** 会话天气为雨的概率(会话开始一次抽样,会话内恒定;晴 = 1 − 该值) */
     rainChance: 0.3,

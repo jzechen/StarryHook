@@ -12,11 +12,11 @@ import { shopPanelAllowed } from './shopPanelPolicy'
 export type ShopBuyOutcome = 'ok' | 'insufficient' | 'meaningless'
 
 /**
- * 本票已上架的鱼饵(spec #17:权重引擎未就位前商店只上竿与香饵)。
- * 浓饵随 D 世界权重引擎(票 #14~#16)接入后开放——把浓饵 id 加入本集合即上货;
- * 此差异只存在于商店 UI 侧:BAITS 目录与钱包库存侧不感知(浓饵库存恒 0)。
+ * 已上架的鱼饵(spec #17 经济系统):香饵(票 #19 等待减半)与浓饵
+ * (票 #21 难鱼权重提升——D 世界权重引擎已就位,占位解除)。
+ * 上架 = 价格/库存/购买钮按 BAITS 表自动生成,购买走组合根注入的 buyBait 既有路径。
  */
-const BAITS_ON_SALE: ReadonlySet<string> = new Set(['xianger'])
+const BAITS_ON_SALE: ReadonlySet<string> = new Set(['xianger', 'nonger'])
 
 /** 购买反馈的停留时长(行内提示自动消失;关闭面板立即清除) */
 const FEEDBACK_MS = 3000
