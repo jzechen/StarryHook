@@ -9,6 +9,7 @@ import { FISH } from './core/fishCatalog'
 import { ProgressionStore } from './core/progression'
 import { Rng } from './core/rng'
 import type { LoopPhase } from './core/types'
+import { WalletStore } from './core/wallet'
 import { PondScene } from './render/pondScene'
 import { loadSceneTextures } from './render/textures'
 import { applyViewportToCanvas } from './render/viewport'
@@ -89,6 +90,9 @@ async function main(): Promise<void> {
   const progression = new ProgressionStore(storage)
   core.setRodParams(progression.rod().params)
   hud.setProgression(progression.level(), progression.rod().name)
+  // 经济(票 #18):金币/鱼饵钱包,独立键名跨会话持久(损坏按初始状态降级);
+  // 本票只接捕获入账,商店购竿与饵的消费 UI 属后续票
+  const wallet = new WalletStore(storage)
   // 面板互斥协调器:任一面板打开即收起其余,右侧同位不重叠遮挡;
   // 面板构造时自注册,组合根不再串互斥回调,商店面板(GLOSSARY 经济与模式)注册即入
   const panelExclusion = new PanelExclusion()
@@ -177,6 +181,9 @@ async function main(): Promise<void> {
         sfx.play(sfxForEvent('level-up'))
         hud.setProgression(progression.level(), progression.rod().name)
       }
+      // 经济:按捕获分值入账金币(图鉴 → 经验之后的第三路,三系统无耦合;
+      // 金币 = 鱼分值,非幂等每次都加,跨会话持久)
+      wallet.earn(core.fish.score)
     }
     // —— 音效:相位边沿触发(映射纯函数查表;静音时播放器空操作)——
     // 抛竿入水 = 进入 waiting 边沿;咬钩 = 进入 bite 边沿;捕获/脱钩 = 结算相位边沿。

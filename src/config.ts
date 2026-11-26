@@ -79,14 +79,35 @@ export interface BarParams {
   bounce: number
 }
 
-/** 一档鱼竿:解锁条件(等级制,商店购买路径待经济系统扩展)与整组绿条参数 */
+/** 一档鱼竿:解锁条件(等级制 + 商店购买两条路径)与整组绿条参数 */
 export interface RodDef {
   id: string
   name: string
   /** 达到该等级即自动解锁并切换 */
   unlockLevel: number
+  /** 商店售价(金币);等级已解锁的竿购买无意义(商店标"已拥有") */
+  price: number
   params: BarParams
 }
+
+/** 一种鱼饵:装备后管定数竿、抛竿消耗(spec #17 经济系统;库存与装备槽由 WalletStore 管理) */
+export interface BaitDef {
+  id: string
+  name: string
+  /** 单次购买提供的竿数(起步 10) */
+  charges: number
+  /** 单次购买价格(金币) */
+  price: number
+}
+
+/**
+ * 鱼饵表:香饵(等待时长减半)与浓饵(难鱼权重提升)。
+ * 浓饵的玩法效果随 D 世界权重引擎接入,本表先行定义目录与调参叶数值。
+ */
+export const BAITS: BaitDef[] = [
+  { id: 'xianger', name: '香饵', charges: 10, price: 30 },
+  { id: 'nonger', name: '浓饵', charges: 10, price: 50 },
+]
 
 /**
  * 竿档表:3 档,解锁等级 L1/L3/L6 为起步调参值。
@@ -98,6 +119,7 @@ export const RODS: RodDef[] = [
     id: 'zhugan',
     name: '竹竿',
     unlockLevel: 1,
+    price: 0, // 初始竿,永远已拥有(等级解锁),不可购
     // 逐字复制 TUNE.bar:竹竿 = 现行手感(结构上由 config.test.ts 锁定)
     params: { ...TUNE.bar },
   },
@@ -105,12 +127,14 @@ export const RODS: RodDef[] = [
     id: 'tangan',
     name: '碳竿',
     unlockLevel: 3,
+    price: 200, // 起步值:约 10~15 次普通捕获的金币(鱼分值 10~50)
     params: { height: 0.3, vUp: 1.5, vDown: 1.22, response: 16, tapBoost: 0.58, bounce: 0.28 },
   },
   {
     id: 'xinggou',
     name: '星钩',
     unlockLevel: 6,
+    price: 600, // 起步值:后期大件
     params: { height: 0.32, vUp: 1.6, vDown: 1.3, response: 17, tapBoost: 0.62, bounce: 0.26 },
   },
 ]
