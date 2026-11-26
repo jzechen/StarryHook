@@ -65,7 +65,7 @@
         color: #ffd23f; background: rgba(12, 47, 63, .88);
         border: 1px solid rgba(255, 210, 63, .55); border-radius: 999px;
         text-shadow: 0 1px 4px rgba(0, 0, 0, .6);
-        animation: toast-in .18s ease-out, toast-out .3s ease-in 1.7s forwards;
+        /* 动画时序由 toastLayer.ts 依 TOAST_LIFETIME_MS 推导后内联写入,此处只留 keyframes */
       }
       .toast--grand-slam {
         font-size: 24px; color: #fff3b0; border-color: rgba(255, 210, 63, .9);
