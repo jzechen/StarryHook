@@ -42,7 +42,11 @@ export class CollectionPanel {
   private renderedCollected = -1
   private allowed = true
 
-  constructor(private collection: CollectionStore) {
+  constructor(
+    private collection: CollectionStore,
+    // 面板开合通知组合根:与换水域面板(票 #15)互斥打开,避免右侧两面板重叠遮挡
+    private onOpenChange?: (open: boolean) => void,
+  ) {
     this.entryBtn = document.getElementById('collection-entry') as HTMLButtonElement
     this.panelEl = document.getElementById('collection-panel')!
     this.progressEl = document.getElementById('collection-progress')!
@@ -92,9 +96,15 @@ export class CollectionPanel {
     if (this.open) this.refresh()
   }
 
+  /** 供组合根做面板互斥(图鉴面板打开时收起换水域面板) */
+  close(): void {
+    this.setOpen(false)
+  }
+
   private setOpen(open: boolean): void {
     this.open = open
     this.panelEl.hidden = !open
+    this.onOpenChange?.(open)
   }
 
   private refresh(): void {

@@ -1,7 +1,9 @@
 import { Application, Container, Graphics, Sprite, Text, TilingSprite } from 'pixi.js'
 import { TUNE } from '../config'
 import type { CoreLoop } from '../core/coreLoop'
-import type { LoopPhase } from '../core/types'
+import type { LoopPhase, WaterAreaId } from '../core/types'
+import { DEFAULT_AREA } from '../core/waterAreas'
+import { AREA_PALETTES } from './areaPalette'
 import type { Facing, SceneTextures, WaveEdge } from './textures'
 import { FISH_FRAME_COUNT, PLAYER_FRAME_COUNT, TILE, WAVE_FRAME_COUNT, WATER_FRAME_COUNT } from './textures'
 
@@ -68,6 +70,8 @@ export class PondScene {
   private waterTiling: TilingSprite
   /** 池塘描边(静态几何:构造期绘制一次) */
   private pondStroke = new Graphics()
+  /** 最近一次应用的水域色调(变化才重设 tint,票 #15) */
+  private renderedArea: WaterAreaId | null = null
   private waveLayer = new Container()
   private waveTiles: WaveTile[] = []
   private ripples = new Graphics()
@@ -121,12 +125,14 @@ export class PondScene {
     // 不能挪进 update:Pixi v8 Graphics 指令列表只增不减,每帧重画且不 clear 会让
     // 指令数/内存随游玩时长线性增长(泄漏守护见 pondScene.test.ts)。
     // 画布为固定 480×270 逻辑分辨率(视口层信箱缩放,见 ADR-0002),构造后矩形不变。
+    // 颜色走「白底几何 + tint = 目标色」(乘法混色与直接 fill 等价):水域色调
+    // (票 #15)由此只需换 tint 而不必重画静态几何,目标色单源 AREA_PALETTES。
     this.pondFill
       .rect(P.x0 * W, P.y0 * H, (P.x1 - P.x0) * W, (P.y1 - P.y0) * H)
-      .fill(0x5c9ce2)
+      .fill(0xffffff)
     this.pondStroke
       .rect(P.x0 * W, P.y0 * H, (P.x1 - P.x0) * W, (P.y1 - P.y0) * H)
-      .stroke({ width: 4, color: 0x0f3a4d })
+      .stroke({ width: 4, color: 0xffffff })
 
     this.bang = new Text({
       text: '!',
@@ -178,6 +184,26 @@ export class PondScene {
       this.mgFishSprite,
       this.mgProgress,
     )
+
+    // 首帧前先落默认水域色调(此后随 core.area 变化在 update 里切换)
+    this.applyAreaPalette(DEFAULT_AREA)
+  }
+
+  /**
+   * 应用当前水域的背景/水面色调(票 #15,spec #13):三水域共用素材,以 PixiJS
+   * tint 乘法混色区分——背景岸块、流水贴图、池底/描边四处,色调单源 AREA_PALETTES;
+   * 浮标/角色/鱼精灵等实体不在列(不 tint)。变化才重设,update 每帧调用无开销。
+   * 快照缺 area(旧替身/极端情形)按默认水域渲染,渲染层不因缺字段抛错。
+   */
+  private applyAreaPalette(area: WaterAreaId | undefined): void {
+    const target = area ?? DEFAULT_AREA
+    if (target === this.renderedArea) return
+    this.renderedArea = target
+    const palette = AREA_PALETTES[target]
+    this.bankTiling.tint = palette.bank
+    this.waterTiling.tint = palette.water
+    this.pondFill.tint = palette.fill
+    this.pondStroke.tint = palette.stroke
   }
 
   /** 沿池边一圈布置泡沫贴片:上边自左向右、右边自上而下、下边自右向左、左边自下而上 */
@@ -225,6 +251,9 @@ export class PondScene {
 
     // 池水流动:13 帧按周期轮换
     this.waterTiling.texture = this.textures.waterFrames[Math.floor(t / WATER_FRAME_PERIOD) % WATER_FRAME_COUNT]
+
+    // 水域演出(票 #15):当前水域决定背景/水面色调,变化才重设 tint
+    this.applyAreaPalette(core.area)
 
     // 池塘底色/描边为构造期静态几何(见构造函数),update 不再触碰,避免指令累积
 

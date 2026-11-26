@@ -1,15 +1,19 @@
 import type { CoreLoop } from '../core/coreLoop'
+import type { EnvState } from '../core/types'
+import { envBadgeText } from './envBadgeText'
 
-/** DOM 覆盖层:得分、最高纪录、等级/竿名、操作提示、重开/静音按钮。 */
+/** DOM 覆盖层:得分、最高纪录、等级/竿名、环境徽章、操作提示、重开/静音按钮。 */
 export class Hud {
   private scoreEl: HTMLElement
   private bestEl: HTMLElement
   private hintEl: HTMLElement
   private rodStatusEl: HTMLElement
+  private envBadgeEl: HTMLElement
   private muteBtn: HTMLElement
   private lastScore = -1
   private lastBest = -1
   private lastRodStatus = ''
+  private lastEnvBadge = ''
 
   constructor(
     onReset: () => void,
@@ -20,6 +24,7 @@ export class Hud {
     this.bestEl = document.getElementById('best')!
     this.hintEl = document.getElementById('hint')!
     this.rodStatusEl = document.getElementById('rod-status')!
+    this.envBadgeEl = document.getElementById('env-badge')!
     this.muteBtn = document.getElementById('mute-toggle')!
     document.getElementById('reset')!.addEventListener('click', () => {
       onReset()
@@ -47,7 +52,20 @@ export class Hud {
     this.lastRodStatus = text
   }
 
+  /**
+   * 环境徽章(票 #15):「春 · 日 · 晴」,文案由纯函数 envBadgeText 派生,
+   * 与出鱼权重同源于 core.env。季节/昼夜按真实时间流转、天气会话常量,
+   * 内容不变不重写(与得分/等级同款守卫);水域不进徽章,换水域面板可见。
+   */
+  setEnv(env: EnvState): void {
+    const text = envBadgeText(env)
+    if (text === this.lastEnvBadge) return
+    this.envBadgeEl.textContent = text
+    this.lastEnvBadge = text
+  }
+
   update(core: CoreLoop): void {
+    this.setEnv(core.env)
     if (core.score !== this.lastScore) {
       this.scoreEl.textContent = String(core.score)
       this.lastScore = core.score
