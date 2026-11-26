@@ -2,7 +2,7 @@ import type { CollectionStore } from '../core/collection'
 import type { CoreLoop } from '../core/coreLoop'
 import { FISH } from '../core/fishCatalog'
 import type { BehaviorType } from '../core/types'
-import { FISH_FRAME_SIZE, FISH_SHAPE_ROW } from '../render/fishAtlas'
+import { fishSpriteOffsetY } from '../render/fishAtlas'
 import { collectionPanelAllowed } from './collectionPanelPolicy'
 import { sortFishByDifficulty } from './collectionPanelOrder'
 
@@ -17,7 +17,8 @@ const BEHAVIOR_LABELS: Record<BehaviorType, string> = {
 
 /**
  * 条目精灵显示倍率:DOM 覆盖层是原生分辨率,2x 让 16px 精灵在 12px 文本旁有存在感。
- * 背景定位与动画帧位移都按此倍率换算(见 index.html 的 .fish-sprite)。
+ * 行序 → 背景定位的换算在 render/fishAtlas.ts(fishSpriteOffsetY,切片契约单源),
+ * 这里只出倍率;index.html 的 .fish-sprite(尺寸/背景尺寸/帧位移)为同值 CSS 侧,注释互指。
  */
 const SPRITE_SCALE = 2
 
@@ -55,11 +56,12 @@ export class CollectionPanel {
     for (let i = 0; i < PANEL_FISH.length; i++) {
       const li = document.createElement('li')
       li.className = 'fish-item locked'
-      // 条目精灵:fish-atlas.png 按 CSS sprite 定位(行序契约见 render/fishAtlas.ts);
+      // 条目精灵:Y 偏移由 fishSpriteOffsetY 依图集行序给出(切片契约单源,见 render/fishAtlas.ts),
+      // 帧间横向位移走 index.html 的 fish-swim 动画;
       // 未捕获由 .locked 的滤镜压成统一灰剪影(不泄名称与配色),动画一并停掉
       const spriteEl = document.createElement('span')
       spriteEl.className = 'fish-sprite'
-      spriteEl.style.backgroundPositionY = `${-FISH_SHAPE_ROW[PANEL_FISH[i]!.shape] * FISH_FRAME_SIZE * SPRITE_SCALE}px`
+      spriteEl.style.backgroundPositionY = `${fishSpriteOffsetY(PANEL_FISH[i]!.shape, SPRITE_SCALE)}px`
       const nameEl = document.createElement('span')
       nameEl.className = 'fish-name'
       nameEl.textContent = '???'
