@@ -59,6 +59,11 @@ export class CoreLoop {
     this.barParams = params
   }
 
+  /** 当前竿参数只读暴露:渲染层(绿条绘制)与物理同源,换竿即视觉跟随 */
+  get rodParams(): Readonly<BarParams> {
+    return this.barParams
+  }
+
   /** 每帧推进 */
   update(dt: number, input: UpdateInput): void {
     const holding = input.holding
