@@ -1,8 +1,11 @@
 # 场景素材与署名
 
+> **署名已归并(spec #12)**:正式署名登记处移至发行根的 [`THIRD-PARTY-NOTICES.md`](../../THIRD-PARTY-NOTICES.md),
+> 根 README 增有「素材与字体署名」速览段。本文件保留派生规则与素材管线细节(下方内容仍准确),
+> 许可以 NOTICES 为准。
+
 池塘场景像素素材,16x16 基线(480×270 = 30×17 tile)。全部素材许可为 **CC0 / 自绘**,
-切片统一经 `src/render/textures.ts`(唯一入口)。spec #8 后续会把署名统一合并进
-发行署名文件(THIRD-PARTY-NOTICES),本文件是当前的来源登记处。
+切片统一经 `src/render/textures.ts`(唯一入口)。
 
 ## 文件清单
 

@@ -1,4 +1,8 @@
 import { Application } from 'pixi.js'
+// 像素字体自托管(spec #12):fontsource 纯 CSS + woff2,Vite 负责打包与按需加载。
+// font-display: swap → 首帧可能以系统字体闪现再切换(轻微 FOUT,票面接受);
+// 不做预载:该包为单文件全量中文字集(woff2 约 600KB),预载会挤占首屏关键资源
+import '@fontsource/fusion-pixel-12px-proportional-sc'
 import { CollectionStore, type KvStorage } from './core/collection'
 import { CoreLoop } from './core/coreLoop'
 import { FISH } from './core/fishCatalog'
@@ -11,7 +15,10 @@ import { applyViewportToCanvas } from './render/viewport'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
 import { Hud } from './ui/hud'
+import { MuteStore } from './ui/muteStore'
 import { progressionToastText } from './ui/progressionToastPolicy'
+import { AudioSfxPlayer, MuteAwareSfxPlayer } from './ui/sfx'
+import { sfxForEvent } from './ui/sfxMapping'
 import { ToastLayer } from './ui/toastLayer'
 
 /** 浏览器 localStorage 适配器:读写两侧都吞异常(隐私模式/配额),游戏不受影响 */
@@ -60,12 +67,20 @@ async function main(): Promise<void> {
   // 场景素材:图集加载 + 切片(素材文件 → 图集 → 精灵 管线入口)
   const textures = await loadSceneTextures()
   const scene = new PondScene(app, textures)
-  const hud = new Hud(() => core.resetSession())
   const seedEl = document.getElementById('seed')
   if (seedEl) seedEl.textContent = `seed ${seed}`
 
   // 收集册:捕获自动登记,跨会话持久(隐私模式下写入失败自动降级为内存收集)
   const storage = localStorageKv()
+  // 静音:纯 UI 层状态,独立键持久(损坏按默认非静音降级);
+  // 音效播放器注入式 —— 外层静音门 + 内层浏览器 Audio 实现,测试可整体替换
+  const mute = new MuteStore(storage)
+  const sfx = new MuteAwareSfxPlayer(new AudioSfxPlayer(), () => mute.muted())
+  const hud = new Hud(
+    () => core.resetSession(),
+    () => mute.toggle(),
+  )
+  hud.setMuted(mute.muted())
   const collection = new CollectionStore(FISH.map(f => f.id), storage)
   // 成长:经验/等级/竿,独立键名跨会话持久;启动时从恢复的等级注入当前竿参数,
   // 顶栏同步显示恢复的真实等级/竿(老玩家上线即见,不从 1 级竹竿开始闪)
@@ -128,7 +143,11 @@ async function main(): Promise<void> {
       const before = snapshotOf(collection, fishId)
       collection.recordCatch(fishId)
       const decision = collectionToasts(before, snapshotOf(collection, fishId))
-      if (decision.newEntry) toasts.show('new-entry')
+      if (decision.newEntry) {
+        toasts.show('new-entry')
+        // 与既有提示同点触发:新收录音效跟提示一起出
+        sfx.play(sfxForEvent('new-entry'))
+      }
       if (decision.grandSlam) {
         toasts.show('grand-slam')
         // 一辈子只弹一次:弹出的同时置持久化标记,重开/刷新后不再弹
@@ -146,7 +165,28 @@ async function main(): Promise<void> {
           level: progression.level(),
         })
         if (toastText) toasts.showText(toastText)
+        // 与升级提示同点触发
+        sfx.play(sfxForEvent('level-up'))
         hud.setProgression(progression.level(), progression.rod().name)
+      }
+    }
+    // —— 音效:相位边沿触发(映射纯函数查表;静音时播放器空操作)——
+    // 抛竿入水 = 进入 waiting 边沿;咬钩 = 进入 bite 边沿;捕获/脱钩 = 结算相位边沿。
+    // idle/charging/minigame 三相位无音效,不查表
+    if (core.phase !== prevPhase) {
+      switch (core.phase) {
+        case 'waiting':
+          sfx.play(sfxForEvent('cast-splash'))
+          break
+        case 'bite':
+          sfx.play(sfxForEvent('bite'))
+          break
+        case 'caught':
+          sfx.play(sfxForEvent('catch'))
+          break
+        case 'escaped':
+          sfx.play(sfxForEvent('escape'))
+          break
       }
     }
     prevPhase = core.phase
