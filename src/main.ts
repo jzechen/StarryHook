@@ -115,8 +115,12 @@ async function main(): Promise<void> {
   const waterPanel = new WaterPanel(core, panelExclusion)
   // 商店面板(票 #20):购买回调在组合根接线 wallet/progression 的既有公开方法,core/ 零改动。
   // 购竿 = 可负担预检(读 wallet.coins)→ progression.purchaseRod(无意义购买在此拒绝:
-  // 已拥有/初始竿/降档)→ wallet.spend 扣款 → 竿立即生效(绿条参数注入 + 顶栏竿名刷新);
-  // 预检与扣款在同一同步块内,单线程无插入,扣款必成功(spend 失败分支仅防御性兜底)。
+  // 已拥有/初始竿/降档)→ wallet.spend 扣款 → 竿立即生效(绿条参数注入 + 顶栏竿名刷新)。
+  // spend 的拒绝分支在此不可达,理由可查证:金额取竿表正数常量(invalid 分支不成立);
+  // 预检与 spend 处于同一同步块,中间仅调用 progression.purchaseRod(独立存储键,
+  // 不触钱包),余额不可能在两步之间变少(insufficient 的唯一成因不成立)。
+  // 若未来在两步之间引入会动余额的路径,spend 会如实拒绝并反馈 insufficient
+  // (拒绝时状态原样,不会扣成负数),不会静默出账。
   const buyRodOutcome = (rodId: string): ShopBuyOutcome => {
     const rod = RODS.find(r => r.id === rodId)
     if (!rod) return 'meaningless'
