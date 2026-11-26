@@ -3,3 +3,5 @@ dist/
 *.local
 .DS_Store
 .idea
+# Claude Code 本地目录(含仓库内 worktree 副本:嵌套副本会被 vitest 重复扫入,测试数翻倍假象)
+.claude/
