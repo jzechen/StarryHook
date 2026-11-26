@@ -53,7 +53,14 @@ export class CoreLoop {
   private pool: number[] = []
   /** 当前竿的绿条参数(默认 = 现行手感;成长系统经 setRodParams 注入) */
   private barParams: BarParams = TUNE.bar
-  private waitTime = 0
+  /** 本竿剩余等待秒数(waiting 中逐帧递减,咬钩判定用;抛竿时刻由等待时长参数源算定) */
+  private waitRemaining = 0
+  /**
+   * 等待时长修正系数来源:抛竿时刻调用一次,返回本竿系数(须为正数;1 = 现行分布)。
+   * 默认恒 1 —— 现行分布逐帧一致,主随机序列一个 draw 都不动;
+   * 组合根据此接线香饵(票 #19):consumeBaitForCast 生效时返回 0.5,耗尽/未装备返回 1。
+   */
+  private waitTimeScale: () => number = () => 1
   private settleTime = 0
   private holding = false
   /** 距上次按下经过的秒数(输入缓冲用) */
@@ -98,9 +105,23 @@ export class CoreLoop {
     this.barParams = params
   }
 
+  /**
+   * 设置等待时长修正系数来源(组合根在启动时注入一次,来源内部读实时库存状态);
+   * 仅换时长来源,状态机逻辑不变。来源在每次抛竿时刻被调用一次,
+   * 其返回值即本竿系数——调用次数由核心循环保证,调用方据此做一次性消耗不会被多扣。
+   */
+  setWaitTimeScale(source: () => number): void {
+    this.waitTimeScale = source
+  }
+
   /** 当前竿参数只读暴露:渲染层(绿条绘制)与物理同源,换竿即视觉跟随 */
   get rodParams(): Readonly<BarParams> {
     return this.barParams
+  }
+
+  /** 本竿等待时长只读暴露:与等待递减同源(等待分布测试与香饵效果提示读取,不做第二份计算) */
+  get waitTime(): number {
+    return this.waitRemaining
   }
 
   /** 每帧推进 */
@@ -142,8 +163,8 @@ export class CoreLoop {
         } else {
           this.reelT = 0
         }
-        this.waitTime -= dt
-        if (this.phase === 'waiting' && this.waitTime <= 0) this.startBite()
+        this.waitRemaining -= dt
+        if (this.phase === 'waiting' && this.waitRemaining <= 0) this.startBite()
         break
       case 'bite':
         this.biteWindow -= dt
@@ -201,7 +222,10 @@ export class CoreLoop {
     this.bobberDist = this.power
     this.castX = this.px
     this.castY = this.py
-    this.waitTime = this.rng.range(TUNE.wait.min, TUNE.wait.max)
+    // 等待时长 = 现行分布 × 本竿修正系数(来源在抛竿时刻调用一次;
+    // min/max 同乘系数,分布形状不变,抽取序列不增不减)
+    const scale = this.waitTimeScale()
+    this.waitRemaining = this.rng.range(TUNE.wait.min * scale, TUNE.wait.max * scale)
     this.reelT = 0
     this.fish = null
     this.phase = 'waiting'
