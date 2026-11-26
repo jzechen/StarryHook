@@ -45,7 +45,31 @@
       #coins { color: #ffd23f; }
       #bait-badge { opacity: .95; }
       #bait-badge[hidden] { display: none; }
-      #water-entry:disabled, #shop-entry:disabled { opacity: .4; cursor: not-allowed; }
+      #water-entry:disabled, #shop-entry:disabled, #mode-entry:disabled { opacity: .4; cursor: not-allowed; }
+      /* 倒计时(票 #24):限时挑战逐秒「1:23」,金色与金币/得分同层;无限模式整元素隐藏 */
+      #countdown { color: #ffd23f; }
+      #countdown[hidden] { display: none; }
+      /* 模式面板(票 #24):与既有三面板同族样式,四面板经 PanelExclusion 互斥打开;
+         限时最佳纪录常驻面板尾(单局口径,跨会话持久,见 core/timedBest.ts) */
+      #mode-panel {
+        pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 244px;
+        background: rgba(12, 47, 63, .92);
+        border: 1px solid rgba(159, 216, 232, .5); border-radius: 14px;
+        padding: 12px 14px; font-size: 12px;
+      }
+      #mode-panel[hidden] { display: none; }
+      #mode-list { margin: 10px 0 0; display: grid; gap: 6px; }
+      .mode-item {
+        display: flex; align-items: baseline; gap: 10px; width: 100%;
+        font: inherit; text-align: left; padding: 7px 12px;
+        color: #eaf4f6; background: rgba(23, 80, 107, .35);
+        border: 1px solid transparent; border-radius: 9px; cursor: pointer;
+      }
+      .mode-item:hover { background: rgba(23, 80, 107, .7); }
+      .mode-item .mode-hint { margin-left: auto; opacity: .9; }
+      .mode-item.current { border-color: rgba(255, 210, 63, .55); }
+      .mode-item .mode-current { color: #ffd23f; }
+      #mode-best { margin-top: 10px; opacity: .9; }
       /* 换水域面板(票 #15):与图鉴面板同族样式,两面板互斥打开(见 main.ts 接线) */
       #water-panel {
         pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 244px;
@@ -168,11 +192,14 @@
         <span id="rod-status"></span><!-- 初始文本由 Hud 依恢复的成长状态写入(老玩家上线即真实等级/竿) -->
         <span id="env-badge"></span><!-- 环境徽章(票 #15):「春 · 日 · 晴」,初始文本由 Hud 依核心环境状态写入;水域不进徽章,换水域面板可见 -->
         <span id="bait-badge" hidden></span><!-- 装备饵余量(review 修复,票 #17 故事 10):「香饵 ×9」,垂钓中商店不可开故常驻顶栏;未装备/耗尽自动隐藏,初始由 Hud 依钱包写入 -->
+        <span id="countdown" hidden></span><!-- 顶栏倒计时(票 #24):限时挑战逐秒「1:23」,初始由 Hud 依核心模式状态写入;无限模式整元素隐藏,无残留 -->
         <!-- 换水域入口(票 #15):可用性随阶段变化(仅待机,见 waterSwitchPolicy),垂钓中置灰 -->
         <button id="water-entry" type="button" class="pill">换水域</button>
         <!-- 商店入口(票 #20):可用性随阶段变化(仅待机,见 shopPanelPolicy),垂钓中置灰 -->
         <button id="shop-entry" type="button" class="pill">商店</button>
         <button id="collection-entry" type="button" class="pill">图鉴</button>
+        <!-- 模式入口(票 #24):挂位与重开相邻(顶栏已满,不再新起一段);可用性随阶段变化(仅待机,见 modePanelPolicy),垂钓中置灰 -->
+        <button id="mode-entry" type="button" class="pill">模式</button>
         <button id="reset" type="button" class="pill">重开</button>
         <!-- 静音开关(spec #12):图标即状态,🔊 可听 / 🔇 已静音;持久化见 ui/muteStore.ts -->
         <button id="mute-toggle" type="button" class="pill" aria-label="静音">🔊</button>
@@ -203,6 +230,14 @@
         </div>
         <div id="shop-list"></div><!-- 行由 ShopPanel 依竿表(RODS)与鱼饵表(BAITS)生成:竿三档 + 香饵 + 浓饵(均含购买,饵行含装备切换与「装备中」尾注) -->
         <div id="shop-feedback" hidden></div><!-- 购买反馈:面板内行内提示,不用 alert -->
+      </div>
+      <div id="mode-panel" hidden>
+        <div class="panel-head">
+          <span class="panel-title">模式</span>
+          <button id="mode-close" type="button" class="pill" aria-label="关闭模式">✕ 关闭</button>
+        </div>
+        <div id="mode-list"></div><!-- 行由 ModePanel 生成:无限休闲 / 限时挑战 + 当前模式标识;切换走核心 setMode -->
+        <div id="mode-best"></div><!-- 限时单局最高纪录(票 #22/#23 纪录双轨),初始文本由 ModePanel 依 TimedBestStore 写入 -->
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

@@ -2,7 +2,7 @@ import type { CoreLoop } from '../core/coreLoop'
 import type { EnvState } from '../core/types'
 import { envBadgeText } from './envBadgeText'
 
-/** DOM 覆盖层:得分、最高纪录、金币、等级/竿名、环境徽章、装备饵余量、操作提示、重开/静音按钮。 */
+/** DOM 覆盖层:得分、最高纪录、倒计时、金币、等级/竿名、环境徽章、装备饵余量、操作提示、重开/静音按钮。 */
 export class Hud {
   private scoreEl: HTMLElement
   private bestEl: HTMLElement
@@ -11,6 +11,7 @@ export class Hud {
   private rodStatusEl: HTMLElement
   private envBadgeEl: HTMLElement
   private baitBadgeEl: HTMLElement
+  private countdownEl: HTMLElement
   private muteBtn: HTMLElement
   private lastScore = -1
   private lastBest = -1
@@ -19,6 +20,8 @@ export class Hud {
   private lastEnvBadge = ''
   /** 首帧哨兵:空串不是合法徽章文案(合法 = null 或「饵名 ×n」),首帧必写一次 */
   private lastBaitBadge: string | null = ''
+  /** 首帧哨兵:空串不是合法倒计时文案(合法 = null 或「1:23」),首帧必写一次 */
+  private lastCountdown: string | null = ''
 
   constructor(
     onReset: () => void,
@@ -32,6 +35,7 @@ export class Hud {
     this.rodStatusEl = document.getElementById('rod-status')!
     this.envBadgeEl = document.getElementById('env-badge')!
     this.baitBadgeEl = document.getElementById('bait-badge')!
+    this.countdownEl = document.getElementById('countdown')!
     this.muteBtn = document.getElementById('mute-toggle')!
     document.getElementById('reset')!.addEventListener('click', () => {
       onReset()
@@ -91,6 +95,19 @@ export class Hud {
     this.baitBadgeEl.textContent = text ?? ''
     this.baitBadgeEl.hidden = text === null
     this.lastBaitBadge = text
+  }
+
+  /**
+   * 顶栏倒计时(票 #24):限时挑战显示剩余时间,文案由纯函数 countdownBadgeText
+   * 派生(「1:23」逐秒,向上取整);null(无限休闲)即隐藏——切回无限核心计时
+   * 状态已完全清除,顶栏随之无残留。内容变化才重写(与装备饵徽章同款守卫),
+   * 文案每秒才变一次,不逐帧刷 DOM。
+   */
+  setCountdown(text: string | null): void {
+    if (text === this.lastCountdown) return
+    this.countdownEl.textContent = text ?? ''
+    this.countdownEl.hidden = text === null
+    this.lastCountdown = text
   }
 
   update(core: CoreLoop): void {
