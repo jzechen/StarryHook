@@ -63,8 +63,10 @@ export class PondScene {
   // —— 分层容器:自下而上 = 背景 → 水体 → 岸线波纹 → 特效 → 实体 → 覆盖 UI ——
   private world = new Container()
   private bankTiling: TilingSprite
+  /** 池塘底色(静态几何:构造期绘制一次,见构造函数内的泄漏说明) */
   private pondFill = new Graphics()
   private waterTiling: TilingSprite
+  /** 池塘描边(静态几何:构造期绘制一次) */
   private pondStroke = new Graphics()
   private waveLayer = new Container()
   private waveTiles: WaveTile[] = []
@@ -114,6 +116,17 @@ export class PondScene {
     const pondH = (P.y1 - P.y0) * H
     this.waterTiling = new TilingSprite({ texture: textures.waterFrames[0], width: pondW, height: pondH })
     this.waterTiling.position.set(px0, py0)
+
+    // 池塘底色与描边:静态几何,构造期只画一次(底色与流水贴图同源,平铺边缘不露馅)。
+    // 不能挪进 update:Pixi v8 Graphics 指令列表只增不减,每帧重画且不 clear 会让
+    // 指令数/内存随游玩时长线性增长(泄漏守护见 pondScene.test.ts)。
+    // 画布为固定 480×270 逻辑分辨率(视口层信箱缩放,见 ADR-0002),构造后矩形不变。
+    this.pondFill
+      .rect(P.x0 * W, P.y0 * H, (P.x1 - P.x0) * W, (P.y1 - P.y0) * H)
+      .fill(0x5c9ce2)
+    this.pondStroke
+      .rect(P.x0 * W, P.y0 * H, (P.x1 - P.x0) * W, (P.y1 - P.y0) * H)
+      .stroke({ width: 4, color: 0x0f3a4d })
 
     this.bang = new Text({
       text: '!',
@@ -213,13 +226,7 @@ export class PondScene {
     // 池水流动:13 帧按周期轮换
     this.waterTiling.texture = this.textures.waterFrames[Math.floor(t / WATER_FRAME_PERIOD) % WATER_FRAME_COUNT]
 
-    // 池塘底色与描边(底色与流水贴图同源,平铺边缘不露馅)
-    this.pondFill
-      .rect(P.x0 * W, P.y0 * H, (P.x1 - P.x0) * W, (P.y1 - P.y0) * H)
-      .fill(0x5c9ce2)
-    this.pondStroke
-      .rect(P.x0 * W, P.y0 * H, (P.x1 - P.x0) * W, (P.y1 - P.y0) * H)
-      .stroke({ width: 4, color: 0x0f3a4d })
+    // 池塘底色/描边为构造期静态几何(见构造函数),update 不再触碰,避免指令累积
 
     // 岸线波纹:泡沫帧沿岸边顺时针环流(逐 tile 相位偏移 → 波峰绕池游走)
     const waveFrame = Math.floor(t / WAVE_FRAME_PERIOD)
