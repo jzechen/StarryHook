@@ -175,9 +175,10 @@ export class PondScene {
       const innerW = trackW - 10
       const innerH = trackH - 10
 
-      // 绿条
-      const barPixH = TUNE.bar.height * innerH
-      const barTop = innerY + innerH - (mg.barY + TUNE.bar.height) * innerH
+      // 绿条(高度跟随当前竿参数,与物理同源:核心循环 rodParams 即绿条物理所用参数)
+      const bar = core.rodParams
+      const barPixH = bar.height * innerH
+      const barTop = innerY + innerH - (mg.barY + bar.height) * innerH
       this.mgBar.clear().roundRect(innerX, barTop, innerW, barPixH, 5).fill({ color: 0x6ee06e, alpha: 0.85 })
 
       // 鱼图标

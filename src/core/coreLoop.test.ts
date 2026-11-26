@@ -241,4 +241,14 @@ describe('竿档注入(接缝:换竿 → 物理生效)', () => {
     run(b, 1, HOLD)
     expect(a.mg!.barY).not.toBe(b.mg!.barY)
   })
+
+  it('只读暴露 rodParams:未注入 = 现行手感(绿条高度 0.28)', () => {
+    expect(newLoop().rodParams.height).toBe(0.28)
+  })
+
+  it('只读暴露 rodParams:注入后返回注入值(渲染层绿条绘制跟随换竿)', () => {
+    const l = newLoop()
+    l.setRodParams({ ...TUNE.bar, height: 0.4 })
+    expect(l.rodParams.height).toBe(0.4)
+  })
 })
