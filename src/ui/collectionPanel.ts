@@ -3,6 +3,7 @@ import type { CoreLoop } from '../core/coreLoop'
 import { FISH } from '../core/fishCatalog'
 import type { BehaviorType } from '../core/types'
 import { fishSpriteOffsetY } from '../render/fishAtlas'
+import { habitatLabel } from './collectionPanelHabitat'
 import { collectionPanelAllowed } from './collectionPanelPolicy'
 import { sortFishByDifficulty } from './collectionPanelOrder'
 
@@ -35,7 +36,8 @@ export class CollectionPanel {
   private panelEl: HTMLElement
   private progressEl: HTMLElement
   private closeBtn: HTMLButtonElement
-  /** 每种鱼一行,按难度升序建立(见 PANEL_FISH);行内文本由 refresh 按收集状态填充 */
+  /** 每种鱼一行,按难度升序建立(见 PANEL_FISH);名称/详情文本由 refresh 按收集状态填充,
+   *  出没条件次行(fish-habitat)与收集状态无关,建行时一次写入 */
   private rows: { root: HTMLLIElement; nameEl: HTMLElement; detailEl: HTMLElement }[] = []
   private open = false
   /** 最近一次渲染时的已收集数;变化才写 DOM,避免每帧刷新 */
@@ -68,7 +70,13 @@ export class CollectionPanel {
       const detailEl = document.createElement('span')
       detailEl.className = 'fish-detail'
       detailEl.textContent = '尚未捕获'
-      li.append(spriteEl, nameEl, detailEl)
+      // 出没条件次行(票 #16):由亲和字段派生(spec #13 用户故事 9),
+      // 与收集状态无关 → 建行时一次写入,refresh 不碰;未捕获行同样显示
+      // (只泄「去哪钓」,剪影仍不泄名称与配色,见 habitatLabel 注释)
+      const habitatEl = document.createElement('span')
+      habitatEl.className = 'fish-habitat'
+      habitatEl.textContent = habitatLabel(PANEL_FISH[i]!.habitat)
+      li.append(spriteEl, nameEl, detailEl, habitatEl)
       listEl.appendChild(li)
       this.rows.push({ root: li, nameEl, detailEl })
     }
