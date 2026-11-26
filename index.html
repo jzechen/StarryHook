@@ -40,6 +40,11 @@
       .pill:hover:enabled { background: rgba(23, 80, 107, .9); }
       /* 环境徽章(票 #15):季节 · 昼夜 · 天气,文案由 envBadgeText 派生,内容变化才重写 */
       #env-badge { letter-spacing: 1px; opacity: .95; }
+      /* 金币(票 #17 故事 2)与装备饵余量徽章(review 修复):顶栏紧凑小字,不另占行;
+         金币取商店面板头同款金色,饵余量跟环境徽章同灰度层级,克制不挤 */
+      #coins { color: #ffd23f; }
+      #bait-badge { opacity: .95; }
+      #bait-badge[hidden] { display: none; }
       #water-entry:disabled, #shop-entry:disabled { opacity: .4; cursor: not-allowed; }
       /* 换水域面板(票 #15):与图鉴面板同族样式,两面板互斥打开(见 main.ts 接线) */
       #water-panel {
@@ -159,9 +164,10 @@
     <div id="game"></div>
     <div id="hud">
       <div id="topbar">
-        得分 <b id="score">0</b> · 最高纪录 <b id="best">0</b>
+        得分 <b id="score">0</b> · 最高纪录 <b id="best">0</b> · <span id="coins"></span><!-- 金币余额(票 #17 故事 2):顶栏随时可见,初始文本由 Hud 依钱包写入,内容变化才重写 -->
         <span id="rod-status"></span><!-- 初始文本由 Hud 依恢复的成长状态写入(老玩家上线即真实等级/竿) -->
         <span id="env-badge"></span><!-- 环境徽章(票 #15):「春 · 日 · 晴」,初始文本由 Hud 依核心环境状态写入;水域不进徽章,换水域面板可见 -->
+        <span id="bait-badge" hidden></span><!-- 装备饵余量(review 修复,票 #17 故事 10):「香饵 ×9」,垂钓中商店不可开故常驻顶栏;未装备/耗尽自动隐藏,初始由 Hud 依钱包写入 -->
         <!-- 换水域入口(票 #15):可用性随阶段变化(仅待机,见 waterSwitchPolicy),垂钓中置灰 -->
         <button id="water-entry" type="button" class="pill">换水域</button>
         <!-- 商店入口(票 #20):可用性随阶段变化(仅待机,见 shopPanelPolicy),垂钓中置灰 -->

@@ -14,9 +14,10 @@ import { WalletStore } from './core/wallet'
 import { PondScene } from './render/pondScene'
 import { loadSceneTextures } from './render/textures'
 import { applyViewportToCanvas } from './render/viewport'
+import { baitBadgeText } from './ui/baitBadgeText'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
-import { baitEffectSource, buyBaitOutcome } from './ui/economyWiring'
+import { baitEffectSource, buyBaitOutcome, equippedBaitView } from './ui/economyWiring'
 import { Hud } from './ui/hud'
 import { MuteStore } from './ui/muteStore'
 import { PanelExclusion } from './ui/panelExclusion'
@@ -246,6 +247,11 @@ async function main(): Promise<void> {
     prevPhase = core.phase
     scene.update(core, tk.lastTime / 1000, dt)
     hud.update(core)
+    // 经济常驻展示(票 #17 故事 2/10,review 修复):金币余额与装备饵余量上顶栏,
+    // 内容变化才重写 DOM(hud 既有守卫);垂钓进行中商店不可开,饵余量由此常驻可见,
+    // 耗尽(文案 null)自动隐藏。文案派生:baitBadgeText ← equippedBaitView ← 钱包
+    hud.setCoins(wallet.coins())
+    hud.setBaitBadge(baitBadgeText(equippedBaitView(wallet)))
     // 图鉴面板:入口可用性、自动收起、进度刷新(打开时核心循环照常推进)
     collectionPanel.update(core)
     // 换水域面板(票 #15):入口可用性(仅待机)、自动收起、当前水域标识

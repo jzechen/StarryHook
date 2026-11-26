@@ -3,7 +3,7 @@ import { CoreLoop } from '../core/coreLoop'
 import { Rng } from '../core/rng'
 import { WalletStore } from '../core/wallet'
 import { memoryStorage } from '../testing/memoryStorage'
-import { baitEffectSource, buyBaitOutcome } from './economyWiring'
+import { baitEffectSource, buyBaitOutcome, equippedBaitView } from './economyWiring'
 
 const DT = 1 / 60
 const HOLD = { holding: true, moveX: 0, moveY: 0 }
@@ -93,5 +93,14 @@ describe('装备链路全链(组合层集成:购买 → 装备 → 抛竿消耗 
     }
     expect(source()).toBeNull() // 耗尽:本竿无饵效果,状态原样
     expect(wallet.baitCount('xianger')).toBe(0)
+  })
+
+  it('装备饵视图(顶栏徽章入参):未装备 → null;装备浓饵 → 饵名 + 实时余量', () => {
+    const wallet = new WalletStore(memoryStorage())
+    expect(equippedBaitView(wallet)).toBeNull()
+    wallet.earn(1000)
+    expect(buyBaitOutcome(wallet)('nonger')).toBe('ok')
+    expect(wallet.consumeBaitForCast()).toBe(true) // 抛竿消耗一支
+    expect(equippedBaitView(wallet)).toEqual({ name: '浓饵', count: 9 })
   })
 })

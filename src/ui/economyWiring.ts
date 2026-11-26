@@ -1,3 +1,4 @@
+import { BAITS } from '../config'
 import type { BaitEffect } from '../core/coreLoop'
 import type { WalletStore } from '../core/wallet'
 import type { ShopBuyOutcome } from './shopPanel'
@@ -37,4 +38,15 @@ export function buyBaitOutcome(wallet: WalletStore): (baitId: string) => ShopBuy
     wallet.equip(baitId)
     return 'ok'
   }
+}
+
+/**
+ * 装备中鱼饵的徽章视图(顶栏「垂钓中可见的饵余量」,review 修复):
+ * 未装备(含目录外装备态降级)→ null;装备 → 饵名(由 BAITS 表派生)+ 实时余量,
+ * 交 baitBadgeText 派生文案(耗尽 → 文案 null,徽章自动消失)。
+ */
+export function equippedBaitView(wallet: WalletStore): { name: string; count: number } | null {
+  const id = wallet.equippedBait()
+  const bait = BAITS.find(b => b.id === id)
+  return bait ? { name: bait.name, count: wallet.baitCount(bait.id) } : null
 }
