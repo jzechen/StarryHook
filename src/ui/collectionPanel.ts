@@ -41,6 +41,10 @@ export class CollectionPanel {
     this.closeBtn = document.getElementById('collection-close') as HTMLButtonElement
     const listEl = document.getElementById('collection-list')!
 
+    // 进度初始文本由脚本依目录长度写入(HTML 不硬编码 0/5);此后 refresh 按收集状态刷新
+    const total = this.collection.progress().total
+    this.progressEl.textContent = `0/${total}`
+
     for (let i = 0; i < PANEL_FISH.length; i++) {
       const li = document.createElement('li')
       li.className = 'fish-item locked'

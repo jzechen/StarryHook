@@ -21,14 +21,15 @@
         font-size: 18px;
       }
       #topbar b { font-size: 24px; color: #ffd23f; }
-      #collection-entry, #reset {
+      /* 胶囊按钮公共样式:图鉴入口 / 重开 / 图鉴关闭共用 */
+      .pill {
         pointer-events: auto;
         font: inherit; font-size: 14px; padding: 4px 14px;
         color: #eaf4f6; background: rgba(12, 47, 63, .8);
         border: 1px solid rgba(159, 216, 232, .5); border-radius: 999px; cursor: pointer;
       }
+      .pill:hover:enabled { background: rgba(23, 80, 107, .9); }
       #collection-entry { margin-left: auto; }
-      #collection-entry:hover:enabled, #reset:hover { background: rgba(23, 80, 107, .9); }
       #collection-entry:disabled { opacity: .4; cursor: not-allowed; }
       #collection-panel {
         pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 292px;
@@ -41,11 +42,10 @@
       .panel-title { font-size: 17px; font-weight: 700; }
       #collection-progress { font-size: 20px; color: #ffd23f; }
       #collection-close {
-        margin-left: auto; font: inherit; font-size: 12px; padding: 2px 10px;
-        color: #eaf4f6; background: rgba(23, 80, 107, .5);
-        border: 1px solid rgba(159, 216, 232, .4); border-radius: 999px; cursor: pointer;
+        margin-left: auto; font-size: 12px; padding: 2px 10px;
+        background: rgba(23, 80, 107, .5);
+        border-color: rgba(159, 216, 232, .4);
       }
-      #collection-close:hover { background: rgba(23, 80, 107, .9); }
       #collection-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
       .fish-item {
         display: flex; align-items: baseline; gap: 10px;
@@ -88,8 +88,8 @@
     <div id="hud">
       <div id="topbar">
         得分 <b id="score">0</b> · 最高纪录 <b id="best">0</b>
-        <button id="collection-entry" type="button">图鉴</button>
-        <button id="reset" type="button">重开</button>
+        <button id="collection-entry" type="button" class="pill">图鉴</button>
+        <button id="reset" type="button" class="pill">重开</button>
       </div>
       <div id="toast-layer"></div>
       <div id="hint">按住鼠标蓄力,松开抛竿</div>
@@ -97,8 +97,8 @@
       <div id="collection-panel" hidden>
         <div class="panel-head">
           <span class="panel-title">图鉴</span>
-          <b id="collection-progress">0/5</b>
-          <button id="collection-close" type="button" aria-label="关闭图鉴">✕ 关闭</button>
+          <b id="collection-progress"></b><!-- 初始文本由 CollectionPanel 依收集册目录长度写入 -->
+          <button id="collection-close" type="button" class="pill" aria-label="关闭图鉴">✕ 关闭</button>
         </div>
         <ul id="collection-list"></ul>
       </div>
