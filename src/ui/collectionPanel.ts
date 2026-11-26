@@ -3,6 +3,7 @@ import type { CoreLoop } from '../core/coreLoop'
 import { FISH } from '../core/fishCatalog'
 import type { BehaviorType } from '../core/types'
 import { collectionPanelAllowed } from './collectionPanelPolicy'
+import { sortFishByDifficulty } from './collectionPanelOrder'
 
 /** 鱼类行为 → 图鉴展示用中文(依 GLOSSARY 鱼类行为术语) */
 const BEHAVIOR_LABELS: Record<BehaviorType, string> = {
@@ -13,9 +14,12 @@ const BEHAVIOR_LABELS: Record<BehaviorType, string> = {
   mixed: '混合',
 }
 
+/** 面板条目序:spec(#3)要求按难度从低到高;显式排序,不依赖目录数组序(同难度保持目录序) */
+const PANEL_FISH = sortFishByDifficulty(FISH)
+
 /**
  * 图鉴面板:DOM 覆盖层(与 HUD 同栈),浏览收集状态。
- * 只读消费 CollectionStore,条目派生自鱼类目录(目录序即难度升序);
+ * 只读消费 CollectionStore,条目派生自鱼类目录并按难度升序排列(sortFishByDifficulty);
  * 开关策略见 collectionPanelPolicy——打开时核心循环照常推进,不受影响。
  */
 export class CollectionPanel {
@@ -23,7 +27,7 @@ export class CollectionPanel {
   private panelEl: HTMLElement
   private progressEl: HTMLElement
   private closeBtn: HTMLButtonElement
-  /** 每种鱼一行,按目录序建立;行内文本由 refresh 按收集状态填充 */
+  /** 每种鱼一行,按难度升序建立(见 PANEL_FISH);行内文本由 refresh 按收集状态填充 */
   private rows: { root: HTMLLIElement; nameEl: HTMLElement; detailEl: HTMLElement }[] = []
   private open = false
   /** 最近一次渲染时的已收集数;变化才写 DOM,避免每帧刷新 */
@@ -37,7 +41,11 @@ export class CollectionPanel {
     this.closeBtn = document.getElementById('collection-close') as HTMLButtonElement
     const listEl = document.getElementById('collection-list')!
 
-    for (let i = 0; i < FISH.length; i++) {
+    // 进度初始文本由脚本依目录长度写入(HTML 不硬编码 0/5);此后 refresh 按收集状态刷新
+    const total = this.collection.progress().total
+    this.progressEl.textContent = `0/${total}`
+
+    for (let i = 0; i < PANEL_FISH.length; i++) {
       const li = document.createElement('li')
       li.className = 'fish-item locked'
       const nameEl = document.createElement('span')
@@ -81,7 +89,7 @@ export class CollectionPanel {
     this.renderedCollected = progress.collected
     this.progressEl.textContent = `${progress.collected}/${progress.total}`
     this.rows.forEach((row, i) => {
-      const fish = FISH[i]!
+      const fish = PANEL_FISH[i]!
       const caught = this.collection.has(fish.id)
       // 未捕获灰显:不显示名称、行为与分值,留悬念
       row.root.classList.toggle('locked', !caught)
