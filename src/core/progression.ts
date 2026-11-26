@@ -1,6 +1,6 @@
 import { RODS } from '../config'
 import type { RodDef } from '../config'
-import type { KvStorage } from './collection'
+import { readKvSnapshot, writeKvSnapshot, type KvStorage } from './kvSnapshot'
 
 interface PersistedState {
   xp: number
@@ -72,27 +72,27 @@ export class ProgressionStore {
   }
 
   private restore(): void {
-    try {
-      const raw = this.storage.get(STORAGE_KEY)
-      if (!raw) return
-      const state = JSON.parse(raw) as Partial<PersistedState>
-      if (typeof state.xp === 'number' && Number.isFinite(state.xp) && state.xp >= 0) {
-        this.xpValue = state.xp
-      }
-      if (typeof state.level === 'number' && Number.isInteger(state.level) && state.level >= 1) {
-        this.levelValue = state.level
-      }
-    } catch {
-      // 数据损坏 → 按初始状态处理
+    const state = readKvSnapshot(this.storage, STORAGE_KEY, value => this.validatePersisted(value))
+    if (!state) return
+    this.xpValue = state.xp
+    this.levelValue = state.level
+  }
+
+  /** 逐字段校验降级:非法/越界字段取默认值(xp 非负有限数归 0,level ≥ 1 整数归 1;损坏 → 初始状态) */
+  private validatePersisted(value: unknown): PersistedState {
+    const state = (typeof value === 'object' && value !== null ? value : {}) as Partial<PersistedState>
+    return {
+      xp:
+        typeof state.xp === 'number' && Number.isFinite(state.xp) && state.xp >= 0 ? state.xp : 0,
+      level:
+        typeof state.level === 'number' && Number.isInteger(state.level) && state.level >= 1
+          ? state.level
+          : 1,
     }
   }
 
   private persist(): void {
     const state: PersistedState = { xp: this.xpValue, level: this.levelValue }
-    try {
-      this.storage.set(STORAGE_KEY, JSON.stringify(state))
-    } catch {
-      // 写入失败(隐私模式/配额)→ 成长留在内存,游戏不受影响
-    }
+    writeKvSnapshot(this.storage, STORAGE_KEY, state)
   }
 }

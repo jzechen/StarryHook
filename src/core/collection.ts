@@ -1,8 +1,7 @@
-/** 键值存储适配器:系统边界(真实实现为浏览器 localStorage,测试用内存替身) */
-export interface KvStorage {
-  get(key: string): string | null
-  set(key: string, value: string): void
-}
+import { readKvSnapshot, writeKvSnapshot, type KvStorage } from './kvSnapshot'
+
+// KvStorage 定义上移至 kvSnapshot.ts,此处再导出保持既有导入点('./core/collection')兼容
+export type { KvStorage }
 
 interface PersistedState {
   collected: string[]
@@ -64,18 +63,22 @@ export class CollectionStore {
   }
 
   private restore(): void {
-    try {
-      const raw = this.storage.get(STORAGE_KEY)
-      if (!raw) return
-      const state = JSON.parse(raw) as Partial<PersistedState>
-      if (Array.isArray(state.collected)) {
-        for (const id of state.collected) {
-          if (typeof id === 'string' && this.fishIds.includes(id)) this.collected.add(id)
-        }
-      }
-      if (state.completionAcknowledged === true) this.acknowledged = true
-    } catch {
-      // 数据损坏 → 按空收集册处理
+    const state = readKvSnapshot(this.storage, STORAGE_KEY, value => this.validatePersisted(value))
+    if (!state) return
+    for (const id of state.collected) this.collected.add(id)
+    if (state.completionAcknowledged) this.acknowledged = true
+  }
+
+  /** 逐字段校验降级:非字符串/目录外 id 过滤,标记非 true 归 false(损坏 → 空收集册) */
+  private validatePersisted(value: unknown): PersistedState {
+    const state = (typeof value === 'object' && value !== null ? value : {}) as Partial<PersistedState>
+    return {
+      collected: Array.isArray(state.collected)
+        ? state.collected.filter(
+            (id): id is string => typeof id === 'string' && this.fishIds.includes(id),
+          )
+        : [],
+      completionAcknowledged: state.completionAcknowledged === true,
     }
   }
 
@@ -84,10 +87,6 @@ export class CollectionStore {
       collected: [...this.collected],
       completionAcknowledged: this.acknowledged,
     }
-    try {
-      this.storage.set(STORAGE_KEY, JSON.stringify(state))
-    } catch {
-      // 写入失败(隐私模式/配额)→ 收集留在内存,游戏不受影响
-    }
+    writeKvSnapshot(this.storage, STORAGE_KEY, state)
   }
 }
