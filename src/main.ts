@@ -6,7 +6,9 @@ import { Rng } from './core/rng'
 import type { LoopPhase } from './core/types'
 import { PondScene } from './render/pondScene'
 import { CollectionPanel } from './ui/collectionPanel'
+import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
 import { Hud } from './ui/hud'
+import { ToastLayer } from './ui/toastLayer'
 
 async function main(): Promise<void> {
   // ?seed=123 可复现整局(调手感时对比用)
@@ -51,6 +53,8 @@ async function main(): Promise<void> {
   )
   // 图鉴面板:只读消费收集册,入口常驻(可用性随阶段变化)
   const collectionPanel = new CollectionPanel(collection)
+  // 轻提示层:新收录 / 池塘大满贯,顶部居中,不拦截游戏输入
+  const toasts = new ToastLayer()
   let prevPhase: LoopPhase = core.phase
 
   // —— 输入:鼠标/触摸 + 键盘(空格 = 起竿,WASD/方向键 = 移动) ——
@@ -96,9 +100,19 @@ async function main(): Promise<void> {
     }
 
     core.update(dt, { holding: mouseHold || keys.has('Space'), moveX: dx, moveY: dy })
-    // 结算捕获 → 登记进收集册(核心循环自身不感知图鉴)
+    // 结算捕获 → 登记进收集册(核心循环自身不感知图鉴)。
+    // 顺序不可换:先读捕获前快照 → 登记 → 再读快照 → 按纯函数决策弹提示
     if (core.phase === 'caught' && prevPhase !== 'caught' && core.fish) {
-      collection.recordCatch(core.fish.id)
+      const fishId = core.fish.id
+      const before = snapshotOf(collection, fishId)
+      collection.recordCatch(fishId)
+      const decision = collectionToasts(before, snapshotOf(collection, fishId))
+      if (decision.newEntry) toasts.show('new-entry')
+      if (decision.grandSlam) {
+        toasts.show('grand-slam')
+        // 一辈子只弹一次:弹出的同时置持久化标记,重开/刷新后不再弹
+        collection.acknowledgeCompletion()
+      }
     }
     prevPhase = core.phase
     scene.update(core, tk.lastTime / 1000, dt)
