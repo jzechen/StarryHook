@@ -16,6 +16,14 @@ export interface MinigameState {
   progress: number
 }
 
+export interface UpdateInput {
+  /** 指针/空格是否按住 */
+  holding: boolean
+  /** 移动方向分量(x 已按宽高比折算,单位:屏幕高度/秒) */
+  moveX: number
+  moveY: number
+}
+
 /**
  * 核心循环状态机 + 钓鱼小游戏数学。纯逻辑,不依赖渲染;
  * 正式实现阶段这套数学原样迁移并配单测。
@@ -28,6 +36,12 @@ export class CoreLoop {
   power = 0
   /** 本次抛竿远近 0..1(演出用) */
   bobberDist = 0
+  /** 玩家位置(归一化) */
+  px = 0.1
+  py = 0.85
+  /** 抛竿瞬间的玩家位置(浮标起飞点,等待中不随移动漂移) */
+  castX = 0.1
+  castY = 0.85
   fish: FishDef | null = null
   /** 响应窗口剩余秒数 */
   biteWindow = 0
@@ -39,16 +53,28 @@ export class CoreLoop {
   private waitTime = 0
   private settleTime = 0
   private holding = false
+  /** 距上次按下经过的秒数(输入缓冲用) */
+  private sincePress = 999
+  /** waiting 中持续按住的秒数(收竿判定用) */
+  private reelT = 0
 
   constructor(rng: Rng) {
     this.rng = rng
   }
 
-  /** 每帧推进;holding = 当前是否按住指针 */
-  update(dt: number, holding: boolean): void {
+  /** 每帧推进 */
+  update(dt: number, input: UpdateInput): void {
+    const holding = input.holding
     const pressed = holding && !this.holding
     const released = !holding && this.holding
     this.holding = holding
+    this.sincePress += dt
+    if (pressed) this.sincePress = 0
+
+    // 移动:仅限非对抗阶段
+    if (this.phase === 'idle' || this.phase === 'charging' || this.phase === 'waiting') {
+      this.movePlayer(dt, input.moveX, input.moveY)
+    }
 
     switch (this.phase) {
       case 'idle':
@@ -62,13 +88,18 @@ export class CoreLoop {
         if (released) this.cast()
         break
       case 'waiting':
-        this.waitTime -= dt
-        if (pressed) {
-          this.fish = null
-          this.phase = 'idle' // 主动收竿
-        } else if (this.waitTime <= 0) {
-          this.startBite()
+        // 按住 = 主动收竿;短按不打断(预判点击安全)
+        if (holding) {
+          this.reelT += dt
+          if (this.reelT >= TUNE.bite.reelHold) {
+            this.fish = null
+            this.phase = 'idle'
+          }
+        } else {
+          this.reelT = 0
         }
+        this.waitTime -= dt
+        if (this.phase === 'waiting' && this.waitTime <= 0) this.startBite()
         break
       case 'bite':
         this.biteWindow -= dt
@@ -79,7 +110,7 @@ export class CoreLoop {
         }
         break
       case 'minigame':
-        this.updateMinigame(dt)
+        this.updateMinigame(dt, pressed)
         break
       case 'caught':
       case 'escaped':
@@ -97,17 +128,47 @@ export class CoreLoop {
     this.phase = 'idle'
   }
 
+  /** 移动并阻挡在岸上(池塘 AABB 外,推向最近的岸) */
+  private movePlayer(dt: number, moveX: number, moveY: number): void {
+    this.px += moveX * TUNE.move.speed * dt
+    this.py += moveY * TUNE.move.speed * dt
+    this.px = Math.max(0.03, Math.min(0.97, this.px))
+    this.py = Math.max(0.06, Math.min(0.95, this.py))
+
+    const P = TUNE.pond
+    const r = 0.018 // 角色半径(归一化)
+    if (this.px > P.x0 - r && this.px < P.x1 + r && this.py > P.y0 - r && this.py < P.y1 + r) {
+      const dl = this.px - (P.x0 - r)
+      const dr = P.x1 + r - this.px
+      const du = this.py - (P.y0 - r)
+      const dd = P.y1 + r - this.py
+      const m = Math.min(dl, dr, du, dd)
+      if (m === dl) this.px = P.x0 - r
+      else if (m === dr) this.px = P.x1 + r
+      else if (m === du) this.py = P.y0 - r
+      else this.py = P.y1 + r
+    }
+  }
+
   private cast(): void {
     // 蓄力 → 出鱼权重:越有力越偏向行为更难(更活泼)的鱼
     this.pool = FISH.map(f => 1 + this.power * TUNE.poolBias * f.difficulty)
     this.bobberDist = this.power
+    this.castX = this.px
+    this.castY = this.py
     this.waitTime = this.rng.range(TUNE.wait.min, TUNE.wait.max)
+    this.reelT = 0
     this.fish = null
     this.phase = 'waiting'
   }
 
   private startBite(): void {
     this.fish = this.rng.pick(FISH, this.pool)
+    // 输入缓冲:咬钩瞬间正按着(预判点击/按住)→ 直接起竿
+    if (this.sincePress <= TUNE.bite.pressBuffer || this.holding) {
+      this.startMinigame()
+      return
+    }
     this.biteWindow = this.rng.range(TUNE.bite.windowMin, TUNE.bite.windowMax)
     this.phase = 'bite'
   }
@@ -125,15 +186,17 @@ export class CoreLoop {
     this.phase = 'minigame'
   }
 
-  private updateMinigame(dt: number): void {
+  private updateMinigame(dt: number, pressed: boolean): void {
     const mg = this.mg!
     const B = TUNE.bar
     const M = TUNE.minigame
     mg.t += dt
 
-    // 绿条:按住上升,松开下落(带惯性,撞边反弹)
-    mg.barV += (this.holding ? B.accelUp : -B.gravity) * dt
-    mg.barV = Math.max(-B.vmax, Math.min(B.vmax, mg.barV))
+    // 绿条:按住上升 / 松开下沉,快速逼近目标速度(留一点惯性);
+    // 点按额外获得一次上冲脉冲 → 长按、连点都可控
+    if (pressed) mg.barV += B.tapBoost
+    const targetV = this.holding ? B.vUp : -B.vDown
+    mg.barV += (targetV - mg.barV) * Math.min(1, dt * B.response)
     mg.barY += mg.barV * dt
     const maxY = 1 - B.height
     if (mg.barY < 0) {

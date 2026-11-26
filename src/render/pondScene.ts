@@ -37,10 +37,10 @@ export class PondScene {
       text: '!',
       style: {
         fontFamily: 'sans-serif',
-        fontSize: 52,
+        fontSize: 64,
         fontWeight: '900',
         fill: 0xffd23f,
-        stroke: { color: 0x5a3e00, width: 6 },
+        stroke: { color: 0x5a3e00, width: 7 },
       },
     })
     this.bang.anchor.set(0.5)
@@ -68,8 +68,9 @@ export class PondScene {
   update(core: CoreLoop, t: number, dt: number): void {
     const W = this.app.screen.width
     const H = this.app.screen.height
-    const px = W * 0.1
-    const py = H * 0.8
+    const P = TUNE.pond
+    const ppx = core.px * W
+    const ppy = core.py * H
 
     // 阶段切换检测(渲染侧动画计时)
     if (core.phase !== this.prevPhase) {
@@ -77,32 +78,37 @@ export class PondScene {
       if (core.phase === 'bite') this.biteT = 0
       this.prevPhase = core.phase
     }
-    this.castT = Math.min(1, this.castT + dt / 0.35)
+    this.castT = Math.min(1, this.castT + dt / 0.22)
     this.biteT += dt
 
     // 池塘
     this.bank.clear().rect(0, 0, W, H).fill(0x2c3b2a)
     this.pond
-      .roundRect(W * 0.07, H * 0.1, W * 0.86, H * 0.84, 40)
+      .roundRect(P.x0 * W, P.y0 * H, (P.x1 - P.x0) * W, (P.y1 - P.y0) * H, 40)
       .fill(0x17506b)
       .stroke({ width: 8, color: 0x0f3a4d })
 
-    // 玩家(几何小人)
+    // 玩家(几何小人,位置来自核心状态)
     this.body.clear().circle(0, 0, 15).fill(0x4a6da7)
     this.head.clear().circle(0, -16, 10).fill(0xf0c8a0)
-    this.player.position.set(px, py)
+    this.player.position.set(ppx, ppy)
 
-    // 浮标:蓄力决定远近,抛竿有飞行动画
-    const tx = W * (0.32 + 0.42 * core.bobberDist)
-    const ty = H * (0.52 - 0.14 * core.bobberDist)
+    // 浮标落点:从抛竿点向池塘中心,远近由蓄力决定
+    const ox = core.castX * W
+    const oy = core.castY * H
+    const cx = ((P.x0 + P.x1) / 2) * W
+    const cy = ((P.y0 + P.y1) / 2) * H
+    const k = 0.3 + 0.5 * core.bobberDist
+    const tx = Math.max((P.x0 + 0.03) * W, Math.min((P.x1 - 0.03) * W, ox + (cx - ox) * k))
+    const ty = Math.max((P.y0 + 0.06) * H, Math.min((P.y1 - 0.06) * H, oy + (cy - oy) * k))
     const showBobber = core.phase !== 'idle' && core.phase !== 'charging'
     let bx = tx
     let by = ty
     if (this.castT < 1 && showBobber) {
       const e = this.castT * (2 - this.castT)
-      const sy = py - 24
-      bx = px + (tx - px) * e
-      by = sy + (ty - sy) * e - Math.sin(Math.PI * this.castT) * 36
+      const sy = oy - 24
+      bx = ox + (tx - ox) * e
+      by = sy + (ty - sy) * e - Math.sin(Math.PI * this.castT) * 42
     }
     if (core.phase === 'waiting') by += Math.sin(t * 2.4) * 2
     if (core.phase === 'bite') by += 4 + Math.sin(this.biteT * 30) * 4
@@ -115,7 +121,7 @@ export class PondScene {
     // 鱼线
     this.line.clear()
     if (showBobber) {
-      this.line.moveTo(px, py - 18).lineTo(bx, by - 4).stroke({ width: 1.2, color: 0xe8f4f8, alpha: 0.55 })
+      this.line.moveTo(ppx, ppy - 18).lineTo(bx, by - 4).stroke({ width: 1.2, color: 0xe8f4f8, alpha: 0.55 })
     }
 
     // 涟漪
@@ -128,21 +134,23 @@ export class PondScene {
       }
     }
 
-    // 蓄力条
+    // 蓄力条(加大,带满格刻度)
     this.chargeBar.clear()
     if (core.phase === 'charging') {
-      this.chargeBar.roundRect(px + 30, py - 88, 12, 68, 5).fill({ color: 0x0b1f12, alpha: 0.5 })
-      const fh = 60 * core.power
-      const c = core.power < 0.45 ? 0xe4573d : core.power < 0.8 ? 0xf2c94c : 0x7bc95f
-      this.chargeBar.roundRect(px + 32, py - 26 - fh, 8, fh, 3).fill(c)
+      this.chargeBar.roundRect(ppx + 34, ppy - 104, 14, 88, 6).fill({ color: 0x0b1f12, alpha: 0.55 })
+      const fh = 80 * core.power
+      const full = core.power >= 1
+      const c = full ? 0x8ef07a : core.power < 0.45 ? 0xe4573d : core.power < 0.8 ? 0xf2c94c : 0x7bc95f
+      this.chargeBar.roundRect(ppx + 36, ppy - 24 - fh, 10, fh, 4).fill(c)
+      this.chargeBar.roundRect(ppx + 32, ppy - 108, 18, 3, 1).fill(0xeaf4f6)
     }
 
     // 咬钩 "!"
     this.bang.visible = core.phase === 'bite'
     if (this.bang.visible) {
-      const s = 1 + 0.6 * Math.max(0, 1 - this.biteT / 0.15)
+      const s = 1.2 + 0.25 * Math.max(0, 1 - this.biteT / 0.1)
       this.bang.scale.set(s)
-      this.bang.position.set(bx, by - 52)
+      this.bang.position.set(bx, by - 56)
     }
 
     // 钓鱼小游戏面板(右侧)
