@@ -17,6 +17,9 @@ export interface UpdateInput {
   moveY: number
 }
 
+/** 模式层(票 #23):无限休闲(现状)或限时挑战(纯计时壳,倒计时归零强制结算) */
+export type GameMode = 'casual' | 'timed'
+
 /**
  * 本竿饵效果(单缝返回值,票 #19/#21 两缝合一):抛竿时刻由饵效果来源产出一次,
  * 同时驱动等待分布与浓饵权重入参——核心循环不感知饵种、库存与消耗时机。
@@ -58,6 +61,20 @@ export class CoreLoop {
   /** 响应窗口剩余秒数 */
   biteWindow = 0
   mg: MinigameState | null = null
+
+  /**
+   * 模式层状态(票 #23):默认无限,未选限时模式时模式层零副作用,
+   * 行为与现状逐帧一致(「最小扩展」纪律,与 setRodParams/setBaitEffectSource 同款)。
+   */
+  private modeId: GameMode = 'casual'
+  /** 限时局是否进行中(倒计时归零强制结算后置否;切回无限恒否) */
+  private timedRoundActive = false
+  /** 限时开局基线:开局时刻的会话累计得分;本局得分 = 会话累计 − 基线(图鉴/成长/金币照常累积不回退) */
+  private roundBaseline = 0
+  /** 限时剩余秒数(局中逐帧递减,归零钳在 0;非限时恒 0) */
+  private timeLeft = 0
+  /** 局毕定格:归零强制结算瞬间的本局得分(此后自由游玩不漂移,再来一局才重开) */
+  private roundFrozenScore = 0
 
   private rng: Rng
   /** 本次抛竿的出鱼权重(蓄力时算出) */
@@ -133,6 +150,54 @@ export class CoreLoop {
     return this.barParams
   }
 
+  // —— 模式层(票 #23):状态只读,写入走 setMode(合法性由状态机锁定) ——
+
+  /** 当前模式(只读;切换走 setMode) */
+  get mode(): GameMode {
+    return this.modeId
+  }
+
+  /** 限时剩余秒数;非限时模式恒 0(顶栏倒计时仅在限时模式显示) */
+  get timeRemaining(): number {
+    return this.timeLeft
+  }
+
+  /** 限时局是否进行中(倒计时归零强制结算后置否;切回无限恒否) */
+  get roundActive(): boolean {
+    return this.timedRoundActive
+  }
+
+  /**
+   * 本局得分(组合根结算提示用):无限模式 = 会话累计(无限无「局」,
+   * 会话即局);限时局中 = 会话累计 − 开局基线(只算本局新增,单局口径);
+   * 局毕(归零强制结算)后定格为结算瞬间的值,此后自由游玩不漂移。
+   */
+  get roundScore(): number {
+    if (this.modeId !== 'timed') return this.score
+    return this.timedRoundActive ? this.score - this.roundBaseline : this.roundFrozenScore
+  }
+
+  /**
+   * 切换模式:仅待机(idle)可接受;垂钓进行中(含结算停留)拒绝并保持原模式。
+   * 切限时 = 开局(或限时待机后再来一局):开局基线记当前会话累计、倒计时重置;
+   * 切无限 = 计时状态完全清除,行为与从未开过限时逐帧一致。
+   */
+  setMode(mode: GameMode): boolean {
+    if (this.phase !== 'idle') return false
+    this.roundFrozenScore = 0 // 互切卫生:上一局的定格分不跨局残留
+    if (mode === 'timed') {
+      this.timedRoundActive = true
+      this.roundBaseline = this.score
+      this.timeLeft = TUNE.timed.duration
+    } else {
+      this.timedRoundActive = false
+      this.roundBaseline = 0
+      this.timeLeft = 0
+    }
+    this.modeId = mode
+    return true
+  }
+
   /** 本竿等待时长只读暴露:与等待递减同源(等待分布测试与香饵效果提示读取,不做第二份计算) */
   get waitTime(): number {
     return this.waitRemaining
@@ -146,6 +211,18 @@ export class CoreLoop {
     this.holding = holding
     this.sincePress += dt
     if (pressed) this.sincePress = 0
+
+    // 模式层(票 #23):限时局中逐帧递减,归零强制结束当前尝试。
+    // 归零帧由强制结算接管(本帧不再推进玩法逻辑)——倒计时是硬边界,先到先得。
+    // 未开限时(modeId = casual)此块整体跳过,行为与现状逐帧一致。
+    if (this.modeId === 'timed' && this.timedRoundActive) {
+      this.timeLeft -= dt
+      if (this.timeLeft <= 0) {
+        this.timeLeft = 0
+        this.endRound()
+        return
+      }
+    }
 
     // 移动:仅限非对抗阶段
     if (this.phase === 'idle' || this.phase === 'charging' || this.phase === 'waiting') {
@@ -205,6 +282,39 @@ export class CoreLoop {
     this.fish = null
     this.mg = null
     this.phase = 'idle'
+    // 模式层(票 #23):基线随会话得分同归 0——限时局中重开计分,本局得分 = 0 − 0 连续不出负
+    this.roundBaseline = 0
+  }
+
+  /**
+   * 倒计时归零强制结算(票 #23 唯一新增转移:「归零 → 强制结束当前尝试」):
+   * 本局得分定格;各相分支——
+   * - 等待/咬钩/蓄力中:直接回待机(没抛出去的竿作废,不计分);
+   * - 小游戏中:按脱钩结算(不计分),复用既有 escaped 停留转移回待机;
+   * - 待机/结算停留中:原地不动(结算停留由既有转移自然完成回待机)。
+   * 五阶段既有转移零改动;归零后本局定格,倒计时停 0,回待机后模式仍为限时,
+   * 等组合根再开一局或切回无限。
+   */
+  private endRound(): void {
+    // 先定格后置否:归零瞬间的本局得分 = 会话累计 − 基线
+    this.roundFrozenScore = this.score - this.roundBaseline
+    this.timedRoundActive = false
+    switch (this.phase) {
+      case 'charging':
+      case 'waiting':
+      case 'bite':
+        this.fish = null
+        this.mg = null
+        this.phase = 'idle'
+        break
+      case 'minigame':
+        this.settle(false) // 按脱钩结算:不计分,不更新纪录
+        break
+      case 'idle':
+      case 'caught':
+      case 'escaped':
+        break
+    }
   }
 
   /** 移动并阻挡在岸上(池塘 AABB 外,推向最近的岸) */
