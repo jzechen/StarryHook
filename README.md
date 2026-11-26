@@ -7,6 +7,8 @@
 ```bash
 pnpm install
 pnpm dev      # http://localhost:5173
+pnpm test     # 核心逻辑单测(vitest)
+pnpm build    # 类型检查 + 生产构建
 ```
 
 - 调参:手感参数集中在 `src/config.ts`,Vite 热更即时生效

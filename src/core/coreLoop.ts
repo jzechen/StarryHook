@@ -1,20 +1,9 @@
 import { TUNE } from '../config'
 import { FISH } from './fishCatalog'
+import { stepCatchBar } from './catchBar'
+import { stepFish } from './fishMotion'
 import type { Rng } from './rng'
-import type { FishDef, LoopPhase } from './types'
-
-/** 钓鱼小游戏状态(轨道归一化:0 = 底,1 = 顶) */
-export interface MinigameState {
-  /** 已进行秒数(行为曲线用) */
-  t: number
-  /** 行为内部倒计时 */
-  timer: number
-  barY: number
-  barV: number
-  fishY: number
-  fishTarget: number
-  progress: number
-}
+import type { FishDef, LoopPhase, MinigameState } from './types'
 
 export interface UpdateInput {
   /** 指针/空格是否按住 */
@@ -25,8 +14,8 @@ export interface UpdateInput {
 }
 
 /**
- * 核心循环状态机 + 钓鱼小游戏数学。纯逻辑,不依赖渲染;
- * 正式实现阶段这套数学原样迁移并配单测。
+ * 核心循环状态机。纯逻辑,不依赖渲染;
+ * 绿条物理与鱼类行为分别组合自 catchBar / fishMotion(可独立单测)。
  */
 export class CoreLoop {
   phase: LoopPhase = 'idle'
@@ -84,8 +73,11 @@ export class CoreLoop {
         }
         break
       case 'charging':
-        this.power = Math.min(1, this.power + dt / TUNE.charge.maxTime)
-        if (released) this.cast()
+        if (released) {
+          this.cast() // 松开帧不再累加蓄力:抛出去的力度 = 松开瞬间看到的力度
+        } else {
+          this.power = Math.min(1, this.power + dt / TUNE.charge.maxTime)
+        }
         break
       case 'waiting':
         // 按住 = 主动收竿;短按不打断(预判点击安全)
@@ -188,80 +180,18 @@ export class CoreLoop {
 
   private updateMinigame(dt: number, pressed: boolean): void {
     const mg = this.mg!
-    const B = TUNE.bar
     const M = TUNE.minigame
     mg.t += dt
 
-    // 绿条:按住上升 / 松开下沉,快速逼近目标速度(留一点惯性);
-    // 点按额外获得一次上冲脉冲 → 长按、连点都可控
-    if (pressed) mg.barV += B.tapBoost
-    const targetV = this.holding ? B.vUp : -B.vDown
-    mg.barV += (targetV - mg.barV) * Math.min(1, dt * B.response)
-    mg.barY += mg.barV * dt
-    const maxY = 1 - B.height
-    if (mg.barY < 0) {
-      mg.barY = 0
-      mg.barV = -mg.barV * B.bounce
-    } else if (mg.barY > maxY) {
-      mg.barY = maxY
-      mg.barV = -mg.barV * B.bounce
-    }
-
-    // 鱼图标按其行为移动
-    mg.timer -= dt
-    this.updateFish(mg, dt)
+    stepCatchBar(mg, dt, this.holding, pressed)
+    stepFish(mg, dt, this.fish!, this.rng)
 
     // 进度:罩住上涨,脱开流失
     const overlap =
-      mg.fishY + M.fishHalf >= mg.barY && mg.fishY - M.fishHalf <= mg.barY + B.height
+      mg.fishY + M.fishHalf >= mg.barY && mg.fishY - M.fishHalf <= mg.barY + TUNE.bar.height
     mg.progress += (overlap ? M.gain : -M.drain) * dt
     if (mg.progress >= 1) this.settle(true)
     else if (mg.progress <= 0) this.settle(false)
-  }
-
-  private updateFish(mg: MinigameState, dt: number): void {
-    const f = this.fish!
-    const diff = f.difficulty
-    switch (f.behavior) {
-      case 'mixed': // 混合:全轨道随机游走
-        if (mg.timer <= 0) {
-          mg.fishTarget = this.rng.range(0.05, 0.95)
-          mg.timer = this.rng.range(0.5, 1.4)
-        }
-        this.seek(mg, dt, 0.45 + diff * 0.05)
-        break
-      case 'smooth': // 平滑:缓慢双正弦漂移
-        mg.fishY = 0.5 + 0.24 * Math.sin(mg.t * 2.0) + 0.1 * Math.sin(mg.t * 4.7 + 1.3)
-        break
-      case 'sinker': // 沉底:贴底移动
-        if (mg.timer <= 0) {
-          mg.fishTarget = this.rng.range(0.04, 0.2)
-          mg.timer = this.rng.range(2.0, 3.5)
-        }
-        this.seek(mg, dt, 0.5 + diff * 0.04)
-        break
-      case 'floater': // 漂浮:贴顶移动
-        if (mg.timer <= 0) {
-          mg.fishTarget = this.rng.range(0.78, 0.95)
-          mg.timer = this.rng.range(2.0, 3.5)
-        }
-        this.seek(mg, dt, 0.5 + diff * 0.04)
-        break
-      case 'dart': // 急冲:驻留后猛冲一大段
-        if (mg.timer <= 0) {
-          const far = this.rng.range(0.3, 0.45) * (this.rng.float() < 0.5 ? -1 : 1)
-          mg.fishTarget = Math.max(0.03, Math.min(0.97, mg.fishY + far))
-          mg.timer = this.rng.range(1.6, 3.0)
-        }
-        this.seek(mg, dt, 1.8 + diff * 0.15)
-        break
-    }
-  }
-
-  private seek(mg: MinigameState, dt: number, speed: number): void {
-    const d = mg.fishTarget - mg.fishY
-    mg.fishY += Math.max(-speed * dt, Math.min(speed * dt, d))
-    mg.fishY = Math.max(0.02, Math.min(0.98, mg.fishY))
   }
 
   private settle(caught: boolean): void {

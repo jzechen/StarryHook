@@ -19,3 +19,16 @@ export interface FishDef {
   color: number
   shape: 'slim' | 'round' | 'heavy' | 'puff' | 'bolt'
 }
+
+/** 钓鱼小游戏状态(轨道归一化:0 = 底,1 = 顶) */
+export interface MinigameState {
+  /** 已进行秒数(行为曲线用) */
+  t: number
+  /** 行为内部倒计时 */
+  timer: number
+  barY: number
+  barV: number
+  fishY: number
+  fishTarget: number
+  progress: number
+}
