@@ -101,7 +101,7 @@ describe('habitatLabel(接缝:图鉴出没条件文案)', () => {
 
   it('纯函数:不改动传入的亲和字段(冻结对象调用不抛错、内容不变)', () => {
     const habitat: FishHabitat = Object.freeze({
-      areas: Object.freeze(['pond', 'river']),
+      areas: Object.freeze(['pond', 'river'] as const),
       seasonMul: Object.freeze({ winter: 0.8, summer: 1.2 }),
       daylightMul: Object.freeze({ night: 1.6, day: 0.7 }),
       weatherMul: Object.freeze({ rain: 1.3 }),
