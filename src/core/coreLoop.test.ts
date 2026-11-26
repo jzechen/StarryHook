@@ -287,3 +287,52 @@ describe('等待时长修正系数注入(接缝:香饵 → 等待减半,票 #19)
     expect(calls).toBe(1)
   })
 })
+
+describe('浓饵生效标记注入(接缝:浓饵 → 难鱼权重提升,票 #21)', () => {
+  it('默认未注入 = 现行:显式恒 false 来源与未注入同种子同输入出鱼逐位一致', () => {
+    for (const seed of [7, 42, 123]) {
+      const a = newLoop(seed)
+      castFull(a)
+      runUntil(a, 10, IDLE, x => x.phase !== 'waiting')
+      const b = newLoop(seed)
+      b.setRichBaitSource(() => false)
+      castFull(b)
+      runUntil(b, 10, IDLE, x => x.phase !== 'waiting')
+      expect(b.fish!.id).toBe(a.fish!.id)
+    }
+  })
+
+  it('标记来源在抛竿时刻恰好调用一次(与等待时长来源同款纪律,权重在抛竿时刻算定)', () => {
+    let calls = 0
+    const l = newLoop(42)
+    l.setRichBaitSource(() => {
+      calls += 1
+      return false
+    })
+    castFull(l)
+    expect(calls).toBe(1)
+    runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
+    l.update(DT, HOLD) // 起竿进小游戏、打到结算:标记来源不再被调用
+    runUntil(l, 60, HOLD, x => x.phase === 'caught' || x.phase === 'escaped')
+    expect(calls).toBe(1)
+  })
+
+  it('注入恒 true:固定环境(夏·日·晴)下,固定 120 种子的难鱼(闪电梭)命中数高于默认', () => {
+    // 环境 = clock + weather 注入(既有 world 注入缝),统计在固定种子集上完全确定
+    const world = { clock: () => new Date(2024, 6, 15, 12, 0, 0), weather: 'sunny' as const }
+    const hardAtBite = (rich: boolean): number => {
+      let hard = 0
+      for (let seed = 1; seed <= 120; seed++) {
+        const l = new CoreLoop(new Rng(seed), world)
+        if (rich) l.setRichBaitSource(() => true)
+        castFull(l)
+        runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
+        if (l.fish?.id === 'shandiansuo') hard += 1
+      }
+      return hard
+    }
+    const plain = hardAtBite(false)
+    const rich = hardAtBite(true)
+    expect(rich).toBeGreaterThan(plain)
+  })
+})
