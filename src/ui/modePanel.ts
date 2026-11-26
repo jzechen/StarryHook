@@ -16,7 +16,8 @@ const MODE_OPTIONS: readonly { mode: GameMode; label: string; hint: string }[] =
 
 /**
  * 模式面板(票 #24,spec #22):顶栏「模式」入口开选择面板,列无限休闲/限时挑战
- * 与限时单局最高纪录,当前模式高亮标识。只读消费核心模式状态(core.phase / core.mode /
+ * 与单局最高纪录(限时单局纪录,词汇对齐 GLOSSARY),当前模式高亮标识。
+ * 只读消费核心模式状态(core.phase / core.mode /
  * core.roundActive)与限时纪录(TimedBestStore.best),切换走核心 setMode——垂钓
  * 进行中核心层同样拒绝,与入口策略(modePanelAllowed,仅待机可开)构成双保险。
  * 开关与既有面板同款交互:入口焦点即清(防误触空格),离开待机自动收起,
@@ -39,7 +40,7 @@ export class ModePanel {
   private pendingReopen = false
   /** 最近一次渲染时的当前模式(null = 尚未写过,首帧必刷) */
   private renderedMode: GameMode | null = null
-  /** 最近一次渲染时的限时最佳纪录(打开时才刷新,变化才写 DOM) */
+  /** 最近一次渲染时的单局最高纪录(打开时才刷新,变化才写 DOM) */
   private renderedBest = -1
 
   constructor(
@@ -87,7 +88,7 @@ export class ModePanel {
       this.rows.push({ btn, currentEl })
     }
 
-    // 限时最佳纪录初始文本由脚本写入(HTML 不硬编码 0,老玩家上线即真实纪录)
+    // 单局最高纪录初始文本由脚本写入(HTML 不硬编码 0,老玩家上线即真实纪录)
     this.bestEl.textContent = this.bestText()
 
     this.entryBtn.addEventListener('click', () => {
@@ -139,10 +140,10 @@ export class ModePanel {
     if (this.open) this.refresh()
   }
 
-  /** 限时最佳纪录文案:0 = 还没有成绩(TimedBestStore 契约),不显示裸 0 */
+  /** 单局最高纪录文案(词汇对齐 GLOSSARY「限时挑战」):0 = 还没有成绩(TimedBestStore 契约),不显示裸 0 */
   private bestText(): string {
     const best = this.timedBest.best()
-    return best > 0 ? `限时最佳纪录 ${best}` : '限时最佳纪录 暂无'
+    return best > 0 ? `单局最高纪录 ${best}` : '单局最高纪录 暂无'
   }
 
   private refresh(): void {

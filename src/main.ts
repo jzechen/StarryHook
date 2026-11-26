@@ -155,7 +155,7 @@ async function main(): Promise<void> {
     equipBait,
     panelExclusion,
   )
-  // 模式面板(票 #24):顶栏「模式」入口 + 选择面板(无限休闲/限时挑战 + 限时最佳纪录),
+  // 模式面板(票 #24):顶栏「模式」入口 + 选择面板(无限休闲/限时挑战 + 单局最高纪录),
   // 只读消费核心模式状态(core.phase/mode/roundActive)与限时纪录,切换走核心 setMode
   // ——垂钓中核心层同样拒绝,与入口策略(modePanelAllowed,仅待机)双保险。
   // 局毕(归零强制结算)自动回面板可再来一局;第四面板经 PanelExclusion 注册即入
