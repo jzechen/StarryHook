@@ -10,13 +10,15 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "gen:placeholders": "node scripts/generate-placeholder-atlas.mjs"
+    "gen:placeholders": "node scripts/generate-placeholder-atlas.mjs",
+    "gen:fish-atlas": "node scripts/generate-fish-atlas.mjs"
   },
   "dependencies": {
     "@fontsource/fusion-pixel-12px-proportional-sc": "^5.3.0",
     "pixi.js": "^8.6.6"
   },
   "devDependencies": {
+    "@types/node": "^26.6.10",
     "typescript": "~5.9.2",
     "vite": "^7.1.0",
     "vitest": "^5.1.1"
