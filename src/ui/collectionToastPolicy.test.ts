@@ -1,20 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { CollectionStore, type KvStorage } from '../core/collection'
+import { CollectionStore } from '../core/collection'
 import { FISH } from '../core/fishCatalog'
+import { memoryStorage } from '../testing/memoryStorage'
 import { collectionToasts, snapshotOf } from './collectionToastPolicy'
 
 const IDS = FISH.map(f => f.id)
-
-/** 内存替身:localStorage 属系统边界,按仓库测试规范用替身(与 collection.test.ts 同款) */
-function memoryStorage(): KvStorage {
-  const map = new Map<string, string>()
-  return {
-    get: key => map.get(key) ?? null,
-    set: (key, value) => {
-      map.set(key, value)
-    },
-  }
-}
 
 /**
  * 接缝:图鉴提示决策(纯函数,固定输入,期望值为独立字面量)。

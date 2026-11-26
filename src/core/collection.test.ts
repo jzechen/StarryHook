@@ -1,19 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { CollectionStore, type KvStorage } from './collection'
+import { CollectionStore } from './collection'
 import { FISH } from './fishCatalog'
+import { memoryStorage } from '../testing/memoryStorage'
 
 const IDS = FISH.map(f => f.id)
-
-/** 内存替身:localStorage 属系统边界,按仓库测试规范用替身 */
-function memoryStorage(): KvStorage {
-  const map = new Map<string, string>()
-  return {
-    get: key => map.get(key) ?? null,
-    set: (key, value) => {
-      map.set(key, value)
-    },
-  }
-}
 
 describe('CollectionStore(接缝:收集册)', () => {
   it('初始为空册:逐条未收集,进度 0/目录长度,未集齐', () => {
