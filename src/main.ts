@@ -3,6 +3,7 @@ import { Application } from 'pixi.js'
 // font-display: swap → 首帧可能以系统字体闪现再切换(轻微 FOUT,票面接受);
 // 不做预载:该包为单文件全量中文字集(woff2 约 600KB),预载会挤占首屏关键资源
 import '@fontsource/fusion-pixel-12px-proportional-sc'
+import { RODS } from './config'
 import { CollectionStore, type KvStorage } from './core/collection'
 import { CoreLoop } from './core/coreLoop'
 import { FISH } from './core/fishCatalog'
@@ -21,6 +22,7 @@ import { PanelExclusion } from './ui/panelExclusion'
 import { progressionToastText } from './ui/progressionToastPolicy'
 import { AudioSfxPlayer, MuteAwareSfxPlayer } from './ui/sfx'
 import { sfxForEvent } from './ui/sfxMapping'
+import { ShopPanel, type ShopBuyOutcome } from './ui/shopPanel'
 import { ToastLayer } from './ui/toastLayer'
 import { WaterPanel } from './ui/waterPanel'
 
@@ -108,6 +110,28 @@ async function main(): Promise<void> {
   // 换水域面板(票 #15):入口仅待机可用(waterSwitchPolicy),切换调核心 setWater
   // ——垂钓中核心层同样拒绝,双保险
   const waterPanel = new WaterPanel(core, panelExclusion)
+  // 商店面板(票 #20):购买回调在组合根接线 wallet/progression 的既有公开方法,core/ 零改动。
+  // 购竿 = 可负担预检(读 wallet.coins)→ progression.purchaseRod(无意义购买在此拒绝:
+  // 已拥有/初始竿/降档)→ wallet.spend 扣款 → 竿立即生效(绿条参数注入 + 顶栏竿名刷新);
+  // 预检与扣款在同一同步块内,单线程无插入,扣款必成功(spend 失败分支仅防御性兜底)。
+  const buyRodOutcome = (rodId: string): ShopBuyOutcome => {
+    const rod = RODS.find(r => r.id === rodId)
+    if (!rod) return 'meaningless'
+    if (wallet.coins() < rod.price) return 'insufficient'
+    const purchased = progression.purchaseRod(rodId)
+    if (!purchased) return 'meaningless'
+    if (!wallet.spend(rod.price).ok) return 'insufficient'
+    core.setRodParams(purchased.params)
+    hud.setProgression(progression.level(), progression.rod().name)
+    return 'ok'
+  }
+  // 购饵 = wallet.buyBait(价格扣款 + 库存增加一体);目录外/非法 id 映射为无意义购买
+  const buyBaitOutcome = (baitId: string): ShopBuyOutcome => {
+    const result = wallet.buyBait(baitId)
+    if (result.ok) return 'ok'
+    return result.reason === 'insufficient' ? 'insufficient' : 'meaningless'
+  }
+  const shopPanel = new ShopPanel(wallet, progression, buyRodOutcome, buyBaitOutcome, panelExclusion)
   // 轻提示层:新收录 / 池塘大满贯,顶部居中,不拦截游戏输入
   const toasts = new ToastLayer()
   let prevPhase: LoopPhase = core.phase
@@ -218,6 +242,8 @@ async function main(): Promise<void> {
     collectionPanel.update(core)
     // 换水域面板(票 #15):入口可用性(仅待机)、自动收起、当前水域标识
     waterPanel.update(core)
+    // 商店面板(票 #20):入口可用性(仅待机)、自动收起、余额/库存/竿状态刷新(打开时游戏照常推进)
+    shopPanel.update(core)
   })
 }
 
