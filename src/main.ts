@@ -20,6 +20,7 @@ import { progressionToastText } from './ui/progressionToastPolicy'
 import { AudioSfxPlayer, MuteAwareSfxPlayer } from './ui/sfx'
 import { sfxForEvent } from './ui/sfxMapping'
 import { ToastLayer } from './ui/toastLayer'
+import { WaterPanel } from './ui/waterPanel'
 
 /** 浏览器 localStorage 适配器:读写两侧都吞异常(隐私模式/配额),游戏不受影响 */
 function localStorageKv(): KvStorage {
@@ -87,8 +88,16 @@ async function main(): Promise<void> {
   const progression = new ProgressionStore(storage)
   core.setRodParams(progression.rod().params)
   hud.setProgression(progression.level(), progression.rod().name)
-  // 图鉴面板:只读消费收集册,入口常驻(可用性随阶段变化)
-  const collectionPanel = new CollectionPanel(collection)
+  // 图鉴面板:只读消费收集册,入口常驻(可用性随阶段变化);打开时收起换水域
+  // 面板(两面板互斥打开,右侧同位不重叠遮挡;闭包后置引用,触发时两者均已建好)
+  const collectionPanel = new CollectionPanel(collection, open => {
+    if (open) waterPanel.close()
+  })
+  // 换水域面板(票 #15):入口仅待机可用(waterSwitchPolicy),切换调核心 setWater
+  // ——垂钓中核心层同样拒绝,双保险;打开时反向收起图鉴面板
+  const waterPanel = new WaterPanel(core, open => {
+    if (open) collectionPanel.close()
+  })
   // 轻提示层:新收录 / 池塘大满贯,顶部居中,不拦截游戏输入
   const toasts = new ToastLayer()
   let prevPhase: LoopPhase = core.phase
@@ -194,6 +203,8 @@ async function main(): Promise<void> {
     hud.update(core)
     // 图鉴面板:入口可用性、自动收起、进度刷新(打开时核心循环照常推进)
     collectionPanel.update(core)
+    // 换水域面板(票 #15):入口可用性(仅待机)、自动收起、当前水域标识
+    waterPanel.update(core)
   })
 }
 

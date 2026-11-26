@@ -38,8 +38,28 @@
         border: 1px solid rgba(159, 216, 232, .5); border-radius: 999px; cursor: pointer;
       }
       .pill:hover:enabled { background: rgba(23, 80, 107, .9); }
-      #collection-entry { margin-left: auto; }
-      #collection-entry:disabled { opacity: .4; cursor: not-allowed; }
+      /* 环境徽章(票 #15):季节 · 昼夜 · 天气,文案由 envBadgeText 派生,内容变化才重写 */
+      #env-badge { letter-spacing: 1px; opacity: .95; }
+      #water-entry:disabled { opacity: .4; cursor: not-allowed; }
+      /* 换水域面板(票 #15):与图鉴面板同族样式,两面板互斥打开(见 main.ts 接线) */
+      #water-panel {
+        pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 244px;
+        background: rgba(12, 47, 63, .92);
+        border: 1px solid rgba(159, 216, 232, .5); border-radius: 14px;
+        padding: 12px 14px; font-size: 12px;
+      }
+      #water-panel[hidden] { display: none; }
+      #water-list { margin: 10px 0 0; display: grid; gap: 6px; }
+      .water-item {
+        display: flex; align-items: baseline; gap: 10px; width: 100%;
+        font: inherit; text-align: left; padding: 7px 12px;
+        color: #eaf4f6; background: rgba(23, 80, 107, .35);
+        border: 1px solid transparent; border-radius: 9px; cursor: pointer;
+      }
+      .water-item:hover { background: rgba(23, 80, 107, .7); }
+      .water-item .water-hint { margin-left: auto; opacity: .9; }
+      .water-item.current { border-color: rgba(255, 210, 63, .55); }
+      .water-item .water-current { color: #ffd23f; }
       #collection-panel {
         pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 292px;
         background: rgba(12, 47, 63, .92);
@@ -120,6 +140,9 @@
       <div id="topbar">
         得分 <b id="score">0</b> · 最高纪录 <b id="best">0</b>
         <span id="rod-status"></span><!-- 初始文本由 Hud 依恢复的成长状态写入(老玩家上线即真实等级/竿) -->
+        <span id="env-badge"></span><!-- 环境徽章(票 #15):「春 · 日 · 晴」,初始文本由 Hud 依核心环境状态写入;水域不进徽章,换水域面板可见 -->
+        <!-- 换水域入口(票 #15):可用性随阶段变化(仅待机,见 waterSwitchPolicy),垂钓中置灰 -->
+        <button id="water-entry" type="button" class="pill">换水域</button>
         <button id="collection-entry" type="button" class="pill">图鉴</button>
         <button id="reset" type="button" class="pill">重开</button>
         <!-- 静音开关(spec #12):图标即状态,🔊 可听 / 🔇 已静音;持久化见 ui/muteStore.ts -->
@@ -135,6 +158,13 @@
           <button id="collection-close" type="button" class="pill" aria-label="关闭图鉴">✕ 关闭</button>
         </div>
         <ul id="collection-list"></ul>
+      </div>
+      <div id="water-panel" hidden>
+        <div class="panel-head">
+          <span class="panel-title">换水域</span>
+          <button id="water-close" type="button" class="pill" aria-label="关闭换水域">✕ 关闭</button>
+        </div>
+        <div id="water-list"></div><!-- 行由 WaterPanel 依水域注册表生成:名称 + 代表鱼提示 + 当前水域标识 -->
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
