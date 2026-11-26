@@ -1,5 +1,13 @@
 import type { Daylight, FishHabitat, Season, WaterAreaId, Weather } from '../core/types'
 import { WATER_AREAS, waterAreaOf } from '../core/waterAreas'
+import {
+  DAYLIGHT_ORDER,
+  DAYLIGHT_ROOT,
+  SEASON_ORDER,
+  SEASON_ROOT,
+  WEATHER_ORDER,
+  WEATHER_ROOT,
+} from './envLabels'
 
 /**
  * 图鉴条目「出没条件」文案派生(纯函数,依 GLOSSARY「出没条件」)。
@@ -20,17 +28,18 @@ import { WATER_AREAS, waterAreaOf } from '../core/waterAreas'
 /** 水域规范序(池塘/河流/湖)= 水域注册表声明序;水域名亦以注册表为单源(只读) */
 const AREA_ORDER: readonly WaterAreaId[] = WATER_AREAS.map(a => a.id)
 
-/** 季节规范序与单字显示名(对齐徽章词汇「春 · 日 · 晴」的季节字) */
-const SEASON_ORDER: readonly Season[] = ['spring', 'summer', 'autumn', 'winter']
-const SEASON_LABELS: Record<Season, string> = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' }
+/** 季节显示名 = 单字根字(与徽章「春」同源同字,连写「仅春冬」「春秋季加成」) */
+const SEASON_LABELS: Record<Season, string> = SEASON_ROOT
 
-/** 昼夜规范序与显示名(日间/夜间,根字对齐徽章「日」;GLOSSARY 术语为白天/夜晚) */
-const DAYLIGHT_ORDER: readonly Daylight[] = ['day', 'night']
-const DAYLIGHT_LABELS: Record<Daylight, string> = { day: '日间', night: '夜间' }
-
-/** 天气规范序与显示名(依 GLOSSARY 天气:晴/雨) */
-const WEATHER_ORDER: readonly Weather[] = ['sunny', 'rain']
-const WEATHER_LABELS: Record<Weather, string> = { sunny: '晴天', rain: '雨天' }
+/** 昼夜/天气长文案在单源根字上派生:根字 +「间」/「天」(GLOSSARY 术语白天/夜晚,显示从徽章根字) */
+const DAYLIGHT_LABELS: Record<Daylight, string> = {
+  day: `${DAYLIGHT_ROOT.day}间`,
+  night: `${DAYLIGHT_ROOT.night}间`,
+}
+const WEATHER_LABELS: Record<Weather, string> = {
+  sunny: `${WEATHER_ROOT.sunny}天`,
+  rain: `${WEATHER_ROOT.rain}天`,
+}
 
 /** 按规范序重排声明的取值(确定性:不依赖目录书写顺序) */
 function canonicalOf<K>(order: readonly K[], declared: readonly K[]): K[] {
