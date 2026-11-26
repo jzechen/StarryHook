@@ -84,6 +84,10 @@ async function main(): Promise<void> {
 
   // 收集册:捕获自动登记,跨会话持久(隐私模式下写入失败自动降级为内存收集)
   const storage = localStorageKv()
+  // 限时单局最高纪录(票 #23 纪录双轨):独立键跨会话持久,损坏按 0 降级。
+  // 消费三处,写入只有一处——顶栏限时轨展示(顶栏「最高纪录」,票 #22 review)、
+  // 归零结算的破纪录判定源(recordIfHigher,唯一写入点)与模式面板的纪录展示
+  const timedBest = new TimedBestStore(storage)
   // 静音:纯 UI 层状态,独立键持久(损坏按默认非静音降级);
   // 音效播放器注入式 —— 外层静音门 + 内层浏览器 Audio 实现,测试可整体替换
   const mute = new MuteStore(storage)
@@ -91,6 +95,7 @@ async function main(): Promise<void> {
   const hud = new Hud(
     () => core.resetSession(),
     () => mute.toggle(),
+    timedBest,
   )
   hud.setMuted(mute.muted())
   const collection = new CollectionStore(FISH.map(f => f.id), storage)
@@ -102,9 +107,6 @@ async function main(): Promise<void> {
   // 经济(票 #18):金币/鱼饵钱包,独立键名跨会话持久(损坏按初始状态降级);
   // 本票接捕获入账与香饵抛竿消耗,商店购竿与购饵 UI 属后续票
   const wallet = new WalletStore(storage)
-  // 限时单局最高纪录(票 #23 纪录双轨):独立键跨会话持久,损坏按 0 降级;
-  // 本票消费两处——结算反馈的破纪录判定源(recordIfHigher)与模式面板的纪录展示(best)
-  const timedBest = new TimedBestStore(storage)
   // 鱼饵生效(票 #19 香饵 + 票 #21 浓饵;review 修复后两缝合一):核心循环在抛竿时刻
   // (进入 waiting 边沿,core cast 内)调用单一饵效果来源恰好一次,本竿饵消耗恰好一次,
   // 消耗与效果同源产出,不再有调用次序契约:
