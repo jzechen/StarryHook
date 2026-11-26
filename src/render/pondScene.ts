@@ -2,22 +2,37 @@ import { Application, Container, Graphics, Sprite, Text, TilingSprite } from 'pi
 import { TUNE } from '../config'
 import type { CoreLoop } from '../core/coreLoop'
 import type { FishDef, LoopPhase } from '../core/types'
-import type { SceneTextures } from './textures'
+import type { Facing, SceneTextures, WaveEdge } from './textures'
+import { PLAYER_FRAME_COUNT, TILE, WAVE_FRAME_COUNT, WATER_FRAME_COUNT } from './textures'
 
 /**
  * 池塘场景:PixiJS 薄壳,每帧从 CoreLoop 快照刷新。
  *
- * 架构(ADR-0002 精灵化):场景按「平铺背景 → 水体 → 水面特效 → 实体 → 覆盖 UI」
- * 分层,素材经 textures.ts 切片后以精灵/平铺精灵呈现。本票先打通管线:
- * 岸块与水面走真实贴图(图集两帧交替 = 波光动画,即后续实体帧动画的同款路径);
- * 玩家/小游戏等其余实体暂留几何绘制,后续票逐个换皮。
+ * 架构(ADR-0002 精灵化,换皮票 #10):场景按「平铺背景 → 水体 → 岸线波纹 →
+ * 水面特效 → 实体 → 覆盖 UI」分层,素材经 textures.ts 切片后以精灵/平铺精灵呈现。
+ * 水面 = 13 帧流水循环;岸线 = 泡沫动画沿池边顺时针环流(逐 tile 相位偏移,
+ * 波峰像浪一样绕池游走);角色 = 16x16 四向行走精灵,方向由渲染侧对比
+ * 前后帧 px/py 位移向量推导(核心零改动),静止播放待机帧。
+ * 小游戏面板暂留几何绘制,换皮属后续票。
  *
  * 坐标系:画布固定 480×270 逻辑分辨率(视口层已做整数倍信箱缩放),
  * 所有尺寸按逻辑像素取值,不再跟随窗口尺寸。
  */
 
-/** 水面两帧交替周期(秒)——与占位图集的两帧波光配套 */
-const WATER_FRAME_PERIOD = 0.55
+/** 流水帧轮换周期(秒)——13 帧一轮约 2s,读作缓慢水流 */
+const WATER_FRAME_PERIOD = 0.15
+/** 岸线波纹帧轮换周期(秒)——8 帧一轮 2.4s,浪涌节奏 */
+const WAVE_FRAME_PERIOD = 0.3
+/** 行走动画帧周期(秒)——4 帧一轮,配合移动速度读作小碎步 */
+const WALK_FRAME_PERIOD = 0.14
+/** 判定「在移动」的每帧最小位移(逻辑像素) */
+const MOVE_EPS = 0.1
+/** 角色脚底相对核心坐标点(ppy)的偏移:贴图底边落在原身体下缘 */
+const PLAYER_FOOT_OFFSET = 7
+/** 波纹贴片土侧宽度:tile 内泡沫带起点距 tile 边缘的像素数 */
+const WAVE_LAND_SIDE = 6
+/** 波纹超出池边的最大距离(掩膜余量,允许浪 wash 上岸) */
+const WAVE_MASK_MARGIN = 8
 
 /** 浮标渲染侧微调量(贴图 8×12,锚点居中) */
 const BOBBER_FX = {
@@ -33,21 +48,29 @@ const BOBBER_FX = {
   castStartLift: 12,
 }
 
+/** 岸线波纹贴片:沿池边一圈排布,phase 决定它在环流中的帧偏移 */
+interface WaveTile {
+  sprite: Sprite
+  edge: WaveEdge
+  phase: number
+}
+
 export class PondScene {
   private app: Application
   private textures: SceneTextures
-  // —— 分层容器:自下而上 = 背景 → 水体 → 特效 → 实体 → 覆盖 UI ——
+  // —— 分层容器:自下而上 = 背景 → 水体 → 岸线波纹 → 特效 → 实体 → 覆盖 UI ——
   private world = new Container()
   private bankTiling: TilingSprite
   private pondFill = new Graphics()
   private waterTiling: TilingSprite
   private pondStroke = new Graphics()
+  private waveLayer = new Container()
+  private waveTiles: WaveTile[] = []
   private ripples = new Graphics()
   private line = new Graphics()
   private chargeBar = new Graphics()
   private player = new Container()
-  private body = new Graphics()
-  private head = new Graphics()
+  private playerSprite: Sprite
   private bobberSprite = new Container()
   private bang: Text
   private track = new Graphics()
@@ -59,24 +82,35 @@ export class PondScene {
   /** 抛竿飞行动画进度 0..1 */
   private castT = 1
   private biteT = 0
+  // —— 角色动画状态(渲染侧自推导,不回写核心) ——
+  private facing: Facing = 'down'
+  /** 行走动画计时;静止时归零回到待机帧 */
+  private walkT = 0
+  private prevPx = -1
+  private prevPy = -1
 
   constructor(app: Application, textures: SceneTextures) {
     this.app = app
     this.textures = textures
 
-    // 背景:草地岸块全屏平铺(真实贴图)
+    const W = app.screen.width
+    const H = app.screen.height
+
+    // 背景:草地岸块全屏平铺(OGA 素材)
     this.bankTiling = new TilingSprite({
       texture: textures.grassTile,
-      width: app.screen.width,
-      height: app.screen.height,
+      width: W,
+      height: H,
     })
 
-    // 水面:池塘矩形内平铺水面贴图(真实贴图),两帧交替出波光
+    // 水面:池塘矩形内平铺流动水贴图(13 帧循环,见 update)
     const P = TUNE.pond
-    const pondW = (P.x1 - P.x0) * app.screen.width
-    const pondH = (P.y1 - P.y0) * app.screen.height
+    const px0 = P.x0 * W
+    const py0 = P.y0 * H
+    const pondW = (P.x1 - P.x0) * W
+    const pondH = (P.y1 - P.y0) * H
     this.waterTiling = new TilingSprite({ texture: textures.waterFrames[0], width: pondW, height: pondH })
-    this.waterTiling.position.set(P.x0 * app.screen.width, P.y0 * app.screen.height)
+    this.waterTiling.position.set(px0, py0)
 
     this.bang = new Text({
       text: '!',
@@ -91,10 +125,19 @@ export class PondScene {
     this.bang.anchor.set(0.5)
     this.bang.visible = false
 
-    // 浮标:图集切片精灵(管线验证实体),位置仍由核心状态驱动
+    // 浮标:图集切片精灵(位置仍由核心状态驱动)
     const bobber = new Sprite(textures.bobber)
     bobber.anchor.set(0.5)
     this.bobberSprite.addChild(bobber)
+
+    // 角色:16x16 四向行走精灵,脚底锚在核心坐标点下方(原几何身体下缘)
+    this.playerSprite = new Sprite(textures.playerFrames.down[0])
+    this.playerSprite.anchor.set(0.5, 1)
+    this.playerSprite.position.set(0, PLAYER_FOOT_OFFSET)
+    this.player.addChild(this.playerSprite)
+
+    // 岸线波纹:沿池边一圈逐 tile 排布,泡沫相位顺时针环流;掩膜限制浪不上岸过远
+    this.buildWaveRing(px0, py0, pondW, pondH)
 
     app.stage.addChild(this.world)
     this.world.addChild(
@@ -102,6 +145,7 @@ export class PondScene {
       this.pondFill,
       this.waterTiling,
       this.pondStroke,
+      this.waveLayer,
       this.ripples,
       this.line,
       this.chargeBar,
@@ -113,7 +157,33 @@ export class PondScene {
       this.mgFish,
       this.mgProgress,
     )
-    this.player.addChild(this.body, this.head)
+  }
+
+  /** 沿池边一圈布置泡沫贴片:上边自左向右、右边自上而下、下边自右向左、左边自下而上 */
+  private buildWaveRing(px0: number, py0: number, pondW: number, pondH: number): void {
+    const cols = Math.round(pondW / TILE)
+    const rows = Math.ceil(pondH / TILE)
+    const frames = this.textures.waveFrames
+    const addTile = (edge: WaveEdge, phase: number, x: number, y: number): void => {
+      const sprite = new Sprite(frames[edge][0])
+      sprite.position.set(x, y)
+      this.waveLayer.addChild(sprite)
+      this.waveTiles.push({ sprite, edge, phase })
+    }
+    for (let i = 0; i < cols; i++) addTile('top', i, px0 + i * TILE, py0 - WAVE_LAND_SIDE)
+    for (let j = 0; j < rows; j++) addTile('right', cols + j, px0 + pondW - TILE + WAVE_LAND_SIDE, py0 + j * TILE)
+    for (let k = 0; k < cols; k++) {
+      addTile('bottom', cols + rows + (cols - 1 - k), px0 + k * TILE, py0 + pondH - TILE + WAVE_LAND_SIDE)
+    }
+    for (let m = 0; m < rows; m++) {
+      addTile('left', 2 * cols + rows + (rows - 1 - m), px0 - WAVE_LAND_SIDE, py0 + m * TILE)
+    }
+    // 掩膜:波纹只允许出现在池边外扩 WAVE_MASK_MARGIN 的范围内(侧边末块被裁齐)
+    const mask = new Graphics()
+      .rect(px0 - WAVE_MASK_MARGIN, py0 - WAVE_MASK_MARGIN, pondW + WAVE_MASK_MARGIN * 2, pondH + WAVE_MASK_MARGIN * 2)
+      .fill(0xffffff)
+    this.waveLayer.addChild(mask)
+    this.waveLayer.mask = mask
   }
 
   update(core: CoreLoop, t: number, dt: number): void {
@@ -132,20 +202,40 @@ export class PondScene {
     this.castT = Math.min(1, this.castT + dt / 0.22)
     this.biteT += dt
 
-    // 水面波光:图集两帧按周期交替(后续帧动画同路径)
-    this.waterTiling.texture = this.textures.waterFrames[Math.floor(t / WATER_FRAME_PERIOD) % 2]
+    // 池水流动:13 帧按周期轮换
+    this.waterTiling.texture = this.textures.waterFrames[Math.floor(t / WATER_FRAME_PERIOD) % WATER_FRAME_COUNT]
 
-    // 池塘底色与描边(岸线贴图替换留待场景票)
+    // 池塘底色与描边(底色与流水贴图同源,平铺边缘不露馅)
     this.pondFill
       .rect(P.x0 * W, P.y0 * H, (P.x1 - P.x0) * W, (P.y1 - P.y0) * H)
-      .fill(0x17506b)
+      .fill(0x5c9ce2)
     this.pondStroke
       .rect(P.x0 * W, P.y0 * H, (P.x1 - P.x0) * W, (P.y1 - P.y0) * H)
       .stroke({ width: 4, color: 0x0f3a4d })
 
-    // 玩家(几何小人,位置来自核心状态;尺寸按 480×270 逻辑分辨率取值)
-    this.body.clear().circle(0, 0, 8).fill(0x4a6da7)
-    this.head.clear().circle(0, -9, 5.5).fill(0xf0c8a0)
+    // 岸线波纹:泡沫帧沿岸边顺时针环流(逐 tile 相位偏移 → 波峰绕池游走)
+    const waveFrame = Math.floor(t / WAVE_FRAME_PERIOD)
+    for (const tile of this.waveTiles) {
+      tile.sprite.texture = this.textures.waveFrames[tile.edge][(waveFrame + tile.phase) % WAVE_FRAME_COUNT]
+    }
+
+    // 角色方向与行走:对比前后帧 px/py 位移向量(渲染侧推导,核心零改动)。
+    // 水平/垂直分量按画布尺寸折算成逻辑像素再比大小;位移可忽略 = 静止待机(帧 0)
+    if (this.prevPx >= 0) {
+      const dx = (core.px - this.prevPx) * W
+      const dy = (core.py - this.prevPy) * H
+      if (Math.hypot(dx, dy) > MOVE_EPS) {
+        this.facing =
+          Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up'
+        this.walkT += dt
+      } else {
+        this.walkT = 0
+      }
+    }
+    this.prevPx = core.px
+    this.prevPy = core.py
+    this.playerSprite.texture =
+      this.textures.playerFrames[this.facing][Math.floor(this.walkT / WALK_FRAME_PERIOD) % PLAYER_FRAME_COUNT]
     this.player.position.set(ppx, ppy)
 
     // 浮标落点:从抛竿点向池塘中心,远近由蓄力决定
