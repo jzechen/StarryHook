@@ -253,7 +253,7 @@ describe('竿档注入(接缝:换竿 → 物理生效)', () => {
   })
 })
 
-describe('等待时长修正系数注入(接缝:香饵 → 等待减半,票 #19)', () => {
+describe('饵效果单缝注入(接缝:本竿饵效果 → 等待减半 × 浓饵权重,票 #19/#21 两缝合一)', () => {
   it('默认未注入 = 现行分布:种子 42 蓄满抛竿,等待时长与现行逐位一致', () => {
     const l = newLoop(42)
     castFull(l)
@@ -262,11 +262,11 @@ describe('等待时长修正系数注入(接缝:香饵 → 等待减半,票 #19)
     expect(l.waitTime).toBeCloseTo(4.204966883640736, 10)
   })
 
-  it('注入修正系数 0.5:同种子下等待时长恰为现行一半(min/max 同乘,分布形状不变)', () => {
+  it('注入 waitScale 0.5(香饵):同种子下等待时长恰为现行一半(min/max 同乘,分布形状不变)', () => {
     const a = newLoop(42)
     castFull(a)
     const b = newLoop(42)
-    b.setWaitTimeScale(() => 0.5)
+    b.setBaitEffectSource(() => ({ waitScale: 0.5, richBait: false }))
     castFull(b)
     // 期望值独立导出:同一首抽 u,系数减半 → 1.5×0.5 + 4.5×0.5 × u
     expect(b.waitTime).toBeCloseTo(2.102483441820368, 10)
@@ -274,57 +274,42 @@ describe('等待时长修正系数注入(接缝:香饵 → 等待减半,票 #19)
     expect(b.waitTime).toBeCloseTo(a.waitTime / 2, 12)
   })
 
-  it('系数来源在抛竿时刻恰好调用一次:返回值决定本竿系数,等待与咬钩阶段不再调用', () => {
-    let calls = 0
-    const l = newLoop(42)
-    l.setWaitTimeScale(() => {
-      calls += 1
-      return 1
-    })
-    castFull(l)
-    expect(calls).toBe(1) // 抛竿边沿一次:组合根的消耗接线由此保证每竿只扣一支饵
-    runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
-    expect(calls).toBe(1)
-  })
-})
-
-describe('浓饵生效标记注入(接缝:浓饵 → 难鱼权重提升,票 #21)', () => {
-  it('默认未注入 = 现行:显式恒 false 来源与未注入同种子同输入出鱼逐位一致', () => {
+  it('默认 = 现行权重:显式恒 null 来源与未注入同种子同输入出鱼逐位一致(未装备 = 现行)', () => {
     for (const seed of [7, 42, 123]) {
       const a = newLoop(seed)
       castFull(a)
       runUntil(a, 10, IDLE, x => x.phase !== 'waiting')
       const b = newLoop(seed)
-      b.setRichBaitSource(() => false)
+      b.setBaitEffectSource(() => null)
       castFull(b)
       runUntil(b, 10, IDLE, x => x.phase !== 'waiting')
       expect(b.fish!.id).toBe(a.fish!.id)
     }
   })
 
-  it('标记来源在抛竿时刻恰好调用一次(与等待时长来源同款纪律,权重在抛竿时刻算定)', () => {
+  it('饵效果来源在抛竿时刻恰好调用一次:返回值决定本竿效果,等待/咬钩/小游戏/结算不再调用', () => {
     let calls = 0
     const l = newLoop(42)
-    l.setRichBaitSource(() => {
+    l.setBaitEffectSource(() => {
       calls += 1
-      return false
+      return null
     })
     castFull(l)
-    expect(calls).toBe(1)
+    expect(calls).toBe(1) // 抛竿边沿一次:组合根的消耗接线由此保证每竿只扣一支饵
     runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
-    l.update(DT, HOLD) // 起竿进小游戏、打到结算:标记来源不再被调用
+    l.update(DT, HOLD) // 起竿进小游戏、打到结算:来源不再被调用
     runUntil(l, 60, HOLD, x => x.phase === 'caught' || x.phase === 'escaped')
     expect(calls).toBe(1)
   })
 
-  it('注入恒 true:固定环境(夏·日·晴)下,固定 120 种子的难鱼(闪电梭)命中数高于默认', () => {
+  it('注入浓饵效果(richBait true,waitScale 1):固定环境(夏·日·晴)下,固定 120 种子的难鱼(闪电梭)命中数高于默认', () => {
     // 环境 = clock + weather 注入(既有 world 注入缝),统计在固定种子集上完全确定
     const world = { clock: () => new Date(2024, 6, 15, 12, 0, 0), weather: 'sunny' as const }
     const hardAtBite = (rich: boolean): number => {
       let hard = 0
       for (let seed = 1; seed <= 120; seed++) {
         const l = new CoreLoop(new Rng(seed), world)
-        if (rich) l.setRichBaitSource(() => true)
+        if (rich) l.setBaitEffectSource(() => ({ waitScale: 1, richBait: true }))
         castFull(l)
         runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
         if (l.fish?.id === 'shandiansuo') hard += 1

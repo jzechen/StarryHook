@@ -14,8 +14,10 @@ import { WalletStore } from './core/wallet'
 import { PondScene } from './render/pondScene'
 import { loadSceneTextures } from './render/textures'
 import { applyViewportToCanvas } from './render/viewport'
+import { baitBadgeText } from './ui/baitBadgeText'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
+import { baitEffectSource, buyBaitOutcome, equippedBaitView } from './ui/economyWiring'
 import { Hud } from './ui/hud'
 import { MuteStore } from './ui/muteStore'
 import { PanelExclusion } from './ui/panelExclusion'
@@ -95,24 +97,14 @@ async function main(): Promise<void> {
   // 经济(票 #18):金币/鱼饵钱包,独立键名跨会话持久(损坏按初始状态降级);
   // 本票接捕获入账与香饵抛竿消耗,商店购竿与购饵 UI 属后续票
   const wallet = new WalletStore(storage)
-  // 鱼饵生效(票 #19 香饵 + 票 #21 浓饵):核心循环在抛竿时刻(进入 waiting 边沿,
-  // core cast 内)依次调用两个来源闭包——先浓饵标记来源(权重计算点),后等待时长来源。
-  // 本竿饵消耗恰好一次,由先被调用的浓饵来源执行,结果存入 castBait 供两个效果共享:
-  // - 浓饵:装备浓饵且消耗成功 → 权重引擎浓饵入参生效,难鱼权重提升;
-  //   未装备/耗尽 → false,权重 = 现行,自动回退。
-  // - 香饵:装备香饵且消耗成功 → 等待时长减半(TUNE.wait.min/max 同乘 0.5,分布形状不变)。
-  // 浓饵不减半等待、香饵不提升难鱼权重;互斥由装备槽既有语义保证(同一时间只装备一种,
-  // wallet.equip 切换不清余量)。生效判定 = equippedBait() 与 consumeBaitForCast()
-  // 同步配对(单线程内连续调用,consume 消耗的正是刚才读到的装备槽),
-  // 故 wallet.consumeBaitForCast 的 boolean 返回值契约保持不变。
-  const SCENTED_BAIT_WAIT_SCALE = 0.5
-  let castBait: string | null = null
-  core.setRichBaitSource(() => {
-    const equipped = wallet.equippedBait()
-    castBait = wallet.consumeBaitForCast() ? equipped : null
-    return castBait === 'nonger'
-  })
-  core.setWaitTimeScale(() => (castBait === 'xianger' ? SCENTED_BAIT_WAIT_SCALE : 1))
+  // 鱼饵生效(票 #19 香饵 + 票 #21 浓饵;review 修复后两缝合一):核心循环在抛竿时刻
+  // (进入 waiting 边沿,core cast 内)调用单一饵效果来源恰好一次,本竿饵消耗恰好一次,
+  // 消耗与效果同源产出,不再有调用次序契约:
+  // - 香饵:装备且消耗成功 → 等待时长减半(TUNE.wait.min/max 同乘 0.5,分布形状不变);
+  // - 浓饵:装备且消耗成功 → 权重引擎浓饵入参生效,难鱼权重提升(等待不减半);
+  // - 未装备/耗尽 → null,本竿无饵效果,自动回退现行。
+  // 接线本体抽至 ui/economyWiring(可测单源,组合层集成测试直接驱动同一段接线)
+  core.setBaitEffectSource(baitEffectSource(wallet))
   // 面板互斥协调器:任一面板打开即收起其余,右侧同位不重叠遮挡;
   // 面板构造时自注册,组合根不再串互斥回调,商店面板(GLOSSARY 经济与模式)注册即入
   const panelExclusion = new PanelExclusion()
@@ -123,8 +115,12 @@ async function main(): Promise<void> {
   const waterPanel = new WaterPanel(core, panelExclusion)
   // 商店面板(票 #20):购买回调在组合根接线 wallet/progression 的既有公开方法,core/ 零改动。
   // 购竿 = 可负担预检(读 wallet.coins)→ progression.purchaseRod(无意义购买在此拒绝:
-  // 已拥有/初始竿/降档)→ wallet.spend 扣款 → 竿立即生效(绿条参数注入 + 顶栏竿名刷新);
-  // 预检与扣款在同一同步块内,单线程无插入,扣款必成功(spend 失败分支仅防御性兜底)。
+  // 已拥有/初始竿/降档)→ wallet.spend 扣款 → 竿立即生效(绿条参数注入 + 顶栏竿名刷新)。
+  // spend 的拒绝分支在此不可达,理由可查证:金额取竿表正数常量(invalid 分支不成立);
+  // 预检与 spend 处于同一同步块,中间仅调用 progression.purchaseRod(独立存储键,
+  // 不触钱包),余额不可能在两步之间变少(insufficient 的唯一成因不成立)。
+  // 若未来在两步之间引入会动余额的路径,spend 会如实拒绝并反馈 insufficient
+  // (拒绝时状态原样,不会扣成负数),不会静默出账。
   const buyRodOutcome = (rodId: string): ShopBuyOutcome => {
     const rod = RODS.find(r => r.id === rodId)
     if (!rod) return 'meaningless'
@@ -136,13 +132,19 @@ async function main(): Promise<void> {
     hud.setProgression(progression.level(), progression.rod().name)
     return 'ok'
   }
-  // 购饵 = wallet.buyBait(价格扣款 + 库存增加一体);目录外/非法 id 映射为无意义购买
-  const buyBaitOutcome = (baitId: string): ShopBuyOutcome => {
-    const result = wallet.buyBait(baitId)
-    if (result.ok) return 'ok'
-    return result.reason === 'insufficient' ? 'insufficient' : 'meaningless'
-  }
-  const shopPanel = new ShopPanel(wallet, progression, buyRodOutcome, buyBaitOutcome, panelExclusion)
+  // 购饵 = wallet.buyBait(价格扣款 + 库存增加一体)+ 成功即自动装备(review 修复:
+  // 买到即生效,效果实玩可达);目录外/非法 id 映射为无意义购买。
+  // 装备切换同样经组合根回调接线 wallet.equip(装备槽一种,切换不清余量)——
+  // 面板保持只读消费钱包,写操作全走回调(与购竿/购饵同款纪律)
+  const equipBait = (baitId: string): void => wallet.equip(baitId)
+  const shopPanel = new ShopPanel(
+    wallet,
+    progression,
+    buyRodOutcome,
+    buyBaitOutcome(wallet),
+    equipBait,
+    panelExclusion,
+  )
   // 轻提示层:新收录 / 池塘大满贯,顶部居中,不拦截游戏输入
   const toasts = new ToastLayer()
   let prevPhase: LoopPhase = core.phase
@@ -249,6 +251,11 @@ async function main(): Promise<void> {
     prevPhase = core.phase
     scene.update(core, tk.lastTime / 1000, dt)
     hud.update(core)
+    // 经济常驻展示(票 #17 故事 2/10,review 修复):金币余额与装备饵余量上顶栏,
+    // 内容变化才重写 DOM(hud 既有守卫);垂钓进行中商店不可开,饵余量由此常驻可见,
+    // 耗尽(文案 null)自动隐藏。文案派生:baitBadgeText ← equippedBaitView ← 钱包
+    hud.setCoins(wallet.coins())
+    hud.setBaitBadge(baitBadgeText(equippedBaitView(wallet)))
     // 图鉴面板:入口可用性、自动收起、进度刷新(打开时核心循环照常推进)
     collectionPanel.update(core)
     // 换水域面板(票 #15):入口可用性(仅待机)、自动收起、当前水域标识

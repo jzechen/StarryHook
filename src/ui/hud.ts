@@ -2,18 +2,23 @@ import type { CoreLoop } from '../core/coreLoop'
 import type { EnvState } from '../core/types'
 import { envBadgeText } from './envBadgeText'
 
-/** DOM 覆盖层:得分、最高纪录、等级/竿名、环境徽章、操作提示、重开/静音按钮。 */
+/** DOM 覆盖层:得分、最高纪录、金币、等级/竿名、环境徽章、装备饵余量、操作提示、重开/静音按钮。 */
 export class Hud {
   private scoreEl: HTMLElement
   private bestEl: HTMLElement
+  private coinsEl: HTMLElement
   private hintEl: HTMLElement
   private rodStatusEl: HTMLElement
   private envBadgeEl: HTMLElement
+  private baitBadgeEl: HTMLElement
   private muteBtn: HTMLElement
   private lastScore = -1
   private lastBest = -1
+  private lastCoins = -1
   private lastRodStatus = ''
   private lastEnvBadge = ''
+  /** 首帧哨兵:空串不是合法徽章文案(合法 = null 或「饵名 ×n」),首帧必写一次 */
+  private lastBaitBadge: string | null = ''
 
   constructor(
     onReset: () => void,
@@ -22,9 +27,11 @@ export class Hud {
   ) {
     this.scoreEl = document.getElementById('score')!
     this.bestEl = document.getElementById('best')!
+    this.coinsEl = document.getElementById('coins')!
     this.hintEl = document.getElementById('hint')!
     this.rodStatusEl = document.getElementById('rod-status')!
     this.envBadgeEl = document.getElementById('env-badge')!
+    this.baitBadgeEl = document.getElementById('bait-badge')!
     this.muteBtn = document.getElementById('mute-toggle')!
     document.getElementById('reset')!.addEventListener('click', () => {
       onReset()
@@ -62,6 +69,28 @@ export class Hud {
     if (text === this.lastEnvBadge) return
     this.envBadgeEl.textContent = text
     this.lastEnvBadge = text
+  }
+
+  /**
+   * 金币余额(票 #17 故事 2「顶栏随时看到」,review 修复):顶栏紧凑展示,
+   * 与商店面板头同源(钱包唯一事实)。内容不变不重写(与得分同款守卫)。
+   */
+  setCoins(coins: number): void {
+    if (coins === this.lastCoins) return
+    this.coinsEl.textContent = `${coins} 金币`
+    this.lastCoins = coins
+  }
+
+  /**
+   * 装备饵余量徽章(review 修复,票 #17 故事 10):环境徽章旁小字「香饵 ×9」——
+   * 垂钓进行中商店不可开,余量须常驻可见;文案由纯函数 baitBadgeText 派生,
+   * null(未装备/耗尽)即隐藏,耗尽自动消失。内容不变不重写(同款守卫)。
+   */
+  setBaitBadge(text: string | null): void {
+    if (text === this.lastBaitBadge) return
+    this.baitBadgeEl.textContent = text ?? ''
+    this.baitBadgeEl.hidden = text === null
+    this.lastBaitBadge = text
   }
 
   update(core: CoreLoop): void {
