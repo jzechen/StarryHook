@@ -6,6 +6,7 @@ import { ProgressionStore } from './core/progression'
 import { Rng } from './core/rng'
 import type { LoopPhase } from './core/types'
 import { PondScene } from './render/pondScene'
+import { applyViewportToCanvas } from './render/viewport'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
 import { Hud } from './ui/hud'
@@ -37,15 +38,22 @@ async function main(): Promise<void> {
   const params = new URLSearchParams(location.search)
   const seed = Number(params.get('seed')) || (Date.now() % 2147483647)
 
+  // 视口(ADR-0002):画布固定 480×270 逻辑分辨率,渲染 1x;
+  // CSS 整数倍放大 + nearest-neighbor(index.html image-rendering),resize 时纯函数重算信箱。
+  // DOM 覆盖层(#hud)不在此列,保持原生分辨率。
   const app = new Application()
   await app.init({
-    resizeTo: window,
+    width: 480,
+    height: 270,
     background: '#2c3b2a',
-    antialias: true,
-    resolution: Math.min(window.devicePixelRatio || 1, 2),
+    antialias: false,
+    resolution: 1,
     autoDensity: true,
   })
   document.getElementById('game')!.appendChild(app.canvas)
+  const refitViewport = (): void => applyViewportToCanvas(app.canvas, window.innerWidth, window.innerHeight)
+  refitViewport()
+  window.addEventListener('resize', refitViewport)
 
   const core = new CoreLoop(new Rng(seed))
   const scene = new PondScene(app)

@@ -7,8 +7,13 @@
     <style>
       * { box-sizing: border-box; }
       html, body { margin: 0; height: 100%; overflow: hidden; background: #2c3b2a; }
-      #game { position: fixed; inset: 0; }
-      #game canvas { display: block; touch-action: none; user-select: none; -webkit-user-select: none; }
+      #game { position: fixed; inset: 0; overflow: hidden; }
+      /* 画布由 viewport.ts 写入绝对定位 + 整数倍宽高(信箱);这里只管像素级采样 */
+      #game canvas {
+        display: block; touch-action: none; user-select: none; -webkit-user-select: none;
+        image-rendering: -moz-crisp-edges;
+        image-rendering: pixelated;
+      }
       #hud {
         position: fixed; inset: 0; pointer-events: none;
         font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;

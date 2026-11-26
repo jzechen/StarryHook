@@ -47,3 +47,17 @@ export function computeViewportFit(
     height,
   }
 }
+
+/**
+ * 把 fit 结果落到 canvas 的 CSS 上(整数倍缩放 + 居中信箱)。
+ * DOM 侧副作用,不做单测(仓库既定约定);数学已由 computeViewportFit 锁定。
+ * nearest-neighbor 采样由 index.html 的 image-rendering 提供,此处只管几何。
+ */
+export function applyViewportToCanvas(canvas: HTMLCanvasElement, windowWidth: number, windowHeight: number): void {
+  const fit = computeViewportFit(windowWidth, windowHeight, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+  canvas.style.position = 'absolute'
+  canvas.style.width = `${fit.width}px`
+  canvas.style.height = `${fit.height}px`
+  canvas.style.left = `${fit.offsetX}px`
+  canvas.style.top = `${fit.offsetY}px`
+}
