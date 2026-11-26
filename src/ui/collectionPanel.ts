@@ -6,6 +6,7 @@ import { fishSpriteOffsetY } from '../render/fishAtlas'
 import { habitatLabel } from './collectionPanelHabitat'
 import { collectionPanelAllowed } from './collectionPanelPolicy'
 import { sortFishByDifficulty } from './collectionPanelOrder'
+import { PanelExclusion } from './panelExclusion'
 
 /** 鱼类行为 → 图鉴展示用中文(依 GLOSSARY 鱼类行为术语) */
 const BEHAVIOR_LABELS: Record<BehaviorType, string> = {
@@ -46,9 +47,11 @@ export class CollectionPanel {
 
   constructor(
     private collection: CollectionStore,
-    // 面板开合通知组合根:与换水域面板(票 #15)互斥打开,避免右侧两面板重叠遮挡
-    private onOpenChange?: (open: boolean) => void,
+    // 面板互斥协调器:构造时自注册,打开时经它收起其余面板(换水域/后续商店),
+    // 组合根不再串互斥回调
+    private exclusion?: PanelExclusion,
   ) {
+    this.exclusion?.register(this)
     this.entryBtn = document.getElementById('collection-entry') as HTMLButtonElement
     this.panelEl = document.getElementById('collection-panel')!
     this.progressEl = document.getElementById('collection-progress')!
@@ -104,7 +107,7 @@ export class CollectionPanel {
     if (this.open) this.refresh()
   }
 
-  /** 供组合根做面板互斥(图鉴面板打开时收起换水域面板) */
+  /** 供互斥协调器收起(其余面板打开时;对已收起面板幂等) */
   close(): void {
     this.setOpen(false)
   }
@@ -112,7 +115,8 @@ export class CollectionPanel {
   private setOpen(open: boolean): void {
     this.open = open
     this.panelEl.hidden = !open
-    this.onOpenChange?.(open)
+    // 打开时通知协调器收起其余面板;收起不通知(协调器只认打开,互斥不递归)
+    if (open) this.exclusion?.notifyOpened(this)
   }
 
   private refresh(): void {

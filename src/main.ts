@@ -16,6 +16,7 @@ import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
 import { Hud } from './ui/hud'
 import { MuteStore } from './ui/muteStore'
+import { PanelExclusion } from './ui/panelExclusion'
 import { progressionToastText } from './ui/progressionToastPolicy'
 import { AudioSfxPlayer, MuteAwareSfxPlayer } from './ui/sfx'
 import { sfxForEvent } from './ui/sfxMapping'
@@ -88,16 +89,14 @@ async function main(): Promise<void> {
   const progression = new ProgressionStore(storage)
   core.setRodParams(progression.rod().params)
   hud.setProgression(progression.level(), progression.rod().name)
-  // 图鉴面板:只读消费收集册,入口常驻(可用性随阶段变化);打开时收起换水域
-  // 面板(两面板互斥打开,右侧同位不重叠遮挡;闭包后置引用,触发时两者均已建好)
-  const collectionPanel = new CollectionPanel(collection, open => {
-    if (open) waterPanel.close()
-  })
+  // 面板互斥协调器:任一面板打开即收起其余,右侧同位不重叠遮挡;
+  // 面板构造时自注册,组合根不再串互斥回调,商店面板(GLOSSARY 经济与模式)注册即入
+  const panelExclusion = new PanelExclusion()
+  // 图鉴面板:只读消费收集册,入口常驻(可用性随阶段变化)
+  const collectionPanel = new CollectionPanel(collection, panelExclusion)
   // 换水域面板(票 #15):入口仅待机可用(waterSwitchPolicy),切换调核心 setWater
-  // ——垂钓中核心层同样拒绝,双保险;打开时反向收起图鉴面板
-  const waterPanel = new WaterPanel(core, open => {
-    if (open) collectionPanel.close()
-  })
+  // ——垂钓中核心层同样拒绝,双保险
+  const waterPanel = new WaterPanel(core, panelExclusion)
   // 轻提示层:新收录 / 池塘大满贯,顶部居中,不拦截游戏输入
   const toasts = new ToastLayer()
   let prevPhase: LoopPhase = core.phase

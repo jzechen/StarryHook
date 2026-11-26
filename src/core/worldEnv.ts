@@ -1,6 +1,6 @@
 import { TUNE } from '../config'
 import { Rng, deriveSeed } from './rng'
-import type { Weather } from './types'
+import type { Daylight, Season, Weather } from './types'
 
 /**
  * 环境状态源:季节/昼夜从注入的时钟(真实时间)派生,天气由独立种子 Rng 抽样。
@@ -10,7 +10,7 @@ import type { Weather } from './types'
 /**
  * 季节 = 真实月份(气象季节):3–5 月春、6–8 月夏、9–11 月秋、12/1/2 月冬。
  */
-export function seasonOf(date: Date): 'spring' | 'summer' | 'autumn' | 'winter' {
+export function seasonOf(date: Date): Season {
   const month = date.getMonth() + 1
   if (month >= 3 && month <= 5) return 'spring'
   if (month >= 6 && month <= 8) return 'summer'
@@ -19,7 +19,7 @@ export function seasonOf(date: Date): 'spring' | 'summer' | 'autumn' | 'winter' 
 }
 
 /** 昼夜 = 真实小时:6:00–17:59 白天,其余(18:00–5:59)夜晚。 */
-export function daylightOf(date: Date): 'day' | 'night' {
+export function daylightOf(date: Date): Daylight {
   const hour = date.getHours()
   return hour >= 6 && hour < 18 ? 'day' : 'night'
 }
