@@ -53,6 +53,10 @@ export const TUNE = {
   },
   /** 蓄力对出鱼权重的影响强度:weight = 1 + power × poolBias × difficulty */
   poolBias: 0.9,
+  world: {
+    /** 会话天气为雨的概率(会话开始一次抽样,会话内恒定;晴 = 1 − 该值) */
+    rainChance: 0.3,
+  },
   resolution: {
     /** 捕获/脱钩提示停留秒数 */
     holdTime: 1.1,
