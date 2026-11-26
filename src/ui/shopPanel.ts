@@ -11,13 +11,6 @@ import { shopPanelAllowed } from './shopPanelPolicy'
  */
 export type ShopBuyOutcome = 'ok' | 'insufficient' | 'meaningless'
 
-/**
- * 已上架的鱼饵(spec #17 经济系统):香饵(票 #19 等待减半)与浓饵
- * (票 #21 难鱼权重提升——D 世界权重引擎已就位,占位解除)。
- * 上架 = 价格/库存/购买钮按 BAITS 表自动生成,购买走组合根注入的 buyBait 既有路径。
- */
-const BAITS_ON_SALE: ReadonlySet<string> = new Set(['xianger', 'nonger'])
-
 /** 购买反馈的停留时长(行内提示自动消失;关闭面板立即清除) */
 const FEEDBACK_MS = 3000
 
@@ -29,7 +22,7 @@ interface ShopRow {
 }
 
 /**
- * 商店面板(票 #20,spec #17 经济系统):顶栏入口 + 面板,浏览并购买竿与香饵。
+ * 商店面板(票 #20,spec #17 经济系统):顶栏入口 + 面板,浏览并购买竿与鱼饵。
  * 只读消费 WalletStore(金币余额/饵库存)与 ProgressionStore(竿可用性/当前竿);
  * 购买动作经组合根注入的回调接线到 wallet/progression 的既有公开方法
  * (购竿跨钱袋+成长+绿条参数+顶栏刷新,协调归组合根;面板只管展示与反馈)。
@@ -83,23 +76,19 @@ export class ShopPanel {
       listEl.appendChild(row.root)
       this.rows.push(row)
     }
-    // 香饵行:价格 + 单次竿数 + 当前库存(库存由 refresh 按钱包刷新);浓饵行:占位禁购
+    // 饵两行(行序 = BAITS 序):香饵与浓饵均已上架(#19/#21),占位分支已随上架删除;
+    // 价格 + 单次竿数 + 当前库存(库存由 refresh 按钱包刷新)+ 购买钮
     for (const bait of BAITS) {
-      const onSale = BAITS_ON_SALE.has(bait.id)
       const row = this.buildRow(
         bait.name,
-        onSale
-          ? `${bait.price} 金币 · 单次 ${bait.charges} 竿 · 库存 ${this.wallet.baitCount(bait.id)}`
-          : '随世界系统开放',
+        `${bait.price} 金币 · 单次 ${bait.charges} 竿 · 库存 ${this.wallet.baitCount(bait.id)}`,
       )
-      if (onSale) {
-        const buyBtn = this.buildBuyBtn('购买', () => {
-          this.report(this.onBuyBait(bait.id), `已购入「${bait.name}」+${bait.charges} 竿`, bait.name)
-          buyBtn.blur()
-        })
-        row.root.appendChild(buyBtn)
-        row.buyBtn = buyBtn
-      }
+      const buyBtn = this.buildBuyBtn('购买', () => {
+        this.report(this.onBuyBait(bait.id), `已购入「${bait.name}」+${bait.charges} 竿`, bait.name)
+        buyBtn.blur()
+      })
+      row.root.appendChild(buyBtn)
+      row.buyBtn = buyBtn
       listEl.appendChild(row.root)
       this.rows.push(row)
     }
@@ -212,10 +201,9 @@ export class ShopPanel {
       row.detailEl.textContent = unlocked ? '已拥有' : `${rod.price} 金币`
       if (row.buyBtn && !unlocked) row.buyBtn.disabled = this.wallet.coins() < rod.price
     }
-    // 饵行:香饵库存随钱包刷新;浓饵占位文案静态
+    // 饵行:库存随钱包刷新(香饵与浓饵均已上架)
     for (let i = 0; i < BAITS.length; i++) {
       const bait = BAITS[i]!
-      if (!BAITS_ON_SALE.has(bait.id)) continue
       const row = this.rows[RODS.length + i]!
       row.detailEl.textContent = `${bait.price} 金币 · 单次 ${bait.charges} 竿 · 库存 ${this.wallet.baitCount(bait.id)}`
     }
