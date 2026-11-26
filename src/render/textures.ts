@@ -1,4 +1,6 @@
 import { Assets, Rectangle, Texture } from 'pixi.js'
+import type { FishDef } from '../core/types'
+import { FISH_FRAME_COUNT, FISH_FRAME_SIZE, FISH_SHAPE_ROW } from './fishAtlas'
 
 /**
  * 场景纹理:素材文件 → 图集切片的唯一入口(ADR-0002 精灵化)。
@@ -11,6 +13,7 @@ import { Assets, Rectangle, Texture } from 'pixi.js'
  * - character.png       派生自 OGA「Character sprite + walk animation」ch003.png
  *                       (32x32 四向行走帧众数降采样为 16x16)
  * - scene-atlas.png     自绘浮标道具图集(scripts/generate-placeholder-atlas.mjs 生成,无第三方版权)
+ * - fish-atlas.png      自绘鱼精灵图集(scripts/generate-fish-atlas.mjs 生成,无第三方版权)
  *
  * 基线像素密度:16x16(spec #8 统一约定),480×270 = 30×17 tile。
  */
@@ -24,6 +27,8 @@ export const WATER_FRAME_COUNT = 13
 export const WAVE_FRAME_COUNT = 8
 /** 角色每向帧数(character.png 每向 4 帧,帧 0 = 待机) */
 export const PLAYER_FRAME_COUNT = 4
+/** 鱼精灵每鱼帧数(fish-atlas.png,帧 0 = 常态 / 帧 1 = 游动) */
+export { FISH_FRAME_COUNT } from './fishAtlas'
 
 /** 角色朝向(character.png 行序:下/上/左/右) */
 export type Facing = 'down' | 'up' | 'left' | 'right'
@@ -41,6 +46,8 @@ export interface SceneTextures {
   playerFrames: Record<Facing, Texture[]>
   /** 浮标:单个精灵贴图 */
   bobber: Texture
+  /** 鱼精灵:每种鱼 2 帧游动动画(帧 0 = 常态),按鱼形取用 */
+  fishFrames: Record<FishDef['shape'], Texture[]>
 }
 
 /** 从纹理源切出单帧 */
@@ -70,15 +77,26 @@ function sliceGrid(
 
 /** 加载并切片全部场景素材;main 启动时 await 一次,把结果注入 PondScene */
 export async function loadSceneTextures(): Promise<SceneTextures> {
-  const [flow, waveSheet, grass, chars, props] = await Promise.all([
+  const [flow, waveSheet, grass, chars, props, fishAtlas] = await Promise.all([
     Assets.load<Texture>('/sprites/water-flow.png'),
     Assets.load<Texture>('/sprites/shoreline-waves.png'),
     Assets.load<Texture>('/sprites/grass.png'),
     Assets.load<Texture>('/sprites/character.png'),
     Assets.load<Texture>('/sprites/scene-atlas.png'),
+    Assets.load<Texture>('/sprites/fish-atlas.png'),
   ])
   const waveRows = sliceGrid(waveSheet.source, 4, WAVE_FRAME_COUNT, TILE, TILE)
   const charRows = sliceGrid(chars.source, 4, PLAYER_FRAME_COUNT, TILE, TILE)
+  // 鱼图集:行 = 鱼(行序契约见 fishAtlas.ts),列 = 帧;逐鱼显式取行,
+  // core 鱼形全集与图集行序的对应关系由 Record 类型兜底(缺行/多行都报类型错)
+  const fishRows = sliceGrid(fishAtlas.source, Object.keys(FISH_SHAPE_ROW).length, FISH_FRAME_COUNT, FISH_FRAME_SIZE, FISH_FRAME_SIZE)
+  const fishFrames = {
+    slim: fishRows[FISH_SHAPE_ROW.slim],
+    round: fishRows[FISH_SHAPE_ROW.round],
+    heavy: fishRows[FISH_SHAPE_ROW.heavy],
+    puff: fishRows[FISH_SHAPE_ROW.puff],
+    bolt: fishRows[FISH_SHAPE_ROW.bolt],
+  }
   return {
     waterFrames: sliceStrip(flow.source, WATER_FRAME_COUNT, TILE, TILE),
     grassTile: slice(grass.source, new Rectangle(0, 0, TILE, TILE)),
@@ -87,5 +105,6 @@ export async function loadSceneTextures(): Promise<SceneTextures> {
     // 行序与素材表一致:下/上/左/右
     playerFrames: { down: charRows[0], up: charRows[1], left: charRows[2], right: charRows[3] },
     bobber: slice(props.source, new Rectangle(0, 0, TILE, TILE)),
+    fishFrames,
   }
 }

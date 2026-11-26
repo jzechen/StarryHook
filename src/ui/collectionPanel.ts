@@ -2,6 +2,7 @@ import type { CollectionStore } from '../core/collection'
 import type { CoreLoop } from '../core/coreLoop'
 import { FISH } from '../core/fishCatalog'
 import type { BehaviorType } from '../core/types'
+import { FISH_FRAME_SIZE, FISH_SHAPE_ROW } from '../render/fishAtlas'
 import { collectionPanelAllowed } from './collectionPanelPolicy'
 import { sortFishByDifficulty } from './collectionPanelOrder'
 
@@ -13,6 +14,12 @@ const BEHAVIOR_LABELS: Record<BehaviorType, string> = {
   dart: '急冲',
   mixed: '混合',
 }
+
+/**
+ * 条目精灵显示倍率:DOM 覆盖层是原生分辨率,2x 让 16px 精灵在 12px 文本旁有存在感。
+ * 背景定位与动画帧位移都按此倍率换算(见 index.html 的 .fish-sprite)。
+ */
+const SPRITE_SCALE = 2
 
 /** 面板条目序:spec(#3)要求按难度从低到高;显式排序,不依赖目录数组序(同难度保持目录序) */
 const PANEL_FISH = sortFishByDifficulty(FISH)
@@ -48,13 +55,18 @@ export class CollectionPanel {
     for (let i = 0; i < PANEL_FISH.length; i++) {
       const li = document.createElement('li')
       li.className = 'fish-item locked'
+      // 条目精灵:fish-atlas.png 按 CSS sprite 定位(行序契约见 render/fishAtlas.ts);
+      // 未捕获由 .locked 的滤镜压成统一灰剪影(不泄名称与配色),动画一并停掉
+      const spriteEl = document.createElement('span')
+      spriteEl.className = 'fish-sprite'
+      spriteEl.style.backgroundPositionY = `${-FISH_SHAPE_ROW[PANEL_FISH[i]!.shape] * FISH_FRAME_SIZE * SPRITE_SCALE}px`
       const nameEl = document.createElement('span')
       nameEl.className = 'fish-name'
       nameEl.textContent = '???'
       const detailEl = document.createElement('span')
       detailEl.className = 'fish-detail'
       detailEl.textContent = '尚未捕获'
-      li.append(nameEl, detailEl)
+      li.append(spriteEl, nameEl, detailEl)
       listEl.appendChild(li)
       this.rows.push({ root: li, nameEl, detailEl })
     }

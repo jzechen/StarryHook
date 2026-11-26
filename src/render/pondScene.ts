@@ -1,9 +1,9 @@
 import { Application, Container, Graphics, Sprite, Text, TilingSprite } from 'pixi.js'
 import { TUNE } from '../config'
 import type { CoreLoop } from '../core/coreLoop'
-import type { FishDef, LoopPhase } from '../core/types'
+import type { LoopPhase } from '../core/types'
 import type { Facing, SceneTextures, WaveEdge } from './textures'
-import { PLAYER_FRAME_COUNT, TILE, WAVE_FRAME_COUNT, WATER_FRAME_COUNT } from './textures'
+import { FISH_FRAME_COUNT, PLAYER_FRAME_COUNT, TILE, WAVE_FRAME_COUNT, WATER_FRAME_COUNT } from './textures'
 
 /**
  * 池塘场景:PixiJS 薄壳,每帧从 CoreLoop 快照刷新。
@@ -13,7 +13,7 @@ import { PLAYER_FRAME_COUNT, TILE, WAVE_FRAME_COUNT, WATER_FRAME_COUNT } from '.
  * 水面 = 13 帧流水循环;岸线 = 泡沫动画沿池边顺时针环流(逐 tile 相位偏移,
  * 波峰像浪一样绕池游走);角色 = 16x16 四向行走精灵,方向由渲染侧对比
  * 前后帧 px/py 位移向量推导(核心零改动),静止播放待机帧。
- * 小游戏面板暂留几何绘制,换皮属后续票。
+ * 小游戏鱼图标 = 鱼精灵图集 2 帧交替(票 #11);面板其余几何绘制换皮属后续票。
  *
  * 坐标系:画布固定 480×270 逻辑分辨率(视口层已做整数倍信箱缩放),
  * 所有尺寸按逻辑像素取值,不再跟随窗口尺寸。
@@ -25,6 +25,8 @@ const WATER_FRAME_PERIOD = 0.15
 const WAVE_FRAME_PERIOD = 0.3
 /** 行走动画帧周期(秒)——4 帧一轮,配合移动速度读作小碎步 */
 const WALK_FRAME_PERIOD = 0.14
+/** 小游戏鱼精灵帧周期(秒)——2 帧交替,读作挣扎摆尾(票 #11) */
+const FISH_FRAME_PERIOD = 0.2
 /** 判定「在移动」的每帧最小位移(逻辑像素) */
 const MOVE_EPS = 0.1
 /** 角色脚底相对核心坐标点(ppy)的偏移:贴图底边落在原身体下缘 */
@@ -75,7 +77,8 @@ export class PondScene {
   private bang: Text
   private track = new Graphics()
   private mgBar = new Graphics()
-  private mgFish = new Graphics()
+  /** 小游戏鱼精灵:图集切片 2 帧交替(替代原 Graphics 几何鱼,配色来自贴图本身) */
+  private mgFishSprite: Sprite
   private mgProgress = new Graphics()
 
   private prevPhase: LoopPhase = 'idle'
@@ -130,6 +133,11 @@ export class PondScene {
     bobber.anchor.set(0.5)
     this.bobberSprite.addChild(bobber)
 
+    // 小游戏鱼精灵:贴图随 core.fish.shape 换帧(见 update),初始贴图仅占位
+    this.mgFishSprite = new Sprite(textures.fishFrames.slim[0])
+    this.mgFishSprite.anchor.set(0.5)
+    this.mgFishSprite.visible = false
+
     // 角色:16x16 四向行走精灵,脚底锚在核心坐标点下方(原几何身体下缘)
     this.playerSprite = new Sprite(textures.playerFrames.down[0])
     this.playerSprite.anchor.set(0.5, 1)
@@ -154,7 +162,7 @@ export class PondScene {
       this.bang,
       this.track,
       this.mgBar,
-      this.mgFish,
+      this.mgFishSprite,
       this.mgProgress,
     )
   }
@@ -304,11 +312,11 @@ export class PondScene {
       this.bang.position.set(bx, by - 26)
     }
 
-    // 钓鱼小游戏面板(右侧;暂留几何绘制,换皮属后续票)
+    // 钓鱼小游戏面板(右侧;轨道/绿条/进度条暂留几何绘制,换皮属后续票)
     const mgVisible = core.phase === 'minigame'
     this.track.visible = mgVisible
     this.mgBar.visible = mgVisible
-    this.mgFish.visible = mgVisible
+    this.mgFishSprite.visible = mgVisible
     this.mgProgress.visible = mgVisible
     if (mgVisible && core.mg && core.fish) {
       const mg = core.mg
@@ -332,8 +340,10 @@ export class PondScene {
       const barTop = innerY + innerH - (mg.barY + bar.height) * innerH
       this.mgBar.clear().roundRect(innerX, barTop, innerW, barPixH, 2).fill({ color: 0x6ee06e, alpha: 0.85 })
 
-      // 鱼图标
-      this.drawFish(core.fish, trackX + trackW / 2, innerY + innerH - mg.fishY * innerH)
+      // 鱼精灵:按场上鱼形取贴图,2 帧按周期交替(挣扎摆尾);配色来自贴图本身
+      const fishFrames = this.textures.fishFrames[core.fish.shape]
+      this.mgFishSprite.texture = fishFrames[Math.floor(t / FISH_FRAME_PERIOD) % FISH_FRAME_COUNT]
+      this.mgFishSprite.position.set(trackX + trackW / 2, innerY + innerH - mg.fishY * innerH)
 
       // 进度条
       const pgX = trackX - 10
@@ -347,33 +357,5 @@ export class PondScene {
         .roundRect(pgX, innerY + innerH - fillH, pgW, fillH, 2)
         .fill(pc)
     }
-  }
-
-  private drawFish(f: FishDef, cx: number, cy: number): void {
-    const g = this.mgFish
-    g.clear()
-    switch (f.shape) {
-      case 'slim':
-        g.ellipse(cx, cy, 9, 3.5)
-        break
-      case 'round':
-        g.circle(cx, cy, 5.5)
-        break
-      case 'heavy':
-        g.roundRect(cx - 6.5, cy - 4.5, 13, 9, 4)
-        break
-      case 'puff':
-        g.circle(cx, cy, 6.5)
-        for (let i = 0; i < 8; i++) {
-          const a = (i / 8) * Math.PI * 2
-          g.circle(cx + Math.cos(a) * 7.5, cy + Math.sin(a) * 7.5, 1.6)
-        }
-        break
-      case 'bolt':
-        g.poly([cx + 7.5, cy, cx - 5, cy - 5, cx - 2, cy, cx - 5, cy + 5])
-        break
-    }
-    g.fill(f.color)
-    g.circle(cx + 2.5, cy - 1, 0.9).fill(0x113244)
   }
 }

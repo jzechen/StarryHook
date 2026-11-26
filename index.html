@@ -63,6 +63,24 @@
       .fish-item .fish-detail { margin-left: auto; font-size: 12px; opacity: .9; }
       .fish-item.locked { opacity: .45; color: #9fb4ba; }
       .fish-item.locked .fish-detail { font-size: 12px; }
+      /* 条目鱼精灵(票 #11):fish-atlas.png 作 CSS sprite,2x 放大 + pixelated;
+         2 帧游动动画与小游戏同周期(0.2s/帧);background-position-y 由
+         collectionPanel.ts 按图集行序(fishAtlas.ts 契约)逐条写入 */
+      .fish-sprite {
+        flex: none; align-self: center;
+        width: 32px; height: 32px;
+        background-image: url('/sprites/fish-atlas.png');
+        background-size: 64px 160px; /* 32×80 图集按 2x 缩放 */
+        background-repeat: no-repeat;
+        image-rendering: pixelated;
+        animation: fish-swim .4s linear infinite;
+      }
+      /* 未捕获剪影:亮度归零后统一反向提亮成固定灰,不泄名称与配色细节;停帧 */
+      .fish-item.locked .fish-sprite {
+        animation: none;
+        filter: brightness(0) invert(.55);
+      }
+      @keyframes fish-swim { 0%, 49.99% { background-position-x: 0; } 50%, 100% { background-position-x: -32px; } }
       #toast-layer {
         position: absolute; top: 62px; left: 0; right: 0;
         display: flex; flex-direction: column; align-items: center; gap: 8px;
