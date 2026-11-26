@@ -252,3 +252,38 @@ describe('竿档注入(接缝:换竿 → 物理生效)', () => {
     expect(l.rodParams.height).toBe(0.4)
   })
 })
+
+describe('等待时长修正系数注入(接缝:香饵 → 等待减半,票 #19)', () => {
+  it('默认未注入 = 现行分布:种子 42 蓄满抛竿,等待时长与现行逐位一致', () => {
+    const l = newLoop(42)
+    castFull(l)
+    // 期望值独立导出(不读实现):mulberry32(42) 首抽 u = 0.6011037519201636,
+    // waitTime = TUNE.wait.min + (max − min) × u = 1.5 + 4.5 × u
+    expect(l.waitTime).toBeCloseTo(4.204966883640736, 10)
+  })
+
+  it('注入修正系数 0.5:同种子下等待时长恰为现行一半(min/max 同乘,分布形状不变)', () => {
+    const a = newLoop(42)
+    castFull(a)
+    const b = newLoop(42)
+    b.setWaitTimeScale(() => 0.5)
+    castFull(b)
+    // 期望值独立导出:同一首抽 u,系数减半 → 1.5×0.5 + 4.5×0.5 × u
+    expect(b.waitTime).toBeCloseTo(2.102483441820368, 10)
+    // 关系侧写:同种子同输入,注入后的抽取序列与默认逐位一致,只是时长同乘系数
+    expect(b.waitTime).toBeCloseTo(a.waitTime / 2, 12)
+  })
+
+  it('系数来源在抛竿时刻恰好调用一次:返回值决定本竿系数,等待与咬钩阶段不再调用', () => {
+    let calls = 0
+    const l = newLoop(42)
+    l.setWaitTimeScale(() => {
+      calls += 1
+      return 1
+    })
+    castFull(l)
+    expect(calls).toBe(1) // 抛竿边沿一次:组合根的消耗接线由此保证每竿只扣一支饵
+    runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
+    expect(calls).toBe(1)
+  })
+})
