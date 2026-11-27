@@ -15,7 +15,7 @@ import { FISH_FRAME_COUNT, FISH_FRAME_SIZE, FISH_SHAPE_ROW } from './fishAtlas'
  * - tiny-town.png       Kenney「Tiny Town」packed 表(原样,票 #34):12 列 × 11 行,
  *                       行优先编号 tile_N = packed (N÷12, N%12)(调研留痕:票 #26)
  * - tiny-dungeon.png    Kenney「Tiny Dungeon」packed 表(原样,票 #41):同 12 列 × 11 行
- *                       行优先编号;本票只取宝箱两态帧(90 = 闭箱 / 91 = 开箱,见下)
+ *                       行优先编号;本票只取宝箱两态帧(89 = 闭箱 / 90 = 开箱,见下)
  * - scene-atlas.png     自绘浮标图集(scripts/generate-bobber-atlas.mjs 生成,无第三方版权)
  * - fish-atlas.png      自绘鱼精灵图集(scripts/generate-fish-atlas.mjs 生成,无第三方版权)
  *

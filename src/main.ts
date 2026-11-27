@@ -214,12 +214,13 @@ async function main(): Promise<void> {
   // 轻提示层:新收录等常规轻提示,顶部居中,不拦截游戏输入
   const toasts = new ToastLayer()
   // 大满贯全屏演出(票 #43,spec §5.2):替代既有 toast——画布内横幅 +
-  // 星芒/彩带粒子(约 2s),屏空间挂组合根 stage(场景过场遮罩之上;
-  // 换图时 director 遮罩重新置顶会短暂盖住演出,属可接受边缘)。
+  // 星芒/彩带粒子(约 2s),屏空间挂组合根 stage(场景过场遮罩之上;换图时
+  // director 经 pinOnTop 按开机层序复位,演出不随场景重建被掩埋)。
   // 「集齐」状态与一辈子一次的幂等标记沿用 collection 既有
   // (collectionToasts 决策 + acknowledgeCompletion),本层只管演出本身。
   const grandSlam = new GrandSlamOverlay()
   app.stage.addChild(grandSlam.container)
+  director.pinOnTop(grandSlam.container)
   let prevPhase: LoopPhase = core.phase
   // 限时局进行中边沿基准(票 #24):判定单源在 roundJustEnded(roundEdgePolicy),
   // 此处只存上一帧局标志——true→false 且模式仍限时 = 归零强制结算完成

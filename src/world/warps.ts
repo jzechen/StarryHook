@@ -33,8 +33,19 @@ export interface WarpZone {
 /** 缺省触发区边长:2 tile(边缘走廊横截面) */
 const DEFAULT_ZONE_SIZE = 32
 
-/** 解析一张地图的全部出口(物件层顺序保持;坏条目即抛错) */
+/**
+ * 解析结果记忆化(review 修复,与组合根 interactionCache 同思路):地图对象
+ * 入库后物件层不变(WORLD_MAPS 为模块级常量,测试各自 parseWorldMap 出新对象),
+ * 同一地图只解析一次——世界导演的走入判定每帧调用 warpAt,不记忆化就会
+ * 每 idle 帧重建触发区数组并重读物件层。坏条目抛错发生在记忆化之前,坏数据
+ * 每次调用仍如实抛错(挡住坏数据流入组合根的哲学不变)。
+ */
+const warpsCache = new WeakMap<WorldMapData, WarpZone[]>()
+
+/** 解析一张地图的全部出口(物件层顺序保持;坏条目即抛错;结果按图记忆化) */
 export function warpsOf(map: WorldMapData): WarpZone[] {
+  const cached = warpsCache.get(map)
+  if (cached) return cached
   const out: WarpZone[] = []
   for (const obj of map.objects) {
     if (obj.type !== 'warp') continue
@@ -60,6 +71,7 @@ export function warpsOf(map: WorldMapData): WarpZone[] {
       ty,
     })
   }
+  warpsCache.set(map, out)
   return out
 }
 

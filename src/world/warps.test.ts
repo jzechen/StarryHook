@@ -160,4 +160,24 @@ describe('warpAt(走入触发判定:半开矩形,第一个命中)', () => {
     // 930 只落在第二个触发区([904,936))内:重叠区按物件层顺序取第一个
     expect(warpAt(two, 930, 208)!.target).toBe('lake')
   })
+
+  it('同一地图对象重复判定只解析一次物件层(每帧走入判定不重建触发区,review 修复)', () => {
+    const once = parseWorldMap(rawMap([
+      { name: '出生点', type: 'spawn', x: 72, y: 72, point: true },
+      warpObject(),
+    ]))
+    // 以计数 getter 监视物件层读取:解析契约 = 首次读取后按图记忆化
+    let objectReads = 0
+    const objects = once.objects
+    Object.defineProperty(once, 'objects', {
+      get: () => {
+        objectReads++
+        return objects
+      },
+    })
+    expect(warpAt(once, 912, 208)).not.toBeNull()
+    expect(warpAt(once, 912, 208)).not.toBeNull()
+    expect(warpAt(once, 912, 208)).not.toBeNull()
+    expect(objectReads).toBe(1)
+  })
 })

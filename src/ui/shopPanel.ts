@@ -247,28 +247,34 @@ export class ShopPanel {
   }
 
   private refresh(): void {
+    // 钱包/竿签名守卫只管余额与装备行;渔获区块自持堆叠签名,末尾无条件刷新
+    // (捕获自票 #39 起不动金币/饵/竿——关面板期间的捕获只改背包,钱包守卫
+    // 早退会把它拦在门外,重开面板即见旧堆叠;refreshCatch 自带签名守卫,
+    // 未变化的帧零 DOM 写入)
     const signature = this.renderSignature()
-    if (signature === this.renderedSignature) return
-    this.renderedSignature = signature
-    this.coinsEl.textContent = `${this.wallet.coins()} 金币`
-    // 竿行:已拥有(等级解锁 ∪ 已购)隐藏购买钮;可购钮按余额置灰(金币不足)
-    for (let i = 0; i < RODS.length; i++) {
-      const rod = RODS[i]!
-      if (i === 0) continue // 初始竿「初始装备」为静态标注,建行时一次写入
-      const row = this.rows[i]!
-      const unlocked = this.progression.isRodUnlocked(rod.id)
-      if (row.buyBtn) row.buyBtn.hidden = unlocked
-      row.detailEl.textContent = unlocked ? '已拥有' : `${rod.price} 金币`
-      if (row.buyBtn && !unlocked) row.buyBtn.disabled = this.wallet.coins() < rod.price
+    if (signature !== this.renderedSignature) {
+      this.renderedSignature = signature
+      this.coinsEl.textContent = `${this.wallet.coins()} 金币`
+      // 竿行:已拥有(等级解锁 ∪ 已购)隐藏购买钮;可购钮按余额置灰(金币不足)
+      for (let i = 0; i < RODS.length; i++) {
+        const rod = RODS[i]!
+        if (i === 0) continue // 初始竿「初始装备」为静态标注,建行时一次写入
+        const row = this.rows[i]!
+        const unlocked = this.progression.isRodUnlocked(rod.id)
+        if (row.buyBtn) row.buyBtn.hidden = unlocked
+        row.detailEl.textContent = unlocked ? '已拥有' : `${rod.price} 金币`
+        if (row.buyBtn && !unlocked) row.buyBtn.disabled = this.wallet.coins() < rod.price
+      }
+      // 饵行:库存与「装备中」尾注随钱包刷新;装备钮按可见性谓词显隐
+      for (let i = 0; i < BAITS.length; i++) {
+        const bait = BAITS[i]!
+        const row = this.rows[RODS.length + i]!
+        row.detailEl.textContent = this.baitDetail(bait)
+        if (row.equipBtn) row.equipBtn.hidden = !this.equipVisible(bait)
+      }
     }
-    // 饵行:库存与「装备中」尾注随钱包刷新;装备钮按可见性谓词显隐
-    for (let i = 0; i < BAITS.length; i++) {
-      const bait = BAITS[i]!
-      const row = this.rows[RODS.length + i]!
-      row.detailEl.textContent = this.baitDetail(bait)
-      if (row.equipBtn) row.equipBtn.hidden = !this.equipVisible(bait)
-    }
-    // 渔获区块:堆叠随捕获/卖出增减,签名变化才重建(卖出同时改余额,同帧一次刷新)
+    // 渔获区块:堆叠随捕获/卖出增减,按堆叠签名变化才重建(卖出同时改余额,
+    // 钱包行与本区块同帧各刷一次;签名不变时此处零成本)
     this.refreshCatch()
   }
 

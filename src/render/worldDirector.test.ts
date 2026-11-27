@@ -247,6 +247,33 @@ describe('WorldDirector:存档门禁(仅 idle 落盘;垂钓/过场中不写)', (
   })
 })
 
+describe('WorldDirector:常驻顶层容器(换图不掩埋大满贯演出层)', () => {
+  it('换图重建场景后,登记的屏空间容器仍置顶(开机层序:场景 < 遮罩 < 演出)', () => {
+    const app = fakeApp()
+    const core = new CoreLoop(new Rng(1))
+    const director = new WorldDirector({ app, textures: fakeTextures(), core, storage: countingKv() })
+    // 模拟组合根:演出层挂 stage 顶层(遮罩之上),并向导演登记
+    const pinned = new Container()
+    app.stage.addChild(pinned)
+    director.pinOnTop(pinned)
+    // 走入村舍东出口 → 过场 → 换图重建场景
+    core.px = VILLAGE_EAST_IN.x
+    core.py = VILLAGE_EAST_IN.y
+    core.facing = 'right'
+    let t = 0
+    tick(director, core, t, DT)
+    t += DT
+    for (let i = 0; i < 120 && director.inputLocked; i++) {
+      tick(director, core, t, DT)
+      t += DT
+    }
+    expect(director.mapId).toBe('river') // 确已换图
+    // 换图后演出层必须仍在最顶(未登记时新场景树追加在它之上,演出被埋)
+    const children = app.stage.children
+    expect(children[children.length - 1]).toBe(pinned)
+  })
+})
+
 describe('WorldDirector:碰撞注入随图切换', () => {
   it('恢复到河谷后行走受河谷水域阻挡:向南走进河流水带被挡在岸边', () => {
     const kv = countingKv()

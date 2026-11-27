@@ -1,4 +1,4 @@
-import { Application, Graphics } from 'pixi.js'
+import { Application, Container, Graphics } from 'pixi.js'
 import { PLAYER_HALF_H, PLAYER_HALF_W, type CoreLoop } from '../core/coreLoop'
 import type { KvStorage } from '../core/kvSnapshot'
 import { PlayerPositionStore, type PlayerPositionSnapshot } from '../core/playerPosition'
@@ -53,6 +53,8 @@ export class WorldDirector {
   private mapIdValue: MapId
   private saveTimer = 0
   private lastSaved: PlayerPositionSnapshot | null = null
+  /** 常驻世界之上的屏空间容器(登记序 = 层序;applyWarp 重建场景后按序复位) */
+  private readonly pinned: Container[] = []
 
   constructor(deps: WorldDirectorDeps) {
     this.app = deps.app
@@ -125,6 +127,15 @@ export class WorldDirector {
     this.scene.update(this.core, t, dt, promptState)
   }
 
+  /**
+   * 登记常驻世界之上的屏空间容器(票 #43 大满贯演出层,组合根构造演出后调用):
+   * 换图重建场景会把新场景树追加在既有 stage children 之上,登记的容器若不复位
+   * 就会被压到世界之下;applyWarp 按登记次序重新置顶,维持开机层序(演出在遮罩之上)。
+   */
+  pinOnTop(container: Container): void {
+    this.pinned.push(container)
+  }
+
   /** 换图落位(过场 'switch' 时刻,全黑瞬间):旧场景销毁、对侧入口出现 */
   private applyWarp(warp: WarpZone): void {
     if (!isKnownMapId(warp.target)) return // 出口数据已过校验;未入库目标按原地不动兜底
@@ -138,6 +149,8 @@ export class WorldDirector {
     this.core.setWater(deriveWaterArea(warp.target, warp.tx, warp.ty))
     this.scene = new WorldScene(this.app, this.textures, next, this.chestIsOpen)
     this.app.stage.addChild(this.overlay) // 新场景压顶后,遮罩重新置顶
+    // 常驻顶层容器(演出层)随之复位:新场景树也追加在它们之上,仅遮罩复位不够
+    for (const container of this.pinned) this.app.stage.addChild(container)
     // 到达即存:把节流计时顶到阈值,过场结束后的第一帧立即落盘
     // (此刻仍在过场中,不直接写——「过场中不写存档」口径保持)
     this.saveTimer = POSITION_SAVE_INTERVAL
