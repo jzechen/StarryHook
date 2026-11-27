@@ -9,10 +9,11 @@ import type { WorldMapData } from './worldMap'
  * InteractionKind、不进动作键意图裁决(stallPressAction),与交互浮签链并行
  * 供给(组合根:有交互签则不出本签,二者不叠加)。
  *
- * 纯函数「数据 → 文案与锚点」:方向与箭头由触发区几何推导(区中心在图东半 =
- * 东/→,西半 = 西/←),场景名取 SCENE_NAMES;接近判定 = 脚部点到触发区矩形
- * 的欧氏距离(与交互点半径同款纪律)。显隐时机(idle ∧ 无面板 ∧ 非过场)归
- * 组合根与渲染层,不在本模块。
+ * 纯函数「数据 → 文案与锚点」:方向与箭头由触发区**最近图边**推导——先判
+ * 垂直/水平边(与 exitCorridorOf 同款最小值序:左/右/上/下),左/右 = 西/东
+ * (←/→),上/下 = 北/南(↑/↓),出口不止左右边;场景名取 SCENE_NAMES;
+ * 接近判定 = 脚部点到触发区矩形的欧氏距离(与交互点半径同款纪律)。显隐时机
+ * (idle ∧ 无面板 ∧ 非过场)归组合根与渲染层,不在本模块。
  */
 
 /** 接近半径(world px;3 tile——触发区外一圈,走入触发区即过场,签只剩接近段可见) */
@@ -39,12 +40,25 @@ export function warpHintAt(map: WorldMapData, px: number, py: number): WarpHint 
     }
   }
   if (!best || !isKnownMapId(best.target)) return null
-  const east = best.x + best.width / 2 >= map.widthPx / 2
-  // 锚点向图内让位一格半:出口贴图边,浮签居中会让箭头伸出画面被裁
-  const nudge = (east ? -1 : 1) * map.tileWidth * 1.5
-  return {
-    x: best.x + best.width / 2 + nudge,
-    y: best.y + best.height / 2,
-    label: `${east ? '东' : '西'} · ${SCENE_NAMES[best.target as MapId]} ${east ? '→' : '←'}`,
+  // 最近图边(与 exitCorridorOf 同款最小值序:左/右/上/下,平局取先判者):
+  // 先判垂直/水平边再标方向与让位轴——出口不止左右边,北/南边的方向、箭头
+  // 与锚点让位都走纵轴
+  const toLeft = best.x
+  const toRight = map.widthPx - (best.x + best.width)
+  const toTop = best.y
+  const toBottom = map.heightPx - (best.y + best.height)
+  const min = Math.min(toLeft, toRight, toTop, toBottom)
+  const name = SCENE_NAMES[best.target as MapId]
+  // 锚点沿出口边法线向图内让位一格半:出口贴图边,浮签居中会让箭头/签面伸出画面被裁
+  const nudge = map.tileWidth * 1.5
+  if (min === toLeft) {
+    return { x: best.x + best.width / 2 + nudge, y: best.y + best.height / 2, label: `西 · ${name} ←` }
   }
+  if (min === toRight) {
+    return { x: best.x + best.width / 2 - nudge, y: best.y + best.height / 2, label: `东 · ${name} →` }
+  }
+  if (min === toTop) {
+    return { x: best.x + best.width / 2, y: best.y + best.height / 2 + nudge, label: `北 · ${name} ↑` }
+  }
+  return { x: best.x + best.width / 2, y: best.y + best.height / 2 - nudge, label: `南 · ${name} ↓` }
 }

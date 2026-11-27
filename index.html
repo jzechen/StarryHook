@@ -70,10 +70,12 @@
         font-synthesis: none;
         color: var(--ui-text);
       }
-      /* 顶栏浮在场景上:裸文字走画布面令牌(暖米白 + 轻投影),数字暖金 */
+      /* 顶栏浮在场景上:裸文字走画布面令牌(暖米白 + 轻投影),数字暖金。
+         flex-wrap 兜底窄窗:绝对定位 + body overflow hidden,不换行时右侧
+         pill(重开/静音)会被裁出画面不可点,放不下即折到下一行 */
       #topbar {
         position: absolute; top: 14px; left: 16px; right: 16px;
-        display: flex; align-items: center; gap: 14px;
+        display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
         color: var(--ui-canvas-text);
         text-shadow: var(--ui-canvas-text-shadow);
         font-size: 12px; white-space: nowrap;

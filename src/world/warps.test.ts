@@ -254,4 +254,20 @@ describe('exitCorridorOf(票 #46:出口走廊 = 触发区向最近图边延伸,�
     const [warp] = warpsOf(map)
     expect(exitCorridorOf(map, warp!)).toEqual({ x0: 464, x1: 496, y0: 376, y1: 416 })
   })
+
+  it('坏数据即抛错:触发区越出图边(负距离会产出倒置矩形,与「坏数据抛错」哲学一致)', () => {
+    // 物件点 (8, 208) w=32 → 触发区 x ∈ [-8, 24),越过西图边 8px
+    const overWest = warpObject({
+      name: '越界西出口',
+      x: 8,
+      properties: [
+        { name: 'target', type: 'string', value: 'village' },
+        { name: 'tx', type: 'float', value: 872 },
+        { name: 'ty', type: 'float', value: 208 },
+      ],
+    })
+    const map = parseWorldMap(bigMap([spawn, overWest]))
+    const [warp] = warpsOf(map)
+    expect(() => exitCorridorOf(map, warp!)).toThrow(/越出图边/)
+  })
 })

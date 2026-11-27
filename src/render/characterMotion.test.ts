@@ -68,6 +68,10 @@ describe('待机呼吸(票 #49:帧 0 两态微循环,静止/移动/垂钓三态�
 })
 
 describe('持竿朝向(票 #49:垂钓锁朝水朝向)', () => {
+  it('零向量无方向信息:返回 null(调用方保持当前朝向,不静默读作 up)', () => {
+    expect(facingToward(0, 0)).toBeNull()
+  })
+
   it('位移向量 4 向量化:水平主轴优先,恰好 45° 取竖直', () => {
     expect(facingToward(3, 0)).toBe('right')
     expect(facingToward(-3, 0)).toBe('left')

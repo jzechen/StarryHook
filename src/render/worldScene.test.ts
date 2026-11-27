@@ -492,6 +492,27 @@ describe('持竿姿态接线(票 #49:垂钓锁朝水朝向 + 抛竿前倾,接缝
     const body = findLabeled(sceneRoot, 'player-body') as unknown as Sprite
     expect(body.texture).toBe(tex.playerFrames.down[0])
   })
+
+  it('查询点贴住水 cell(无他 cell 可瞄):保持当前朝向,不静默翻成 up', () => {
+    // 村舍池缩成单 cell,玩家站在该 cell 内:瞄准点即自身(零向量),
+    // 朝向量化无解 → rodFacing 不动,渲染帧取核心朝向(帧 0)
+    const water = new Array(village.width * village.height).fill(0)
+    water[13 * village.width + 26] = 1
+    const pond = { ...village, water, waterRectPx: { x: 26 * 16, y: 13 * 16, width: 16, height: 16 } }
+    const { app, world } = fakeApp()
+    const tex = fakeTextures()
+    const scene = new WorldScene(app, tex, pond)
+    const sceneRoot = world()
+    const core = fakeCore('charging')
+    core.px = 26 * 16 + 8
+    core.py = 13 * 16 + 8
+    core.facing = 'down'
+    core.castX = core.px
+    core.castY = core.py
+    scene.update(core, 0, 0.016)
+    const body = findLabeled(sceneRoot, 'player-body') as unknown as Sprite
+    expect(body.texture).toBe(tex.playerFrames.down[0])
+  })
 })
 
 describe('脚下影子(票 #49:椭圆半透明,贴地随 bob 微缩淡,接缝 = player-shadow Graphics)', () => {

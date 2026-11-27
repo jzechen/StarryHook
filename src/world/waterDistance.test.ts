@@ -81,10 +81,18 @@ describe('waterDistancePx(接缝:到最近水域的距离)', () => {
  * 最近矩形的**钳制点**(点在矩形内即自身);无水返回 null。
  */
 describe('waterAimPoint(接缝:最近水 cell 瞄准点)', () => {
-  it('点在水 cell 内:瞄准点即自身(钳制在矩形内)', () => {
+  it('点在唯一水 cell 内:无其他水 cell 可瞄,返回 null(自瞄点会喂出零向量)', () => {
     const map = mapWithWater([[1, 1]])
-    expect(waterAimPoint(map, 24, 24)).toEqual({ x: 24, y: 24 })
-    expect(waterAimPoint(map, 16, 16)).toEqual({ x: 16, y: 16 })
+    expect(waterAimPoint(map, 24, 24)).toBeNull()
+    expect(waterAimPoint(map, 16, 16)).toBeNull()
+  })
+
+  it('点在水 cell 内但还有别的水 cell:瞄向最近的他 cell 钳制点(点 (8,8) 在 cell (0,0) 内 → 钳到 (16,16))', () => {
+    const map = mapWithWater([
+      [0, 0],
+      [1, 1],
+    ])
+    expect(waterAimPoint(map, 8, 8)).toEqual({ x: 16, y: 16 })
   })
 
   it('水外一点钳到最近 cell 矩形边上(手算:点 (24,20) 在 cell (1,0) 上方 4px → (24,16))', () => {
@@ -113,12 +121,12 @@ describe('waterAimPoint(接缝:最近水 cell 瞄准点)', () => {
     expect(waterAimPoint(mapWithWater([]), 8, 8)).toBeNull()
   })
 
-  it('真实村舍图:池心即自身,岸上点钳到池边', () => {
+  it('真实村舍图:池心跳过贴身的本 cell,瞄向最近他 cell 的钳制点(手算:池心 (480,248) 与 cell (29,15)/(30,15) 距离 0,最近他 cell (29,14) 钳到 (480,240));岸上点钳到池边', () => {
     const village = WORLD_MAPS.village
     const wr = village.waterRectPx
     const cx = wr.x + wr.width / 2
     const cy = wr.y + wr.height / 2
-    expect(waterAimPoint(village, cx, cy)).toEqual({ x: cx, y: cy })
+    expect(waterAimPoint(village, cx, cy)).toEqual({ x: cx, y: cy - 8 })
     const aim = waterAimPoint(village, cx, wr.y - 10)
     expect(aim).toEqual({ x: cx, y: wr.y })
   })

@@ -70,8 +70,11 @@ export function breathPose(t: number): CharacterPose {
 /**
  * 朝向 4 向量化:位移向量 → Facing(水平主轴优先;恰好 45° 取竖直)。
  * 持竿「朝水」即由「人物 → 水面瞄准点」的向量经此量化。
+ * 零向量没有方向信息,返回 null(调用方保持当前朝向)——曾静默读作 'up'
+ * (waterAimPoint 在查询点贴住水 cell 时恰好喂入 (0,0)),在此堵住。
  */
-export function facingToward(dx: number, dy: number): Facing {
+export function facingToward(dx: number, dy: number): Facing | null {
+  if (dx === 0 && dy === 0) return null
   if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left'
   return dy > 0 ? 'down' : 'up'
 }

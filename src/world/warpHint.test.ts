@@ -3,24 +3,22 @@ import { WORLD_MAPS } from './maps'
 import { parseWorldMap } from './worldMap'
 import { warpHintAt, WARP_HINT_REACH_PX } from './warpHint'
 
-/** 合成最小图(12×12,沿 warps.test 先例)与出口物件(东缘 (912,208) → river) */
+/** 合成最小图(60×26 = 960×416,与三图同尺寸;走廊几何独立于地形)与出口物件 */
 function syntheticMap(objects: unknown[]): Record<string, unknown> {
+  const water = new Array(60 * 26).fill(0)
+  water[13 * 60 + 30] = 1
   return {
-    width: 12,
-    height: 12,
+    width: 60,
+    height: 26,
     tilewidth: 16,
     tileheight: 16,
     orientation: 'orthogonal',
     renderorder: 'right-down',
     type: 'map',
     layers: [
-      { type: 'tilelayer', name: 'ground', data: new Array(144).fill(1) },
-      { type: 'tilelayer', name: 'water', data: (() => {
-        const d = new Array(144).fill(0)
-        d[6 * 12 + 6] = 1
-        return d
-      })() },
-      { type: 'tilelayer', name: 'deco', data: new Array(144).fill(0) },
+      { type: 'tilelayer', name: 'ground', data: new Array(60 * 26).fill(1) },
+      { type: 'tilelayer', name: 'water', data: water },
+      { type: 'tilelayer', name: 'deco', data: new Array(60 * 26).fill(0) },
       { type: 'objectgroup', name: 'objects', objects },
     ],
     tilesets: [
@@ -39,20 +37,14 @@ function syntheticMap(objects: unknown[]): Record<string, unknown> {
   }
 }
 
-const westProps = [
-  { name: 'target', type: 'string', value: 'village' },
-  { name: 'tx', type: 'float', value: 872 },
-  { name: 'ty', type: 'float', value: 208 },
-]
-
-function warpObject(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function warpObject(overrides: Record<string, unknown> = {}, props: Record<string, unknown>[] = []): Record<string, unknown> {
   return {
     point: true,
     name: '东 · 河谷',
     type: 'warp',
     x: 912,
     y: 208,
-    properties: [
+    properties: props.length > 0 ? props : [
       { name: 'target', type: 'string', value: 'river' },
       { name: 'tx', type: 'float', value: 88 },
       { name: 'ty', type: 'float', value: 208 },
@@ -67,7 +59,8 @@ function warpObject(overrides: Record<string, unknown> = {}): Record<string, unk
  * 出口接近浮签(票 #46,spec 术语「出口」:场景边缘有视觉开口与路径指引):
  * 走近出口区域出现被动浮签「东 · 河谷 →」——**无键帽、非交互点**(不新增
  * InteractionKind、不进动作键意图裁决,与交互浮签链并行供给)。本模块只负责
- * 「数据 → 文案与锚点」:方向与箭头由触发区几何推导,场景名取 SCENE_NAMES,
+ * 「数据 → 文案与锚点」:方向与箭头由触发区**最近图边**推导(左/右 = 西/东,
+ * 上/下 = 北/南;与 exitCorridorOf 同款最小值序),场景名取 SCENE_NAMES,
  * 接近判定 = 脚部点到触发区矩形的欧氏距离(与交互点半径同款)。
  */
 
@@ -86,6 +79,19 @@ describe('warpHintAt(接缝:地图 + 脚部点 → 被动浮签 | null)', () => 
     expect(warpHintAt(WORLD_MAPS.lake, 48, 208)!.label).toBe('西 · 河谷 ←')
   })
 
+  it('北边出口(合成图,三张实图无北出口):「北 · 河谷 ↑」,锚点沿纵轴向图内让位', () => {
+    // 北缘出口物件 (480,48) → 触发区 [464,496)×[32,64),toTop = 32 = 最近边
+    const map = parseWorldMap(syntheticMap([
+      { name: '出生点', type: 'spawn', x: 72, y: 72, point: true },
+      warpObject({ name: '北 · 河谷', x: 480, y: 48 }),
+    ]))
+    const hint = warpHintAt(map, 480, 96)
+    expect(hint).not.toBeNull()
+    expect(hint!.label).toBe('北 · 河谷 ↑')
+    expect(hint!.x).toBe(480)
+    expect(hint!.y).toBe(48 + 24)
+  })
+
   it('接近判定:距触发区恰 3 tile(48px)仍出签,再远即隐', () => {
     expect(WARP_HINT_REACH_PX).toBe(48)
     expect(warpHintAt(WORLD_MAPS.village, 896 - WARP_HINT_REACH_PX, 208)).not.toBeNull()
@@ -100,14 +106,18 @@ describe('warpHintAt(接缝:地图 + 脚部点 → 被动浮签 | null)', () => 
   })
 
   it('双出口接近圈重叠时取更近的一条(最近距离纪律,与交互点「重叠取最近」同款)', () => {
-    // 合成图:两条相邻出口(区 [64,96) 与 [144,176)),接近圈重叠;
-    // 点 (132,208) 距东 12px、距西 36px → 东签
+    // 合成图:东缘两条相邻出口(区行段 [144,176) 与 [224,256)),接近圈重叠;
+    // 点 (884,180) 距北 12.6px、距南 45.6px,都在半径内 → 取更近的北条(河谡)
     const map = parseWorldMap(syntheticMap([
       { name: '出生点', type: 'spawn', x: 72, y: 72, point: true },
-      warpObject({ name: '西签', x: 80, properties: westProps }),
-      warpObject({ name: '东签', x: 160 }),
+      warpObject({ name: '东 · 河谷', x: 912, y: 160 }),
+      warpObject({ name: '东 · 湖畔', x: 912, y: 240 }, [
+        { name: 'target', type: 'string', value: 'lake' },
+        { name: 'tx', type: 'float', value: 88 },
+        { name: 'ty', type: 'float', value: 208 },
+      ]),
     ]))
-    const hint = warpHintAt(map, 132, 208)
+    const hint = warpHintAt(map, 884, 180)
     expect(hint!.label).toBe('东 · 河谷 →')
   })
 

@@ -423,9 +423,14 @@ export class WorldScene {
       if (core.phase === 'bite') this.biteT = 0
       if (core.phase === 'charging') {
         const aim = waterAimPoint(this.map, core.px, core.py)
-        if (aim) this.rodFacing = facingToward(aim.x - core.px, aim.y - core.py)
+        // 朝向量化可能无解(瞄准点即自身/零向量):保持当前朝向,不瞎翻
+        const aimFacing = aim ? facingToward(aim.x - core.px, aim.y - core.py) : null
+        if (aimFacing) this.rodFacing = aimFacing
       }
-      if (core.phase === 'waiting') this.rodFacing = facingToward(tx - core.px, ty - core.py)
+      if (core.phase === 'waiting') {
+        const castFacing = facingToward(tx - core.px, ty - core.py)
+        if (castFacing) this.rodFacing = castFacing
+      }
       if (core.phase === 'idle') this.rodFacing = null
       const shakeKind = shakeTrigger(this.prevPhase, core.phase)
       if (shakeKind) this.shake.trigger(shakeKind)
