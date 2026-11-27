@@ -13,3 +13,11 @@ The five canonical triage labels are used as-is: `needs-triage`, `needs-info`, `
 ### Domain docs
 
 Single-context: one `GLOSSARY.md` at the repo root plus `docs/adr/`. See `docs/agents/domain.md`.
+
+### Subagent workflow
+
+Multi-agent implementation pipeline (implementer → merger; the main checkout belongs to mergers). See `docs/agents/subagent-workflow.md`.
+
+### Coding standards
+
+Review-agent checklist (e.g. generated-asset pipelines must assert output difference). See `CODING_STANDARDS.md`.
