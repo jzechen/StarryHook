@@ -16,4 +16,14 @@ describe('动作键意图(接缝:stallPressAction,票 #36)', () => {
     expect(stallPressAction(false, 'spot')).toBe('none')
     expect(stallPressAction(false, null)).toBe('none')
   })
+
+  it('无面板、叙事物在前:按下 = 读彩蛋文案(票 #37:路牌/井石台)', () => {
+    expect(stallPressAction(false, 'sign')).toBe('read-narrative')
+    expect(stallPressAction(false, 'note')).toBe('read-narrative')
+  })
+
+  it('面板打开时叙事物同样让位关面板(关闭口径优先,票 #37 沿用 #36 优先级)', () => {
+    expect(stallPressAction(true, 'sign')).toBe('close-panel')
+    expect(stallPressAction(true, 'note')).toBe('close-panel')
+  })
 })

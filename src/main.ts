@@ -253,12 +253,18 @@ async function main(): Promise<void> {
     // 面板打开锁移动(spec §2.4):方向分量清零,核心侧无需感知面板
     core.update(dt, { holding, moveX: panelOpen ? 0 : dx, moveY: panelOpen ? 0 : dy })
 
-    // 动作键按下边沿 → 意图(关闭口径优先):关面板 / 摊位开商店;
-    // 钓位蓄力抛竿不经此处——核心已按交互门禁在本帧 update 内处理
+    // 动作键按下边沿 → 意图(关闭口径优先):关面板 / 摊位开商店 / 叙事物读彩蛋;
+    // 钓位蓄力抛竿不经此处——核心已按交互门禁在本帧 update 内处理。
+    // 叙事物(票 #37)仅在待机响应:小游戏连按 E 是玩法操作,垂钓中不弹彩蛋
+    // (与摊位「仅 idle 可开」同口径);toast 一句静态文案,零奖励、可重复查看
     if (pressed) {
       const intent = stallPressAction(panelOpen, nearestTarget?.kind ?? null)
       if (intent === 'close-panel') openPanel()?.close()
       else if (intent === 'open-shop') shopPanel.open()
+      else if (intent === 'read-narrative' && core.phase === 'idle') {
+        const narrative = nearestTarget?.text
+        if (narrative) toasts.showNarrative(narrative)
+      }
     }
 
     // 钓位走近自动切所属水域(仅 idle;setWater 核心门禁保留,票 #15 禁切口径零改动;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { interactionLabel, nearestInteraction, parseInteractionSpots } from './interactions'
-import type { WorldMapObject } from './worldMap'
+import { interactionLabel, isNarrativeKind, nearestInteraction, parseInteractionSpots } from './interactions'
+import villageJson from './village.json'
+import { parseWorldMap, type WorldMapObject } from './worldMap'
 
 /** 物件条目替身:缺省 = 钓位「南岸」@(456,296),与 village.json 现有条目同形 */
 function obj(partial: Partial<WorldMapObject> = {}): WorldMapObject {
@@ -15,18 +16,44 @@ function obj(partial: Partial<WorldMapObject> = {}): WorldMapObject {
 }
 
 describe('交互点解析(接缝:parseInteractionSpots,票 #36)', () => {
-  it('只收本票落地的交互 kind(spot/stall);spawn 与未知 kind(如 note)不收', () => {
+  it('收已注册交互 kind(spot/stall);spawn 与未注册 kind(如 chest)不收', () => {
     const spots = parseInteractionSpots(
       [
         obj(),
         obj({ name: '杂货摊', type: 'stall', x: 136, y: 112 }),
         obj({ name: '出生点', type: 'spawn', x: 72, y: 72 }),
-        obj({ name: '路牌', type: 'note', x: 200, y: 100 }), // 票 #37 落地,本票不解析
+        obj({ name: '宝箱', type: 'chest', x: 200, y: 100 }), // 票 #41 落地,本票不解析
       ],
       16,
     )
     expect(spots.map(s => s.kind)).toEqual(['spot', 'stall'])
     expect(spots[1]).toMatchObject({ name: '杂货摊', x: 136, y: 112 })
+  })
+
+  it('叙事物 kind(票 #37:sign/note)解析进表,text 属性透传为彩蛋文案', () => {
+    const spots = parseInteractionSpots(
+      [
+        obj({ name: '东路牌', type: 'sign', x: 888, y: 312, properties: { text: '东 · 河谷' } }),
+        obj({ name: '井', type: 'note', x: 216, y: 152, properties: { text: '井水清凉见底。' } }),
+      ],
+      16,
+    )
+    expect(spots.map(s => s.kind)).toEqual(['sign', 'note'])
+    expect(spots[0]).toMatchObject({ name: '东路牌', x: 888, y: 312, text: '东 · 河谷' })
+    expect(spots[1]!.text).toBe('井水清凉见底。')
+  })
+
+  it('叙事物缺 text / 空 text / 非字符串 → 抛错(挡住无文案浮签流入世界)', () => {
+    expect(() => parseInteractionSpots([obj({ name: '路牌', type: 'sign', properties: {} })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ name: '路牌', type: 'sign', properties: { text: '' } })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ name: '石台', type: 'note', properties: { text: 42 } })], 16)).toThrow()
+  })
+
+  it('非叙事物(spot)不要求 text;radius 覆盖对叙事物同样生效', () => {
+    const [spot] = parseInteractionSpots([obj()], 16)
+    expect(spot!.text).toBeUndefined()
+    const [wide] = parseInteractionSpots([obj({ type: 'sign', properties: { text: '东', radius: 2 } })], 16)
+    expect(wide!.radiusPx).toBe(32)
   })
 
   it('默认触发半径 = 1.5 tile(tileWidth 参数折算成世界像素)', () => {
@@ -96,7 +123,53 @@ describe('动作短词(接缝:interactionLabel,浮签文案)', () => {
     expect(interactionLabel('stall')).toBe('商店')
   })
 
+  it('叙事物 = 查看(路牌 sign / 井石台 note 同词,票 #37)', () => {
+    expect(interactionLabel('sign')).toBe('查看')
+    expect(interactionLabel('note')).toBe('查看')
+  })
+
   it('未知 kind 无词(空串):浮签不渲染无主文案,后续票按 kind 扩表', () => {
     expect(interactionLabel('chest')).toBe('')
+  })
+})
+
+describe('叙事物判定(接缝:isNarrativeKind,动作键意图策略消费)', () => {
+  it('sign/note 是叙事物;spot/stall 与未注册 kind 不是', () => {
+    expect(isNarrativeKind('sign')).toBe(true)
+    expect(isNarrativeKind('note')).toBe(true)
+    expect(isNarrativeKind('spot')).toBe(false)
+    expect(isNarrativeKind('stall')).toBe(false)
+    expect(isNarrativeKind('chest')).toBe(false)
+  })
+})
+
+describe('村舍图叙事物端到端(接缝:village.json → parseInteractionSpots,票 #37)', () => {
+  const map = parseWorldMap(villageJson)
+  const spots = parseInteractionSpots(map.objects, map.tileWidth)
+
+  it('村舍图解析出东路牌(sign)与井(note),文案随物件透传', () => {
+    const sign = spots.find(s => s.kind === 'sign')
+    const note = spots.find(s => s.kind === 'note')
+    expect(sign).toMatchObject({ name: '东路牌', text: '东 · 河谷', radiusPx: 24 })
+    expect(note).toMatchObject({ name: '井' })
+    expect(note!.text).toBeTruthy()
+  })
+
+  it('井在出生点附近(第一屏内,出生点走几步可达触发半径)', () => {
+    const note = spots.find(s => s.kind === 'note')!
+    const spawn = map.spawn
+    const dist = Math.hypot(note!.x - spawn.x, note!.y - spawn.y)
+    expect(note!.x).toBeLessThan(map.widthPx / 3)
+    expect(dist).toBeLessThan(map.widthPx / 4)
+  })
+
+  it('东路牌立在村舍东出口前:图东侧、东行土路尽头处,钓位/摊位范围互不重叠', () => {
+    const sign = spots.find(s => s.kind === 'sign')!
+    expect(sign.x).toBeGreaterThan(map.widthPx * 0.9)
+    for (const other of spots) {
+      if (other === sign) continue
+      const overlap = Math.hypot(other.x - sign.x, other.y - sign.y) < other.radiusPx + sign.radiusPx
+      expect(overlap).toBe(false)
+    }
   })
 })

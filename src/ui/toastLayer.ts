@@ -13,6 +13,8 @@ const TOAST_LIFETIME_MS = 2000
 const TOAST_FADE_OUT_MS = 300
 /** 淡入动画时长(纯观感参数,与生命周期无关) */
 const TOAST_FADE_IN_MS = 180
+/** 叙事物彩蛋文案时长(spec §2.5「约 2.5s 消失」):整句环境文案比常规轻提示多读 0.5s */
+const NARRATIVE_TOAST_MS = 2500
 
 /**
  * DOM 轻提示层:顶部居中弹出、约 2s 自动消失。
@@ -34,13 +36,25 @@ export class ToastLayer {
    * 动画与生命周期与固定种类完全一致。
    */
   showText(text: string, modifier?: string): void {
+    this.showTextFor(text, modifier, TOAST_LIFETIME_MS)
+  }
+
+  /**
+   * 叙事物件的彩蛋文案(票 #37,spec §2.5):样式与既有 toast 一致,
+   * 停留约 2.5s;可重复触发(每次交互重新弹一条),无已读持久化。
+   */
+  showNarrative(text: string): void {
+    this.showTextFor(text, undefined, NARRATIVE_TOAST_MS)
+  }
+
+  private showTextFor(text: string, modifier: string | undefined, lifetimeMs: number): void {
     const el = document.createElement('div')
     el.className = modifier ? `toast toast--${modifier}` : 'toast'
     el.textContent = text
     el.style.animation = `toast-in ${TOAST_FADE_IN_MS}ms ease-out, toast-out ${TOAST_FADE_OUT_MS}ms ease-in ${
-      TOAST_LIFETIME_MS - TOAST_FADE_OUT_MS
+      lifetimeMs - TOAST_FADE_OUT_MS
     }ms forwards`
     this.container.appendChild(el)
-    window.setTimeout(() => el.remove(), TOAST_LIFETIME_MS)
+    window.setTimeout(() => el.remove(), lifetimeMs)
   }
 }

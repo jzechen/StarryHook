@@ -109,6 +109,29 @@ describe('村舍地图 village.json(接缝:parseWorldMap 纯函数)', () => {
     expect(flower).not.toBeNull()
     expect(isBlockedCell(map, flower![0], flower![1])).toBe(false)
   })
+
+  it('叙事物(票 #37):路牌 tile(gid 84)立在东路北侧且挡路外行人;东路上不新增阻挡', () => {
+    const sign = cellOf(map.deco, map, 84)
+    expect(sign).not.toBeNull()
+    expect(isBlockedCell(map, sign![0], sign![1])).toBe(true)
+    // 路牌在地图东半(村舍出口方向),且不压在东行土路(行 20)上
+    expect(sign![0]).toBeGreaterThan(map.width / 2)
+    expect(isBlockedCell(map, sign![0]!, 20)).toBe(false)
+  })
+
+  it('叙事物物件(票 #37):东路牌一块(text 指向河谷)+ 井交互点锚在井 tile 中心', () => {
+    const signs = map.objects.filter(o => o.type === 'sign')
+    expect(signs).toHaveLength(1)
+    expect(signs[0]!.name.length).toBeGreaterThan(0)
+    expect(signs[0]!.properties['text']).toBe('东 · 河谷')
+    const notes = map.objects.filter(o => o.type === 'note')
+    expect(notes).toHaveLength(1)
+    // 井交互点锚在既有井 tile(13,9)中心(装饰分挡用例的同源坐标)
+    const well = cellOf(map.deco, map, 105)!
+    expect(notes[0]!.x).toBe(well[0] * map.tileWidth + map.tileWidth / 2)
+    expect(notes[0]!.y).toBe(well[1] * map.tileWidth + map.tileWidth / 2)
+    expect(notes[0]!.properties['text']).toBeTruthy()
+  })
 })
 
 describe('解析器拒绝坏数据(纯函数契约,合成最小图)', () => {
