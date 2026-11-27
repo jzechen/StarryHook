@@ -7,12 +7,13 @@ import type { WorldMapObject } from './worldMap'
  *
  * 解析为纯函数:物件层条目(kind/name/坐标/属性)→ 交互点定义;
  * 触发判定为纯函数:玩家脚部点 → 范围内最近交互点(重叠取最近,平局取先声明)。
- * 本票落地 spot(钓位)/stall(摊位)两种;note/sign/chest/storage 由后续票按
- * 同一物件层声明扩展(kind 表 + 动作短词表即插即用)。
+ * 票 #37 追加叙事物 sign(路牌)/note(井石台,spec §2.5):彩蛋文案走物件
+ * text 属性,交互 = 动作键弹一句静态文案,零奖励、不持久化已读;
+ * chest/storage 由后续票按同一物件层声明扩展(kind 表 + 动作短词表即插即用)。
  */
 
 /** 本票落地的交互 kind(spec §2.1 全集的子集;后续票追加) */
-export type InteractionKind = 'spot' | 'stall'
+export type InteractionKind = 'spot' | 'stall' | 'sign' | 'note'
 
 /** 默认触发半径(tile;spec §2.1「统一 1.5 tile」) */
 export const DEFAULT_RADIUS_TILES = 1.5
@@ -29,12 +30,24 @@ export interface InteractionSpotDef {
   readonly radiusPx: number
   /** 钓位所属水域(spot 专用;走近自动 setWater 的来源;stall 无) */
   readonly area?: WaterAreaId
+  /** 叙事物彩蛋文案(sign/note 专用;物件 text 属性,交互时整句弹出,不入玩法状态) */
+  readonly text?: string
 }
 
-/** 动作短词表(浮签文案;#37 起 sign/note = 查看、chest = 开启按 kind 扩表) */
+/** 叙事物 kind(spec §2.5:路牌 sign / 井与石台 note;零奖励,不持久化已读) */
+const NARRATIVE_KINDS: ReadonlySet<InteractionKind> = new Set(['sign', 'note'])
+
+/** 叙事物判定(动作键意图策略消费;未注册 kind 非叙事物) */
+export function isNarrativeKind(kind: string): boolean {
+  return (NARRATIVE_KINDS as ReadonlySet<string>).has(kind)
+}
+
+/** 动作短词表(浮签文案;chest = 开启等后续票按 kind 扩表) */
 const ACTION_LABELS: Readonly<Record<InteractionKind, string>> = {
   spot: '抛竿',
   stall: '商店',
+  sign: '查看',
+  note: '查看',
 }
 
 /** 交互点动作短词(未知 kind = 空串:浮签不渲染无主文案) */
@@ -50,7 +63,8 @@ function isWaterAreaId(value: unknown): value is WaterAreaId {
 
 /** 物件层条目 → 交互点定义;kind 非交互返回 null(调用方过滤) */
 function toInteractionSpot(o: WorldMapObject, tileWidth: number): InteractionSpotDef | null {
-  if (o.type !== 'spot' && o.type !== 'stall') return null
+  if (o.type !== 'spot' && o.type !== 'stall' && o.type !== 'sign' && o.type !== 'note') return null
+  const kind = o.type as InteractionKind
   const radiusTiles = o.properties['radius']
   let radiusPx = DEFAULT_RADIUS_TILES * tileWidth
   if (radiusTiles !== undefined) {
@@ -63,13 +77,18 @@ function toInteractionSpot(o: WorldMapObject, tileWidth: number): InteractionSpo
   if (area !== undefined && !isWaterAreaId(area)) {
     throw new Error(`交互点「${o.name}」的 area 不是注册表水域:${String(area)}`)
   }
+  const text = o.properties['text']
+  if (isNarrativeKind(kind) && (typeof text !== 'string' || text.length === 0)) {
+    throw new Error(`叙事物「${o.name}」的 text 必须是非空字符串(彩蛋文案,现 ${String(text)})`)
+  }
   return {
-    kind: o.type,
+    kind,
     name: o.name,
     x: o.x,
     y: o.y,
     radiusPx,
-    ...(o.type === 'spot' && area !== undefined ? { area: area as WaterAreaId } : {}),
+    ...(kind === 'spot' && area !== undefined ? { area: area as WaterAreaId } : {}),
+    ...(isNarrativeKind(kind) && text !== undefined ? { text: text as string } : {}),
   }
 }
 
