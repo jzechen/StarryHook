@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { deriveWaterArea, WORLD_MAPS } from './maps'
+import { parseInteractionSpots } from './interactions'
 import { warpsOf, type WarpZone } from './warps'
 import { isBlockedCell, waterFillsBounds, type WorldMapData } from './worldMap'
 
@@ -246,6 +247,37 @@ describe('出口图与三图连通(村舍 ↔ 河谷 ↔ 湖畔)', () => {
       for (const stall of map.objects.filter(o => o.type === 'stall')) expectReached(mapId, stall.x, stall.y, `摊位「${stall.name}」`)
       for (const warp of zones[mapId]!) expectReached(mapId, warp.x + warp.width / 2, warp.y + warp.height / 2, `出口 → ${warp.target}`)
     }
+  })
+})
+
+describe('钓位微差数据(票 #38,spec §3:每图至多 1 处,池塘 0 处)', () => {
+  /** 各图交互点解析产物按名取钓位(解析路径一并覆盖:JSON 串 → 倍率表) */
+  function spotOf(mapId: keyof typeof WORLD_MAPS, name: string) {
+    const map = WORLD_MAPS[mapId]
+    return parseInteractionSpots(map.objects, map.tileWidth).find(s => s.name === name)
+  }
+
+  it('河谷「深湾」:铅坠鲶 ×2(水域代表鱼)', () => {
+    expect(spotOf('river', '深湾')!.spotMul).toEqual({ qianzhuinian: 2 })
+  })
+
+  it('河谷其余钓位(浅滩/柳岸)无修饰', () => {
+    expect(spotOf('river', '浅滩')!.spotMul).toBeUndefined()
+    expect(spotOf('river', '柳岸')!.spotMul).toBeUndefined()
+  })
+
+  it('湖畔「湖心」:气球河豚 ×2(水域代表鱼)', () => {
+    expect(spotOf('lake', '湖心')!.spotMul).toEqual({ qiqiuHetun: 2 })
+  })
+
+  it('湖畔其余钓位(北岸/南岸)无修饰', () => {
+    expect(spotOf('lake', '北岸')!.spotMul).toBeUndefined()
+    expect(spotOf('lake', '南岸')!.spotMul).toBeUndefined()
+  })
+
+  it('池塘红线:村舍两钓位均无修饰(池塘钓位无微差)', () => {
+    expect(spotOf('village', '南岸')!.spotMul).toBeUndefined()
+    expect(spotOf('village', '西岸')!.spotMul).toBeUndefined()
   })
 })
 
