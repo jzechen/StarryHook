@@ -28,8 +28,13 @@ const SCREEN_H = 270
 const CHAR_W = 18
 const PAD_X = 24
 const BOX_H = 28
-/** 横幅底缘距屏底(逻辑像素) */
-const BOTTOM_MARGIN = 10
+/**
+ * 横幅底缘距屏底(逻辑像素)。实机验收修复:原值 10(锚点 y=260)与常驻
+ * 帮助行(#hint,bottom 34px / 字号 24px)同位互叠——「湖畔」被帮助行半遮;
+ * 锚点上移 40 逻辑 px 至帮助行上方(底部语义与水平居中不变),2x 缩放下
+ * 横幅底缘 = 屏底上方 100 CSS px,整条帮助行(顶缘约 63 CSS px)露出不受遮。
+ */
+const BOTTOM_MARGIN = 50
 
 /**
  * 横幅配色(票 #48 星露谷全铺):深底 band 换白底圆角深字,与 DOM 面板同族——

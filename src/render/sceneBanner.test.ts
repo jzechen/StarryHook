@@ -32,6 +32,16 @@ describe('sceneBannerAlpha(时间线纯函数)', () => {
 })
 
 describe('SceneBanner(屏空间底部横幅:begin → update → 自动收场)', () => {
+  it('锚点底部居中,且横幅底缘在常驻帮助行上方(实机验收:不与 #hint 同位互叠)', () => {
+    // 逻辑屏 480×270(ADR-0002);原锚点 y=260(底缘距屏底 10)与 DOM 帮助行
+    // (#hint bottom 34px、字号 24px,2x 缩放下占屏底约 17–32 逻辑 px 带)
+    // 同位互叠——上移 40 逻辑 px:锚点 220,底缘距屏底 50,2x 下即屏底上方
+    // 100 CSS px,整条帮助行(顶缘约 63 CSS px)露出不受遮。
+    const banner = new SceneBanner()
+    expect(banner.container.position.x).toBe(240)
+    expect(banner.container.position.y).toBe(220)
+  })
+
   it('begin 后进入演出并显示;update 推进到时长尽自动收场(容器隐藏)', () => {
     const banner = new SceneBanner()
     expect(banner.playing).toBe(false)
