@@ -11,6 +11,7 @@ import { CollectionStore, type KvStorage } from './core/collection'
 import { COLLECTIBLES } from './core/collectibles'
 import { CoreLoop } from './core/coreLoop'
 import { FISH } from './core/fishCatalog'
+import { OrderBoardStore, sessionOrderRng } from './core/orderBoard'
 import { ProgressionStore } from './core/progression'
 import { Rng } from './core/rng'
 import { TimedBestStore } from './core/timedBest'
@@ -28,22 +29,24 @@ import { WORLD_MAPS } from './world/maps'
 import type { MapId } from './core/types'
 import { baitBadgeText } from './ui/baitBadgeText'
 import { ambientWaterLevel } from './ui/ambientWater'
+import { BgmChannel } from './ui/bgm'
 import { countdownTick } from './ui/countdownTick'
 import { advanceStepClock } from './ui/footstepClock'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
 import { countdownBadgeText } from './ui/countdownBadgeText'
-import { baitEffectSource, buyBaitOutcome, equippedBaitView, grantChestLoot, grantLoot, sellFishOutcome } from './ui/economyWiring'
+import { baitEffectSource, buyBaitOutcome, deliverOrderOutcome, equippedBaitView, grantChestLoot, grantLoot, sellFishOutcome } from './ui/economyWiring'
 import { BackpackPanel } from './ui/backpackPanel'
 import { Hud } from './ui/hud'
 import { ModePanel } from './ui/modePanel'
+import { OrderPanel } from './ui/orderPanel'
 import { MuteStore } from './ui/muteStore'
 import { PanelExclusion } from './ui/panelExclusion'
 import { progressionToastText } from './ui/progressionToastPolicy'
 import { roundJustEnded } from './ui/roundEdgePolicy'
 import { roundSettlementText } from './ui/roundSettlementText'
 import { AudioSfxPlayer, MuteAwareSfxPlayer } from './ui/sfx'
-import { sfxForEvent } from './ui/sfxMapping'
+import { bgmForScene, sfxForEvent } from './ui/sfxMapping'
 import { ShopPanel, type ShopBuyOutcome } from './ui/shopPanel'
 import { StoragePanel } from './ui/storagePanel'
 import { transferBetween } from './ui/storageWiring'
@@ -103,7 +106,18 @@ async function main(): Promise<void> {
   // 宝箱已开态(票 #41,spec §4.5/§4.6):一次性开启的 kv 集合键,损坏按全未开降级;
   // 供两处消费——世界场景两态外观(空箱跟随已开态)与动作键开箱的一次性判定
   const chests = new ChestOpenedStore(storage)
-  const director = new WorldDirector({ app, textures, core, storage, chestIsOpen: id => chests.isOpen(id) })
+  // 场景配乐 BGM 通道(票 #54,spec 术语「场景配乐」):每场景一轨循环,
+  // 切轨挂世界导演入图沿(过场淡入完成沿 = 场景横幅同点),交叉淡入淡出约 1s;
+  // 通道只管状态机,每帧供给经静音门(sfx.setBgm)透传给播放器——静音全覆盖
+  const bgm = new BgmChannel()
+  const director = new WorldDirector({
+    app,
+    textures,
+    core,
+    storage,
+    chestIsOpen: id => chests.isOpen(id),
+    onSceneEntered: mapId => bgm.setTarget(bgmForScene(mapId)),
+  })
   // 钓上宝箱(票 #56,spec #52 内容扩充):渲染层追踪器消费核心**已暴露**的
   // 相位与小游戏状态(条/鱼位置),核心循环零改动。抛竿落水沿按 TUNE 概率
   // 现身(独立派生种子的会话 Rng,主随机序列一个 draw 不动,?seed 可复现),
@@ -150,6 +164,14 @@ async function main(): Promise<void> {
   const storageBox = new BackpackStore(FISH.map(f => f.id), collectibleIds, {
     storage,
     key: 'starryhook:storage',
+  })
+  // 公告板(票 #55,spec 内容扩充「公告板与订单」):当前订单一单(队列制),
+  // 订单轮转走独立派生种子的 Rng(sessionOrderRng,与品质旁路同构,主序列一个
+  // draw 不动);kv 持久化跨会话保留(独立键),损坏按重出首单降级。
+  // 交付 = deliverOrderOutcome 接线(扣背包渔获 + 酬金入钱包 + 出新单一体)
+  const orders = new OrderBoardStore(sessionOrderRng(seed), {
+    storage,
+    key: 'starryhook:orders',
   })
   // 鱼饵生效(票 #19 香饵 + 票 #21 浓饵;review 修复后两缝合一):核心循环在抛竿时刻
   // (进入 waiting 边沿,core cast 内)调用单一饵效果来源恰好一次,本竿饵消耗恰好一次,
@@ -219,6 +241,10 @@ async function main(): Promise<void> {
     transferBetween(storageBox, backpack),
     panelExclusion,
   )
+  // 公告板面板(票 #55):河谷公告板交互点 E 开小面板——查看当前订单(鱼种 ×
+  // 品质门槛 × 数量 + 酬金与持有进度)、交付(扣包 + 酬金入钱包 + 出新单一体,
+  // 行内反馈沿商店 ShopBuyOutcome 风格,缺鱼/品质不足分列拒绝)
+  const orderPanel = new OrderPanel(orders, backpack, deliverOrderOutcome(orders, backpack, wallet), panelExclusion)
   // 轻提示层:新收录等常规轻提示,顶部居中,不拦截游戏输入
   const toasts = new ToastLayer()
   // 大满贯全屏演出(票 #43,spec §5.2):替代既有 toast——画布内横幅 +
@@ -256,7 +282,7 @@ async function main(): Promise<void> {
   }
   // 已开面板(互斥协调器保证至多一个):面板打开时世界动作全歇、浮签全隐、移动锁死
   const openPanel = (): { close(): void } | null =>
-    [collectionPanel, shopPanel, modePanel, backpackPanel, storagePanel].find(p => p.isOpen()) ?? null
+    [collectionPanel, shopPanel, modePanel, backpackPanel, storagePanel, orderPanel].find(p => p.isOpen()) ?? null
   // 每帧刷新的「范围内最近交互点」:交互门禁/浮签/自动切水/摊位动作四方同源,
   // 不因各自取值时机不同而打架(核心门禁在 core.update 内消费的即本帧值)
   let nearestTarget: ReturnType<typeof nearestInteraction> = null
@@ -349,8 +375,8 @@ async function main(): Promise<void> {
     fishingChest.update(core, dt)
 
     // 动作键按下边沿 → 意图(关闭口径优先):关面板 / 摊位开商店 / 储物箱开转移
-    // 面板 / 宝箱一次性开启 / 叙事物读彩蛋;钓位蓄力抛竿不经此处——核心已按交互
-    // 门禁在本帧 update 内处理。
+    // 面板 / 宝箱一次性开启 / 公告板开订单面板 / 叙事物读彩蛋;钓位蓄力抛竿不经
+    // 此处——核心已按交互门禁在本帧 update 内处理。
     // 叙事物(票 #37)仅在待机响应:小游戏连按 E 是玩法操作,垂钓中不弹彩蛋
     // (与摊位「仅 idle 可开」同口径);toast 一句静态文案,零奖励、可重复查看
     // 过场中同样不响应(输入锁定的组成部分,票 #35)
@@ -361,6 +387,7 @@ async function main(): Promise<void> {
       if (intent === 'close-panel') openPanel()?.close()
       else if (intent === 'open-shop') shopPanel.open()
       else if (intent === 'open-storage') storagePanel.open()
+      else if (intent === 'open-board') orderPanel.open()
       else if (intent === 'open-chest' && core.phase === 'idle') {
         const chestId = nearestTarget?.chestId
         if (chestId && chests.open(chestId)) {
@@ -409,6 +436,11 @@ async function main(): Promise<void> {
     // (交互浮签随场景渲染一并供给,放最后——过场完成/换图在本帧内生效;
     // 入图场景名横幅由导演在淡入完成沿起演,组合根不经手)
     director.update(tk.lastTime / 1000, dt, promptState, warpHint, fishingChest.active)
+    // 场景配乐(票 #54):入图沿(本帧 director.update 内)切轨后,交叉淡入淡出
+    // 的双轨供给每帧透传给播放器(outgoing = 淡出旧轨,incoming = 当前轨);
+    // 静音覆盖 = MuteAwareSfxPlayer.setBgm(静音即对整条通道显式停)
+    const bgmMix = bgm.update(dt)
+    sfx.setBgm(bgmMix.outgoing, bgmMix.incoming)
     // 近水水声(票 #44):距离 = 世界层纯函数(到最近水 cell 的矩形距离,
     // 单一来源),音量随距离淡入淡出;常驻循环走 setAmbient 通道,
     // 静音覆盖 = MuteAwareSfxPlayer.setAmbient(静音即显式停循环)
@@ -519,6 +551,9 @@ async function main(): Promise<void> {
     backpackPanel.update(core)
     // 储物箱面板(票 #40):离开待机自动收起、两栏内容刷新(打开时游戏照常推进)
     storagePanel.update(core)
+    // 公告板面板(票 #55):离开待机自动收起、当前订单与持有进度刷新
+    // (打开时游戏照常推进——垂钓中可积累,交付不限时)
+    orderPanel.update(core)
   })
 }
 

@@ -368,3 +368,49 @@ describe('WorldDirector:出口接近浮签的过场门禁(票 #46:过场中不�
     expect(findLabeled(app.stage, 'warp-prompt').visible).toBe(true)
   })
 })
+
+describe('WorldDirector:入图沿(票 #54 BGM 切轨挂点,与场景横幅同点)', () => {
+  it('开机即入图:构造完成沿以起始场景通知恰好一次(位置快照恢复亦然)', () => {
+    const kv = countingKv()
+    kv.set(PLAYER_POSITION_KEY, JSON.stringify({ mapId: 'lake', x: 520, y: 264, facing: 'up' }))
+    const core = new CoreLoop(new Rng(1))
+    const entered: string[] = []
+    new WorldDirector({ app: fakeApp(), textures: fakeTextures(), core, storage: kv, onSceneEntered: id => entered.push(id) })
+    expect(entered).toEqual(['lake'])
+  })
+
+  it('过场中不通知;到达帧(淡入完成沿)以新场景通知恰好一次', () => {
+    const core = new CoreLoop(new Rng(1))
+    const entered: string[] = []
+    const director = new WorldDirector({
+      app: fakeApp(), textures: fakeTextures(), core, storage: countingKv(),
+      onSceneEntered: id => entered.push(id),
+    })
+    expect(entered).toEqual(['village']) // 开机沿
+    entered.length = 0
+    core.px = VILLAGE_EAST_IN.x
+    core.py = VILLAGE_EAST_IN.y
+    core.facing = 'right'
+    let t = 0
+    tick(director, core, t, DT)
+    t += DT
+    for (let i = 0; i < 20; i++) {
+      tick(director, core, t, DT)
+      t += DT
+    }
+    expect(director.mapId).toBe('river') // 已换图(淡出走满)但过场未结束
+    expect(entered).toEqual([]) // 过场中不通知
+    for (let i = 0; i < 40 && director.inputLocked; i++) {
+      tick(director, core, t, DT)
+      t += DT
+    }
+    expect(director.inputLocked).toBe(false) // 到达沿
+    expect(entered).toEqual(['river']) // 恰好一次
+    // 后续帧不再重复通知
+    for (let i = 0; i < 30; i++) {
+      tick(director, core, t, DT)
+      t += DT
+    }
+    expect(entered).toEqual(['river'])
+  })
+})
