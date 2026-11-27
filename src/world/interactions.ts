@@ -64,6 +64,16 @@ export function interactionLabel(kind: string): string {
   return label ?? ''
 }
 
+/**
+ * 浮签文案(票 #38,spec §3 呈现):钓位名进浮签(「深湾 · 抛竿」);
+ * 其余 kind 沿动作短词不加名(摊位「商店」、叙事物「查看」)。
+ * kind 取 string(沿 interactionLabel 的扩表先例:未注册 kind = 空串)。
+ */
+export function interactionPromptText(spot: { readonly kind: string; readonly name: string }): string {
+  const label = interactionLabel(spot.kind)
+  return spot.kind === 'spot' ? `${spot.name} · ${label}` : label
+}
+
 /** 水域 id 校验(注册表单源;拼错的 area 在解析期抛错,不流入 setWater) */
 function isWaterAreaId(value: unknown): value is WaterAreaId {
   return typeof value === 'string' && WATER_AREAS.some(a => a.id === value)

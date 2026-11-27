@@ -51,7 +51,17 @@ function fishAtBite(loop: CoreLoop): string {
 }
 
 /** 同批种子下统计某鱼上钩次数(环境全固定 → 结果确定性,非统计近似) */
-function countFish(world: { month?: number; hour?: number; weather?: Weather; area?: 'pond' | 'river' | 'lake' }, fishId: string, seeds = 150): number {
+function countFish(
+  world: {
+    month?: number
+    hour?: number
+    weather?: Weather
+    area?: 'pond' | 'river' | 'lake'
+    spotMul?: Readonly<Record<string, number>>
+  },
+  fishId: string,
+  seeds = 150,
+): number {
   let count = 0
   for (let s = 1; s <= seeds; s++) {
     if (fishAtBite(newWorldLoop(s, world)) === fishId) count++

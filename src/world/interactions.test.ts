@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { interactionLabel, isNarrativeKind, nearestInteraction, parseInteractionSpots } from './interactions'
+import { interactionLabel, interactionPromptText, isNarrativeKind, nearestInteraction, parseInteractionSpots } from './interactions'
 import villageJson from './village.json'
 import { parseWorldMap, type WorldMapObject } from './worldMap'
 
@@ -170,6 +170,23 @@ describe('动作短词(接缝:interactionLabel,浮签文案)', () => {
 
   it('未知 kind 无词(空串):浮签不渲染无主文案,后续票按 kind 扩表', () => {
     expect(interactionLabel('chest')).toBe('')
+  })
+})
+
+describe('浮签文案(接缝:interactionPromptText,票 #38 钓位名进浮签)', () => {
+  it('钓位 = 「钓位名 · 动作短词」(「深湾 · 抛竿」)', () => {
+    expect(interactionPromptText({ kind: 'spot', name: '深湾' })).toBe('深湾 · 抛竿')
+    expect(interactionPromptText({ kind: 'spot', name: '湖心' })).toBe('湖心 · 抛竿')
+  })
+
+  it('其余 kind 沿动作短词不加名(摊位 = 商店、叙事物 = 查看,spec §3 只改钓位)', () => {
+    expect(interactionPromptText({ kind: 'stall', name: '杂货摊' })).toBe('商店')
+    expect(interactionPromptText({ kind: 'sign', name: '东路牌' })).toBe('查看')
+    expect(interactionPromptText({ kind: 'note', name: '井' })).toBe('查看')
+  })
+
+  it('未知 kind = 空串(浮签不渲染无主文案)', () => {
+    expect(interactionPromptText({ kind: 'chest', name: '宝箱' })).toBe('')
   })
 })
 

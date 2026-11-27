@@ -16,7 +16,7 @@ import { WalletStore } from './core/wallet'
 import { WorldDirector } from './render/worldDirector'
 import { loadSceneTextures } from './render/textures'
 import { applyViewportToCanvas } from './render/viewport'
-import { interactionLabel, nearestInteraction, parseInteractionSpots } from './world/interactions'
+import { interactionPromptText, nearestInteraction, parseInteractionSpots } from './world/interactions'
 import { WORLD_MAPS } from './world/maps'
 import type { MapId } from './core/types'
 import { baitBadgeText } from './ui/baitBadgeText'
@@ -204,10 +204,11 @@ async function main(): Promise<void> {
   let nearestTarget: ReturnType<typeof nearestInteraction> = null
   const anyPanelOpen = (): boolean => openPanel() !== null
   // 交互点来源注入(核心门禁:idle 按下须最近交互点是钓位才蓄力;
-  // 面板打开时来源恒 null——动作键优先关面板,同一次按下不会「关面板又开竿」)
+  // 面板打开时来源恒 null——动作键优先关面板,同一次按下不会「关面板又开竿」)。
+  // 钓位微差(票 #38):钓位物件的倍率表随来源透传,抛竿按当前钓位读取
   core.setInteractionSource(() => {
     if (anyPanelOpen()) return null
-    return nearestTarget?.kind === 'spot' ? { kind: 'spot' } : null
+    return nearestTarget?.kind === 'spot' ? { kind: 'spot', spotMul: nearestTarget.spotMul } : null
   })
 
   // —— 输入:鼠标/触摸 + 键盘(动作键 = E/空格/按住鼠标三等效,WASD/方向键 = 移动,ESC = 关面板) ——
@@ -302,10 +303,11 @@ async function main(): Promise<void> {
     ) {
       core.setWater(nearestTarget.area)
     }
-    // 交互浮签供给(idle ∧ 无面板 ∧ 范围内有交互点):渲染层另有非 idle 兜底
+    // 交互浮签供给(idle ∧ 无面板 ∧ 范围内有交互点):渲染层另有非 idle 兜底;
+    // 钓位名进浮签(票 #38,spec §3:「深湾 · 抛竿」),其余 kind 沿动作短词
     const promptState =
       core.phase === 'idle' && nearestTarget
-        ? { x: nearestTarget.x, y: nearestTarget.y, label: interactionLabel(nearestTarget.kind) }
+        ? { x: nearestTarget.x, y: nearestTarget.y, label: interactionPromptText(nearestTarget) }
         : null
     // 世界推进(票 #35):过场状态机、出口检测、换图落位、存档门禁、场景渲染
     // (交互浮签随场景渲染一并供给,放最后——过场完成/换图在本帧内生效)
