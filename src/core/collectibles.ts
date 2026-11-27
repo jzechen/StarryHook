@@ -12,8 +12,11 @@ export interface CollectibleDef {
   name: string
 }
 
-/** 收藏品目录(词条序即面板行序;id 唯一) */
-export const COLLECTIBLES: readonly CollectibleDef[] = []
+/** 收藏品目录(词条序即面板行序;id 唯一;#41 起由宝箱内容表引用) */
+export const COLLECTIBLES: readonly CollectibleDef[] = [
+  { id: 'pearl', name: '河蚌珍珠' },
+  { id: 'willow-carving', name: '柳纹木雕' },
+]
 
 /** 收藏品显示名(目录外 id = null;面板不渲染目录外条目) */
 export function collectibleName(id: string): string | null {

@@ -31,6 +31,8 @@ export interface WorldDirectorDeps {
   core: CoreLoop
   /** KvStorage(组合根的 localStorage 适配器;快照键见 playerPosition.ts) */
   storage: KvStorage
+  /** 宝箱已开态查询(票 #41,组合根注入;场景按 id 切换闭箱/空箱外观) */
+  chestIsOpen?: (chestId: string) => boolean
 }
 
 /** 空闲存档节流(秒):位置/朝向变化后至多延迟这么久落盘 */
@@ -43,6 +45,7 @@ export class WorldDirector {
   private readonly core: CoreLoop
   private readonly textures: SceneTextures
   private readonly app: Application
+  private readonly chestIsOpen: (chestId: string) => boolean
   private readonly positions: PlayerPositionStore
   private readonly transition = new SceneTransition()
   private readonly overlay: Graphics
@@ -55,6 +58,7 @@ export class WorldDirector {
     this.app = deps.app
     this.core = deps.core
     this.textures = deps.textures
+    this.chestIsOpen = deps.chestIsOpen ?? (() => false)
     this.positions = new PlayerPositionStore(deps.storage)
 
     // —— 开机恢复(位置是唯一持久的世界状态;spec §1.5)——
@@ -81,7 +85,7 @@ export class WorldDirector {
     this.core.facing = facing
     this.core.setWorldCollision(worldCollisionSource(WORLD_MAPS[startMapId]))
     this.core.setWater(deriveWaterArea(startMapId, x, y))
-    this.scene = new WorldScene(this.app, this.textures, WORLD_MAPS[startMapId])
+    this.scene = new WorldScene(this.app, this.textures, WORLD_MAPS[startMapId], this.chestIsOpen)
 
     // 过场遮罩:全屏黑色,盖在世界与覆盖 UI 之上(构造时挂顶,换图后重新置顶)
     this.overlay = new Graphics()
@@ -132,7 +136,7 @@ export class WorldDirector {
     this.core.py = warp.ty
     // 朝向保持行进方向:core.facing 不动(spec §1.4)
     this.core.setWater(deriveWaterArea(warp.target, warp.tx, warp.ty))
-    this.scene = new WorldScene(this.app, this.textures, next)
+    this.scene = new WorldScene(this.app, this.textures, next, this.chestIsOpen)
     this.app.stage.addChild(this.overlay) // 新场景压顶后,遮罩重新置顶
     // 到达即存:把节流计时顶到阈值,过场结束后的第一帧立即落盘
     // (此刻仍在过场中,不直接写——「过场中不写存档」口径保持)

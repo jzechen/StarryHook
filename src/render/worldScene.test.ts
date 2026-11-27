@@ -38,6 +38,7 @@ function fakeTextures(): SceneTextures {
     waveFrames: { top: n(8), right: n(8), bottom: n(8), left: n(8) },
     playerFrames: { down: n(4), up: n(4), left: n(4), right: n(4) },
     townTiles: n(132),
+    chestFrames: { closed: tex(), open: tex() },
     bobber: tex(),
     fishFrames: { slim: n(2), round: n(2), heavy: n(2), puff: n(2), bolt: n(2) },
   }

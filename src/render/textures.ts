@@ -14,6 +14,8 @@ import { FISH_FRAME_COUNT, FISH_FRAME_SIZE, FISH_SHAPE_ROW } from './fishAtlas'
  *                       (32x32 四向行走帧众数降采样为 16x16)
  * - tiny-town.png       Kenney「Tiny Town」packed 表(原样,票 #34):12 列 × 11 行,
  *                       行优先编号 tile_N = packed (N÷12, N%12)(调研留痕:票 #26)
+ * - tiny-dungeon.png    Kenney「Tiny Dungeon」packed 表(原样,票 #41):同 12 列 × 11 行
+ *                       行优先编号;本票只取宝箱两态帧(90 = 闭箱 / 91 = 开箱,见下)
  * - scene-atlas.png     自绘浮标图集(scripts/generate-bobber-atlas.mjs 生成,无第三方版权)
  * - fish-atlas.png      自绘鱼精灵图集(scripts/generate-fish-atlas.mjs 生成,无第三方版权)
  *
@@ -33,6 +35,10 @@ export const PLAYER_FRAME_COUNT = 4
 export const TOWN_COLUMNS = 12
 /** Kenney Tiny Town packed 表 tile 总数(12 列 × 11 行) */
 export const TOWN_TILE_COUNT = 132
+/** Kenney Tiny Dungeon 宝箱闭箱帧(tile id,行优先 packed 编号,票 #41) */
+export const CHEST_TILE_CLOSED = 89
+/** Kenney Tiny Dungeon 宝箱开箱帧(盖板掀起 = 空箱外观,票 #41) */
+export const CHEST_TILE_OPEN = 90
 /** 鱼精灵每鱼帧数(fish-atlas.png,帧 0 = 常态 / 帧 1 = 游动) */
 export { FISH_FRAME_COUNT } from './fishAtlas'
 
@@ -56,6 +62,8 @@ export interface SceneTextures {
   playerFrames: Record<Facing, Texture[]>
   /** Kenney Tiny Town packed 表切片(下标 = tile id,行优先;世界地图渲染用,票 #34) */
   townTiles: Texture[]
+  /** 宝箱两态帧(票 #41,spec §4.5):闭箱 / 开箱(空箱外观),由已开态切换 */
+  chestFrames: { closed: Texture; open: Texture }
   /** 浮标:单个精灵贴图 */
   bobber: Texture
   /** 鱼精灵:每种鱼 2 帧游动动画(帧 0 = 常态),按鱼形取用 */
@@ -87,14 +95,20 @@ function sliceGrid(
   )
 }
 
+/** packed 表 tile id → 帧矩形(12 列行优先:tile_N = (N÷12, N%12),票 #26 编号表) */
+function chestFrame(tileId: number): Rectangle {
+  return new Rectangle((tileId % 12) * TILE, Math.floor(tileId / 12) * TILE, TILE, TILE)
+}
+
 /** 加载并切片全部场景素材;main 启动时 await 一次,把结果注入场景(WorldScene) */
 export async function loadSceneTextures(): Promise<SceneTextures> {
-  const [flow, waveSheet, grass, chars, town, props, fishAtlas] = await Promise.all([
+  const [flow, waveSheet, grass, chars, town, dungeon, props, fishAtlas] = await Promise.all([
     Assets.load<Texture>('/sprites/water-flow.png'),
     Assets.load<Texture>('/sprites/shoreline-waves.png'),
     Assets.load<Texture>('/sprites/grass.png'),
     Assets.load<Texture>('/sprites/character.png'),
     Assets.load<Texture>('/sprites/tiny-town.png'),
+    Assets.load<Texture>('/sprites/tiny-dungeon.png'),
     Assets.load<Texture>('/sprites/scene-atlas.png'),
     Assets.load<Texture>('/sprites/fish-atlas.png'),
   ])
@@ -119,6 +133,11 @@ export async function loadSceneTextures(): Promise<SceneTextures> {
     playerFrames: { down: charRows[0], up: charRows[1], left: charRows[2], right: charRows[3] },
     // Kenney packed 表:12 列 × 11 行行优先切片,下标 = tile id(地图 gid − firstGid)
     townTiles: sliceGrid(town.source, TOWN_TILE_COUNT / TOWN_COLUMNS, TOWN_COLUMNS, TILE, TILE).flat(),
+    // 宝箱两态帧(票 #41):Tiny Dungeon packed 表按同一 12 列行优先编号取格
+    chestFrames: {
+      closed: slice(dungeon.source, chestFrame(CHEST_TILE_CLOSED)),
+      open: slice(dungeon.source, chestFrame(CHEST_TILE_OPEN)),
+    },
     bobber: slice(props.source, new Rectangle(0, 0, TILE, TILE)),
     fishFrames,
   }

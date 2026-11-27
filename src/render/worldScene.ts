@@ -83,6 +83,18 @@ export interface InteractionPromptState {
   label: string
 }
 
+/**
+ * 宝箱已开态查询(票 #41,组合根注入):渲染层按 id 逐帧取两态外观——
+ * 已开 = 开箱帧(空箱),未开 = 闭箱帧;跨会话恢复后首帧即空箱。
+ */
+export type ChestOpenLookup = (chestId: string) => boolean
+
+/** 场景内一只宝箱:物件层条目派生的静态精灵(位置不随帧变,贴图随已开态切换) */
+interface ChestSprite {
+  chestId: string
+  sprite: Sprite
+}
+
 export class WorldScene {
   private app: Application
   private textures: SceneTextures
@@ -108,6 +120,9 @@ export class WorldScene {
   private foamTiles: FoamTile[] = []
   private decoLayer = new Container()
   private decoSprites: CulledSprite[] = []
+  /** 宝箱层(票 #41):物件层 chest 条目派生,deco 之上、角色之下 */
+  private chestLayer = new Container()
+  private chestSprites: ChestSprite[] = []
   /** 静态农夫(票 #36 摊位场景件):立于摊板之后的摊主立绘 */
   private farmer: Sprite
   private ripples = new Graphics()
@@ -124,6 +139,7 @@ export class WorldScene {
   private mgFishSprite: Sprite
   private mgProgress = new Graphics()
 
+  private chestIsOpen: ChestOpenLookup
   private prevPhase: LoopPhase = 'idle'
   /** 抛竿飞行动画进度 0..1 */
   private castT = 1
@@ -136,7 +152,7 @@ export class WorldScene {
   private prevPx = -1
   private prevPy = -1
 
-  constructor(app: Application, textures: SceneTextures, map: WorldMapData) {
+  constructor(app: Application, textures: SceneTextures, map: WorldMapData, chestIsOpen: ChestOpenLookup = () => false) {
     this.app = app
     this.textures = textures
     this.map = map
@@ -186,6 +202,22 @@ export class WorldScene {
         if (gid === 0) continue
         this.addCulled(this.decoLayer, this.decoSprites, map, gid, tx, ty)
       }
+    }
+
+    // 宝箱(票 #41,spec §4.5):物件层 chest 条目 → 两态精灵(闭箱/开箱),
+    // 位置随物件点(锚 tile 中心;贴图底边落在 tile 底 = 物件点 +8px);
+    // 已开态逐帧查注入的 store(3–4 只,零剔除成本),开箱当帧即换空箱外观。
+    // 素材契约:chest 属性已由 interactions 解析期校验(非串/目录外进不来)。
+    this.chestIsOpen = chestIsOpen
+    for (const o of map.objects) {
+      if (o.type !== 'chest') continue
+      const chestId = o.properties['chest']
+      if (typeof chestId !== 'string') continue
+      const sprite = new Sprite(textures.chestFrames.closed)
+      sprite.anchor.set(0.5, 1)
+      sprite.position.set(o.x, o.y + TILE / 2)
+      this.chestLayer.addChild(sprite)
+      this.chestSprites.push({ chestId, sprite })
     }
 
     // 静态农夫(票 #36):摊位交互点后一格的摊主立绘,画在 deco 之上、角色之下
@@ -239,6 +271,7 @@ export class WorldScene {
       this.waterLayer,
       this.waveLayer,
       this.decoLayer,
+      this.chestLayer,
       this.farmer,
       this.ripples,
       this.line,
@@ -372,6 +405,12 @@ export class WorldScene {
     const waveFrame = Math.floor(t / WAVE_FRAME_PERIOD)
     for (const tile of this.foamTiles) {
       tile.sprite.texture = this.textures.waveFrames[tile.edge][(waveFrame + tile.phase) % WAVE_FRAME_COUNT]!
+    }
+
+    // 宝箱两态(票 #41):已开 = 开箱帧(空箱外观),未开 = 闭箱帧;
+    // 逐帧查已开态(注入的 store),开箱当帧即换装,跨会话恢复首帧即空箱
+    for (const chest of this.chestSprites) {
+      chest.sprite.texture = this.chestIsOpen(chest.chestId) ? this.textures.chestFrames.open : this.textures.chestFrames.closed
     }
 
     // 角色朝向与行走:朝向由核心持有(票 #35:过场保持行进方向 + 存档口径

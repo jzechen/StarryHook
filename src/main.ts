@@ -5,6 +5,8 @@ import { Application } from 'pixi.js'
 import '@fontsource/fusion-pixel-12px-proportional-sc'
 import { RODS } from './config'
 import { BackpackStore } from './core/backpack'
+import { chestDef, chestOpenToastText } from './core/chests'
+import { ChestOpenedStore } from './core/chestState'
 import { CollectionStore, type KvStorage } from './core/collection'
 import { COLLECTIBLES } from './core/collectibles'
 import { CoreLoop } from './core/coreLoop'
@@ -24,7 +26,7 @@ import { baitBadgeText } from './ui/baitBadgeText'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
 import { countdownBadgeText } from './ui/countdownBadgeText'
-import { baitEffectSource, buyBaitOutcome, equippedBaitView, sellFishOutcome } from './ui/economyWiring'
+import { baitEffectSource, buyBaitOutcome, equippedBaitView, grantChestLoot, sellFishOutcome } from './ui/economyWiring'
 import { BackpackPanel } from './ui/backpackPanel'
 import { Hud } from './ui/hud'
 import { ModePanel } from './ui/modePanel'
@@ -91,7 +93,10 @@ async function main(): Promise<void> {
   // 注入、出口过场(淡黑 300ms,输入锁、不写存档)、仅 idle 落盘。
   // 核心循环只消费注入的碰撞来源与 setWater,不感知过场与存档。
   const storage = localStorageKv()
-  const director = new WorldDirector({ app, textures, core, storage })
+  // 宝箱已开态(票 #41,spec §4.5/§4.6):一次性开启的 kv 集合键,损坏按全未开降级;
+  // 供两处消费——世界场景两态外观(空箱跟随已开态)与动作键开箱的一次性判定
+  const chests = new ChestOpenedStore(storage)
+  const director = new WorldDirector({ app, textures, core, storage, chestIsOpen: id => chests.isOpen(id) })
   const seedEl = document.getElementById('seed')
   if (seedEl) seedEl.textContent = `seed ${seed}`
 
@@ -304,17 +309,28 @@ async function main(): Promise<void> {
     }
 
     // 动作键按下边沿 → 意图(关闭口径优先):关面板 / 摊位开商店 / 储物箱开转移
-    // 面板 / 叙事物读彩蛋;钓位蓄力抛竿不经此处——核心已按交互门禁在本帧 update
-    // 内处理。
+    // 面板 / 宝箱一次性开启 / 叙事物读彩蛋;钓位蓄力抛竿不经此处——核心已按交互
+    // 门禁在本帧 update 内处理。
     // 叙事物(票 #37)仅在待机响应:小游戏连按 E 是玩法操作,垂钓中不弹彩蛋
     // (与摊位「仅 idle 可开」同口径);toast 一句静态文案,零奖励、可重复查看
     // 过场中同样不响应(输入锁定的组成部分,票 #35)
+    // 宝箱(票 #41)同样仅待机响应:开箱是世界动作,垂钓中不结算;已开箱
+    // open() 返回 false = 不结算不弹提示(一次性判定单点在 ChestOpenedStore)
     if (pressed && !director.inputLocked) {
       const intent = stallPressAction(panelOpen, nearestTarget?.kind ?? null)
       if (intent === 'close-panel') openPanel()?.close()
       else if (intent === 'open-shop') shopPanel.open()
       else if (intent === 'open-storage') storagePanel.open()
-      else if (intent === 'read-narrative' && core.phase === 'idle') {
+      else if (intent === 'open-chest' && core.phase === 'idle') {
+        const chestId = nearestTarget?.chestId
+        if (chestId && chests.open(chestId)) {
+          const def = chestDef(chestId)
+          if (def) {
+            grantChestLoot(def, wallet, backpack)
+            toasts.showText(chestOpenToastText(def))
+          }
+        }
+      } else if (intent === 'read-narrative' && core.phase === 'idle') {
         const narrative = nearestTarget?.text
         if (narrative) toasts.showNarrative(narrative)
       }
@@ -334,9 +350,11 @@ async function main(): Promise<void> {
       core.setWater(nearestTarget.area)
     }
     // 交互浮签供给(idle ∧ 无面板 ∧ 范围内有交互点):渲染层另有非 idle 兜底;
-    // 钓位名进浮签(票 #38,spec §3:「深湾 · 抛竿」),其余 kind 沿动作短词
+    // 钓位名进浮签(票 #38,spec §3:「深湾 · 抛竿」),其余 kind 沿动作短词。
+    // 已开宝箱不供给浮签(票 #41):空箱外观即状态,「开启」浮签不再误导
+    const chestOpened = nearestTarget?.kind === 'chest' && chests.isOpen(nearestTarget.chestId ?? '')
     const promptState =
-      core.phase === 'idle' && nearestTarget
+      core.phase === 'idle' && nearestTarget && !chestOpened
         ? { x: nearestTarget.x, y: nearestTarget.y, label: interactionPromptText(nearestTarget) }
         : null
     // 世界推进(票 #35):过场状态机、出口检测、换图落位、存档门禁、场景渲染

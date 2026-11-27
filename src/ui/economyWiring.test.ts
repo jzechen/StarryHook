@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { BackpackStore } from '../core/backpack'
+import { CHESTS } from '../core/chests'
+import { COLLECTIBLES } from '../core/collectibles'
 import { CoreLoop } from '../core/coreLoop'
 import { FISH } from '../core/fishCatalog'
 import { sellPriceFor, sessionQualityRng, rollQuality } from '../core/quality'
 import { Rng } from '../core/rng'
 import { WalletStore } from '../core/wallet'
 import { memoryStorage } from '../testing/memoryStorage'
-import { baitEffectSource, buyBaitOutcome, equippedBaitView, sellFishOutcome } from './economyWiring'
+import { baitEffectSource, buyBaitOutcome, equippedBaitView, grantChestLoot, sellFishOutcome } from './economyWiring'
 
 const DT = 1 / 60
 const HOLD = { holding: true, moveX: 0, moveY: 0 }
@@ -205,5 +207,49 @@ describe('摊位卖鱼接线(接缝:sellFishOutcome,取出渔获 + earn 分值×
       }
     }
     expect(added).toBe(1)
+  })
+})
+
+describe('宝箱掉落结算接线(接缝:grantChestLoot,票 #41 spec §4.5)', () => {
+  it('金币宝箱:开箱即 wallet.earn 入账,金币唯一来源 = 卖鱼 + 宝箱', () => {
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id), COLLECTIBLES.map(c => c.id))
+    const chest = CHESTS.find(c => c.loot.type === 'coins')!
+    grantChestLoot(chest, wallet, backpack)
+    expect(wallet.coins()).toBe(30)
+    expect(backpack.collectibleEntries()).toEqual([])
+  })
+
+  it('鱼饵宝箱:走库存直加(无扣款),装备槽不动', () => {
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id), COLLECTIBLES.map(c => c.id))
+    const chest = CHESTS.find(c => c.loot.type === 'bait')!
+    grantChestLoot(chest, wallet, backpack)
+    expect(wallet.coins()).toBe(0)
+    expect(wallet.baitCount('xianger')).toBe(5)
+    expect(wallet.equippedBait()).toBeNull()
+  })
+
+  it('收藏品宝箱:backpack.addCollectible 入包(目录 = COLLECTIBLES,票 #41 填充)', () => {
+    const wallet = new WalletStore(memoryStorage())
+    const collectibleIds = COLLECTIBLES.map(c => c.id)
+    const backpack = new BackpackStore(FISH.map(f => f.id), collectibleIds)
+    for (const chest of CHESTS) {
+      if (chest.loot.type !== 'collectible') continue
+      grantChestLoot(chest, wallet, backpack)
+      expect(backpack.countCollectible(chest.loot.collectibleId)).toBe(1)
+    }
+    expect(backpack.collectibleEntries().length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('表内每个宝箱都可结算(内容表与接线对齐,无漏接的掉落类型)', () => {
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id), COLLECTIBLES.map(c => c.id))
+    expect(() => {
+      for (const chest of CHESTS) grantChestLoot(chest, wallet, backpack)
+    }).not.toThrow()
+    expect(wallet.coins()).toBe(30)
+    expect(wallet.baitCount('xianger')).toBe(5)
+    expect(backpack.collectibleEntries()).toHaveLength(2)
   })
 })

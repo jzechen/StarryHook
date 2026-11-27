@@ -81,6 +81,18 @@ export class WalletStore {
   }
 
   /**
+   * 鱼饵直接入库(票 #41 宝箱掉落,spec §4.5「鱼饵开箱即结算」):
+   * 无扣款,余量加 count(与 buyBait 的入库段同构)。目录外饵 id / 非正
+   * 数量忽略(不抛错);装备槽不动。
+   */
+  grantBait(baitId: string, count: number): void {
+    if (!BAITS.some(b => b.id === baitId)) return
+    if (!Number.isInteger(count) || count <= 0) return
+    this.baitCounts.set(baitId, this.baitCount(baitId) + count)
+    this.persist()
+  }
+
+  /**
    * 装备鱼饵:同一时间只装备一种,切换不清双方余量。
    * 目录外饵 id 忽略(不抛错);余量为 0 也允许装备——耗尽由计数状态表达。
    */

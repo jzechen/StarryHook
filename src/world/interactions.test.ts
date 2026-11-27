@@ -18,18 +18,41 @@ function obj(partial: Partial<WorldMapObject> = {}): WorldMapObject {
 }
 
 describe('交互点解析(接缝:parseInteractionSpots,票 #36)', () => {
-  it('收已注册交互 kind(spot/stall);spawn 与未注册 kind(如 chest)不收', () => {
+  it('收已注册交互 kind(spot/stall);spawn 与未注册 kind 不收', () => {
     const spots = parseInteractionSpots(
       [
         obj(),
         obj({ name: '杂货摊', type: 'stall', x: 136, y: 112 }),
         obj({ name: '出生点', type: 'spawn', x: 72, y: 72 }),
-        obj({ name: '宝箱', type: 'chest', x: 200, y: 100 }), // 票 #41 落地,本票不解析
       ],
       16,
     )
     expect(spots.map(s => s.kind)).toEqual(['spot', 'stall'])
     expect(spots[1]).toMatchObject({ name: '杂货摊', x: 136, y: 112 })
+  })
+
+  it('宝箱 kind(票 #41,spec §4.5)解析进表,chest 属性 → 内容表 id', () => {
+    const spots = parseInteractionSpots(
+      [obj({ name: '篱笆角的宝箱', type: 'chest', x: 40, y: 376, properties: { chest: 'village-hedge' } })],
+      16,
+    )
+    expect(spots.map(s => s.kind)).toEqual(['chest'])
+    expect(spots[0]).toMatchObject({ name: '篱笆角的宝箱', x: 40, y: 376, chestId: 'village-hedge', radiusPx: 24 })
+  })
+
+  it('宝箱缺 chest 属性 / 引用目录外 id → 抛错(拼写错挡在解析期,防开不存在的箱)', () => {
+    expect(() => parseInteractionSpots([obj({ name: '无名箱', type: 'chest', properties: {} })], 16)).toThrow()
+    expect(() =>
+      parseInteractionSpots([obj({ name: '错号箱', type: 'chest', properties: { chest: 'no-such-chest' } })], 16),
+    ).toThrow()
+    expect(() =>
+      parseInteractionSpots([obj({ name: '错型箱', type: 'chest', properties: { chest: 42 } })], 16),
+    ).toThrow()
+  })
+
+  it('非宝箱物件不要求 chest 属性(spot 无 chestId)', () => {
+    const [spot] = parseInteractionSpots([obj()], 16)
+    expect(spot!.chestId).toBeUndefined()
   })
 
   it('储物箱 kind(票 #40,spec §2.1)解析进表,无附加属性要求', () => {
@@ -180,8 +203,12 @@ describe('动作短词(接缝:interactionLabel,浮签文案)', () => {
     expect(interactionLabel('note')).toBe('查看')
   })
 
+  it('宝箱 = 开启(票 #41:走近动作键直接开,浮签动作短词单源)', () => {
+    expect(interactionLabel('chest')).toBe('开启')
+  })
+
   it('未知 kind 无词(空串):浮签不渲染无主文案,后续票按 kind 扩表', () => {
-    expect(interactionLabel('chest')).toBe('')
+    expect(interactionLabel('nope')).toBe('')
   })
 })
 
@@ -191,14 +218,15 @@ describe('浮签文案(接缝:interactionPromptText,票 #38 钓位名进浮签)'
     expect(interactionPromptText({ kind: 'spot', name: '湖心' })).toBe('湖心 · 抛竿')
   })
 
-  it('其余 kind 沿动作短词不加名(摊位 = 商店、叙事物 = 查看,spec §3 只改钓位)', () => {
+  it('其余 kind 沿动作短词不加名(摊位 = 商店、叙事物 = 查看、宝箱 = 开启,spec §3 只改钓位)', () => {
     expect(interactionPromptText({ kind: 'stall', name: '杂货摊' })).toBe('商店')
     expect(interactionPromptText({ kind: 'sign', name: '东路牌' })).toBe('查看')
     expect(interactionPromptText({ kind: 'note', name: '井' })).toBe('查看')
+    expect(interactionPromptText({ kind: 'chest', name: '篱笆角的宝箱' })).toBe('开启')
   })
 
-  it('未知 kind = 空串(浮签不渲染无主文案)', () => {
-    expect(interactionPromptText({ kind: 'chest', name: '宝箱' })).toBe('')
+  it('未知 kind = 空串(浮签不渲染无主文案;chest 已注册为「开启」,票 #41)', () => {
+    expect(interactionPromptText({ kind: 'nope', name: '未知' })).toBe('')
   })
 })
 
