@@ -65,6 +65,12 @@ export interface EnvState {
   weather: Weather
 }
 
+/**
+ * 渔获品质(票 #39,spec §4.2):捕获时刻随机判定的价值档位。
+ * 只影响卖价(分值 × 品质倍率),不影响得分/XP/图鉴;钓位微差不影响品质。
+ */
+export type FishQuality = 'normal' | 'silver' | 'gold'
+
 /** 钓鱼小游戏状态(轨道归一化:0 = 底,1 = 顶) */
 export interface MinigameState {
   /** 已进行秒数(行为曲线用) */

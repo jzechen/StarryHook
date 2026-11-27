@@ -45,11 +45,11 @@
       #coins { color: #ffd23f; }
       #bait-badge { opacity: .95; }
       #bait-badge[hidden] { display: none; }
-      #water-entry:disabled, #shop-entry:disabled, #mode-entry:disabled { opacity: .4; cursor: not-allowed; }
+      #mode-entry:disabled { opacity: .4; cursor: not-allowed; }
       /* 倒计时(票 #24):限时挑战逐秒「1:23」,金色与金币/得分同层;无限模式整元素隐藏 */
       #countdown { color: #ffd23f; }
       #countdown[hidden] { display: none; }
-      /* 模式面板(票 #24):与既有三面板同族样式,四面板经 PanelExclusion 互斥打开;
+      /* 模式面板(票 #24):与既有面板同族样式,面板经 PanelExclusion 互斥打开;
          单局最高纪录(限时单局纪录)常驻面板尾(单局口径,跨会话持久,见 core/timedBest.ts) */
       #mode-panel {
         pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 244px;
@@ -70,27 +70,8 @@
       .mode-item.current { border-color: rgba(255, 210, 63, .55); }
       .mode-item .mode-current { color: #ffd23f; }
       #mode-best { margin-top: 10px; opacity: .9; }
-      /* 换水域面板(票 #15):与图鉴面板同族样式,两面板互斥打开(见 main.ts 接线) */
-      #water-panel {
-        pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 244px;
-        background: rgba(12, 47, 63, .92);
-        border: 1px solid rgba(159, 216, 232, .5); border-radius: 14px;
-        padding: 12px 14px; font-size: 12px;
-      }
-      #water-panel[hidden] { display: none; }
-      #water-list { margin: 10px 0 0; display: grid; gap: 6px; }
-      .water-item {
-        display: flex; align-items: baseline; gap: 10px; width: 100%;
-        font: inherit; text-align: left; padding: 7px 12px;
-        color: #eaf4f6; background: rgba(23, 80, 107, .35);
-        border: 1px solid transparent; border-radius: 9px; cursor: pointer;
-      }
-      .water-item:hover { background: rgba(23, 80, 107, .7); }
-      .water-item .water-hint { margin-left: auto; opacity: .9; }
-      .water-item.current { border-color: rgba(255, 210, 63, .55); }
-      .water-item .water-current { color: #ffd23f; }
-      /* 商店面板(票 #20):与图鉴/换水域面板同族样式,三面板经 PanelExclusion 互斥打开;
-         金币余额常驻面板头(顶栏已满,不另挂),行内提示承载购买反馈(不用 alert) */
+      /* 商店面板(票 #20;票 #36 起入口 = 世界摊位交互):与图鉴/模式面板同族样式,
+         经 PanelExclusion 互斥打开;金币余额常驻面板头,行内提示承载购买反馈(不用 alert) */
       #shop-panel {
         pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 276px;
         background: rgba(12, 47, 63, .92);
@@ -110,6 +91,16 @@
       .shop-item .shop-buy:disabled { opacity: .4; cursor: not-allowed; }
       #shop-feedback { margin-top: 8px; opacity: .95; }
       #shop-feedback[hidden] { display: none; }
+      /* 渔获区块(票 #39,spec §4.3):余额下方常驻收购位,行与卖出钮沿用
+         .shop-item/.shop-buy 同族;空包占位与行同底色,靠降不透明度区分层级 */
+      #shop-catch { margin-top: 10px; }
+      .shop-section-title { opacity: .9; }
+      #shop-catch-list { margin-top: 6px; display: grid; gap: 6px; }
+      #shop-catch-empty {
+        margin-top: 6px; padding: 7px 12px; border-radius: 9px;
+        background: rgba(23, 80, 107, .35); opacity: .7;
+      }
+      #shop-catch-empty[hidden] { display: none; }
       #collection-panel {
         pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 292px;
         background: rgba(12, 47, 63, .92);
@@ -193,10 +184,7 @@
         <span id="env-badge"></span><!-- 环境徽章(票 #15):「春 · 日 · 晴」,初始文本由 Hud 依核心环境状态写入;水域不进徽章,换水域面板可见 -->
         <span id="bait-badge" hidden></span><!-- 装备饵余量(review 修复,票 #17 故事 10):「香饵 ×9」,垂钓中商店不可开故常驻顶栏;未装备/耗尽自动隐藏,初始由 Hud 依钱包写入 -->
         <span id="countdown" hidden></span><!-- 顶栏倒计时(票 #24):限时挑战逐秒「1:23」,初始由 Hud 依核心模式状态写入;无限模式整元素隐藏,无残留 -->
-        <!-- 换水域入口(票 #15):可用性随阶段变化(仅待机,见 waterSwitchPolicy),垂钓中置灰 -->
-        <button id="water-entry" type="button" class="pill">换水域</button>
-        <!-- 商店入口(票 #20):可用性随阶段变化(仅待机,见 shopPanelPolicy),垂钓中置灰 -->
-        <button id="shop-entry" type="button" class="pill">商店</button>
+        <!-- 商店顶栏入口已随票 #36 退役:开面板的唯一入口 = 世界商店摊位交互点(走近按动作键) -->
         <button id="collection-entry" type="button" class="pill">图鉴</button>
         <!-- 模式入口(票 #24):挂位与重开相邻(顶栏已满,不再新起一段);可用性随阶段变化(仅待机,见 modePanelPolicy),垂钓中置灰 -->
         <button id="mode-entry" type="button" class="pill">模式</button>
@@ -215,21 +203,22 @@
         </div>
         <ul id="collection-list"></ul>
       </div>
-      <div id="water-panel" hidden>
-        <div class="panel-head">
-          <span class="panel-title">换水域</span>
-          <button id="water-close" type="button" class="pill" aria-label="关闭换水域">✕ 关闭</button>
-        </div>
-        <div id="water-list"></div><!-- 行由 WaterPanel 依水域注册表生成:名称 + 代表鱼提示 + 当前水域标识 -->
-      </div>
+      <!-- 换水域面板已随票 #36 退役:「去哪钓」由图鉴出没条件承接,水域由钓位走近自动切换 -->
       <div id="shop-panel" hidden>
         <div class="panel-head">
           <span class="panel-title">商店</span>
           <b id="shop-coins"></b><!-- 金币余额(GLOSSARY 金币)常驻面板头,初始文本由 ShopPanel 依钱包写入 -->
           <button id="shop-close" type="button" class="pill" aria-label="关闭商店">✕ 关闭</button>
         </div>
+        <!-- 渔获区块(票 #39,spec §4.3 商店摊位兼收购):余额旁常驻,按(鱼种 × 品质)堆叠,
+             行内「卖 1 / 全卖」,卖出走 wallet.earn(组合根接线);空包给占位提示 -->
+        <div id="shop-catch">
+          <div class="shop-section-title">渔获</div>
+          <div id="shop-catch-list"></div><!-- 行由 ShopPanel 依背包堆叠生成:目录序 × 品质序,星标缀在鱼名后 -->
+          <div id="shop-catch-empty" hidden>背包里还没有渔获</div>
+        </div>
         <div id="shop-list"></div><!-- 行由 ShopPanel 依竿表(RODS)与鱼饵表(BAITS)生成:竿三档 + 香饵 + 浓饵(均含购买,饵行含装备切换与「装备中」尾注) -->
-        <div id="shop-feedback" hidden></div><!-- 购买反馈:面板内行内提示,不用 alert -->
+        <div id="shop-feedback" hidden></div><!-- 购买/卖出反馈:面板内行内提示,不用 alert -->
       </div>
       <div id="mode-panel" hidden>
         <div class="panel-head">

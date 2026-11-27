@@ -1,8 +1,13 @@
 import { BAITS, RODS, type BaitDef } from '../config'
+import type { BackpackEntry, BackpackStore } from '../core/backpack'
 import type { CoreLoop } from '../core/coreLoop'
+import { FISH } from '../core/fishCatalog'
+import { sellPriceFor } from '../core/quality'
+import type { FishQuality } from '../core/types'
 import type { ProgressionStore } from '../core/progression'
 import type { WalletStore } from '../core/wallet'
 import { PanelExclusion } from './panelExclusion'
+import { qualityLabel } from './qualityLabel'
 import { shopPanelAllowed } from './shopPanelPolicy'
 
 /**
@@ -10,6 +15,12 @@ import { shopPanelAllowed } from './shopPanelPolicy'
  * ok = 成功;insufficient = 金币不足;meaningless = 无意义购买(重复购竿、初始竿、已有更高档)。
  */
 export type ShopBuyOutcome = 'ok' | 'insufficient' | 'meaningless'
+
+/**
+ * 一次卖鱼的语义结果(回调返回,行内反馈沿 ShopBuyOutcome 风格,票 #39):
+ * ok = 卖出;empty = 没有可卖的渔获(空堆叠/目录外鱼种,正常操作不可达)。
+ */
+export type ShopSellOutcome = 'ok' | 'empty'
 
 /** 购买反馈的停留时长(行内提示自动消失;关闭面板立即清除) */
 const FEEDBACK_MS = 3000
@@ -24,28 +35,36 @@ interface ShopRow {
 }
 
 /**
- * 商店面板(票 #20,spec #17 经济系统):顶栏入口 + 面板,浏览并购买竿与鱼饵。
- * 只读消费 WalletStore(金币余额/饵库存/装备槽)与 ProgressionStore(竿可用性/当前竿);
- * 购买与装备动作经组合根注入的回调接线到 wallet/progression 的既有公开方法
- * (购竿跨钱袋+成长+绿条参数+顶栏刷新、购饵成功即自动装备、装备切换不清余量,
- * 协调归组合根;面板只管展示与反馈)。
+ * 商店面板(票 #20,spec #17 经济系统;票 #36 顶栏入口退役改世界交互;
+ * 票 #39 新增「渔获」区块——商店摊位兼收购,spec §4.3 农夫双向营业):
+ * 浏览并购买竿与鱼饵、售卖渔获。开面板的唯一入口 = 世界商店摊位交互点(走近按
+ * 动作键,组合根经 open() 打开);只读消费 WalletStore(金币余额/饵库存/装备槽)、
+ * ProgressionStore(竿可用性/当前竿)与 BackpackStore(渔获堆叠);购买、装备与
+ * 卖出动作经组合根注入的回调接线(购竿跨钱袋+成长+绿条参数+顶栏刷新、购饵成功
+ * 即自动装备、卖出 = 背包取出 + wallet.earn,协调归组合根;面板只管展示与反馈)。
  * 开关策略见 shopPanelPolicy——仅待机可开,打开时核心循环照常推进;
- * 经 PanelExclusion 自注册,与图鉴/换水域面板互斥(第三面板即插即用)。
- * 余额与饵余量常驻面板、购买后即时刷新(签名守卫,变化才写 DOM);
- * 不足/无意义购买给面板内行内提示(不用 alert);装备中的饵行尾注「装备中」。
+ * 经 PanelExclusion 自注册,与图鉴/模式面板互斥。
+ * 关闭口径(spec §2.4):关闭钮 + ESC + 再按动作键(组合根按意图策略收起)。
+ * 余额、饵余量与渔获堆叠常驻面板、动作后即时刷新(签名守卫,变化才写 DOM;
+ * 渔获区块自持签名,堆叠变化才重建行);不足/无意义购买与空包卖出给面板内
+ * 行内提示(不用 alert);装备中的饵行尾注「装备中」。
  */
 export class ShopPanel {
-  private entryBtn: HTMLButtonElement
   private panelEl: HTMLElement
   private closeBtn: HTMLButtonElement
   private coinsEl: HTMLElement
   private feedbackEl: HTMLElement
+  /** 渔获区块(票 #39):堆叠行容器与空包占位 */
+  private catchListEl: HTMLElement
+  private catchEmptyEl: HTMLElement
   /** 竿三行(行序 = RODS 序)+ 饵两行(行序 = BAITS 序),建行一次、refresh 按状态刷新 */
   private rows: ShopRow[] = []
-  private open = false
+  private opened = false
   private allowed = true
   /** 最近一次渲染的内容签名(余额/库存/竿可用性/当前竿);变化才写 DOM,避免每帧刷新 */
   private renderedSignature = ''
+  /** 渔获堆叠签名(堆叠随捕获/卖出增减);变化才重建行,与面板既有守卫同思路 */
+  private catchSignature = ''
   private feedbackTimer: number | null = null
 
   constructor(
@@ -56,15 +75,19 @@ export class ShopPanel {
     private onBuyBait: (baitId: string) => ShopBuyOutcome,
     // 装备回调:组合根接线 wallet.equip(装备槽一种,切换不清余量——既有语义)
     private onEquipBait: (baitId: string) => void,
-    // 面板互斥协调器:构造时自注册,打开时经它收起其余面板(图鉴/换水域)
+    // 渔获区块(票 #39):背包堆叠只读消费 + 卖出回调(组合根接线 sellFishOutcome)
+    private backpack: BackpackStore,
+    private onSellFish: (fishId: string, quality: FishQuality, count: number) => ShopSellOutcome,
+    // 面板互斥协调器:构造时自注册,打开时经它收起其余面板(图鉴/模式)
     private exclusion?: PanelExclusion,
   ) {
     this.exclusion?.register(this)
-    this.entryBtn = document.getElementById('shop-entry') as HTMLButtonElement
     this.panelEl = document.getElementById('shop-panel')!
     this.closeBtn = document.getElementById('shop-close') as HTMLButtonElement
     this.coinsEl = document.getElementById('shop-coins')!
     this.feedbackEl = document.getElementById('shop-feedback')!
+    this.catchListEl = document.getElementById('shop-catch-list')!
+    this.catchEmptyEl = document.getElementById('shop-catch-empty')!
     const listEl = document.getElementById('shop-list')!
 
     // 竿三行:初始竿标「初始装备」(静态,永久不可购);其余行建购买钮,已拥有时隐藏
@@ -105,24 +128,34 @@ export class ShopPanel {
 
     // 金币余额初始文本由脚本写入(HTML 不硬编码 0,老玩家上线即真实余额)
     this.coinsEl.textContent = `${this.wallet.coins()} 金币`
+    // 渔获区块初始渲染(空包 → 占位提示;启动捕获后的堆叠在打开时按签名刷新)
+    this.refreshCatch()
 
-    this.entryBtn.addEventListener('click', () => {
-      if (this.allowed) this.setOpen(!this.open)
-      // 移除按钮焦点,避免之后按空格误触开关(与图鉴入口同理由)
-      ;(document.activeElement as HTMLElement | null)?.blur()
-    })
     this.closeBtn.addEventListener('click', () => {
       this.setOpen(false)
       this.closeBtn.blur()
     })
   }
 
-  /** 每帧调用:同步入口可用性、离开待机自动收起、打开时刷新余额与各行(变化才写 DOM) */
+  /**
+   * 世界交互开面板(票 #36,摊位动作):组合根在动作键按下边沿、摊位为
+   * 最近交互点时调用。可用性策略与顶栏时代同一份(shopPanelAllowed,仅待机):
+   * 非待机时打开请求被忽略(垂钓中不开店),面板保持原状。
+   */
+  open(): void {
+    if (this.allowed) this.setOpen(true)
+  }
+
+  /** 是否打开(组合根动作键意图/ESC 关面板用;互斥协调器之外只读) */
+  isOpen(): boolean {
+    return this.opened
+  }
+
+  /** 每帧调用:同步可用性、离开待机自动收起、打开时刷新余额与各行(变化才写 DOM) */
   update(core: CoreLoop): void {
     this.allowed = shopPanelAllowed(core.phase)
-    this.entryBtn.disabled = !this.allowed
-    if (this.open && !this.allowed) this.setOpen(false)
-    if (this.open) this.refresh()
+    if (this.opened && !this.allowed) this.setOpen(false)
+    if (this.opened) this.refresh()
   }
 
   /** 供互斥协调器收起(其余面板打开时;对已收起面板幂等) */
@@ -192,7 +225,7 @@ export class ShopPanel {
   }
 
   private setOpen(open: boolean): void {
-    this.open = open
+    this.opened = open
     this.panelEl.hidden = !open
     // 收起即清反馈(下次打开不留旧提示);打开时通知协调器收起其余面板,收起不通知
     if (!open) this.hideFeedback()
@@ -230,6 +263,70 @@ export class ShopPanel {
       const row = this.rows[RODS.length + i]!
       row.detailEl.textContent = this.baitDetail(bait)
       if (row.equipBtn) row.equipBtn.hidden = !this.equipVisible(bait)
+    }
+    // 渔获区块:堆叠随捕获/卖出增减,签名变化才重建(卖出同时改余额,同帧一次刷新)
+    this.refreshCatch()
+  }
+
+  /**
+   * 渔获区块(票 #39):按背包堆叠重建行(目录序 × 品质序,星标缀在鱼名后),
+   * 每行「卖 1」单卖 +「全卖」整堆;卖出动作经组合根回调接线,结果给行内反馈。
+   * 空包显示占位提示(区块常驻,spec §4.3 商店摊位兼收购)。
+   */
+  private refreshCatch(): void {
+    const entries = this.backpack.entries()
+    const signature = entries.map(e => `${e.fishId}:${e.quality}:${e.count}`).join('|')
+    if (signature === this.catchSignature) return
+    this.catchSignature = signature
+    this.catchListEl.replaceChildren()
+    this.catchEmptyEl.hidden = entries.length > 0
+    for (const entry of entries) {
+      const fish = FISH.find(f => f.id === entry.fishId)
+      if (!fish) continue // 目录外堆叠不渲染(背包已过滤,防御性跳过)
+      this.catchListEl.appendChild(this.buildCatchRow(entry))
+    }
+  }
+
+  /** 组一行渔获:鱼名(星标缀后)+ 数量与单价(右对齐)+ 卖 1 / 全卖钮 */
+  private buildCatchRow(entry: BackpackEntry): HTMLElement {
+    const fish = FISH.find(f => f.id === entry.fishId)!
+    const mark = qualityLabel(entry.quality)
+    const label = mark ? `${fish.name}·${mark}` : fish.name
+    const unit = sellPriceFor(fish.score, entry.quality)
+    const root = document.createElement('div')
+    root.className = 'shop-item'
+    const nameEl = document.createElement('span')
+    nameEl.className = 'shop-name'
+    nameEl.textContent = label
+    const detailEl = document.createElement('span')
+    detailEl.className = 'shop-detail'
+    detailEl.textContent = `×${entry.count} · 单价 ${unit} 金币`
+    // 卖 1:固定取一条;全卖:点击时读实时余量(整堆,不依赖建行时的快照)
+    const sellOne = this.buildBuyBtn('卖 1', () => {
+      this.reportSell(this.onSellFish(entry.fishId, entry.quality, 1), label, 1, unit)
+      sellOne.blur()
+    })
+    const sellAll = this.buildBuyBtn('全卖', () => {
+      const count = this.backpack.count(entry.fishId, entry.quality)
+      this.reportSell(this.onSellFish(entry.fishId, entry.quality, count), label, count, unit)
+      sellAll.blur()
+    })
+    root.append(nameEl, detailEl, sellOne, sellAll)
+    return root
+  }
+
+  /** 卖出结果 → 行内提示:成功给确认文案与到账金额;空包给明确拒绝原因(不用 alert) */
+  private reportSell(
+    outcome: ShopSellOutcome,
+    label: string,
+    count: number,
+    unitPrice: number,
+  ): void {
+    // ok ⇒ 实际取出 ≥ 1(接线侧空取返回 empty,不会以 ok 落到 0 条)
+    if (outcome === 'ok') {
+      this.showFeedback(`卖出「${label}」×${count},+${unitPrice * count} 金币`)
+    } else {
+      this.showFeedback('没有可卖的渔获')
     }
   }
 }

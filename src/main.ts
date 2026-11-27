@@ -4,6 +4,7 @@ import { Application } from 'pixi.js'
 // 不做预载:该包为单文件全量中文字集(woff2 约 600KB),预载会挤占首屏关键资源
 import '@fontsource/fusion-pixel-12px-proportional-sc'
 import { RODS } from './config'
+import { BackpackStore } from './core/backpack'
 import { CollectionStore, type KvStorage } from './core/collection'
 import { CoreLoop } from './core/coreLoop'
 import { FISH } from './core/fishCatalog'
@@ -15,11 +16,14 @@ import { WalletStore } from './core/wallet'
 import { WorldDirector } from './render/worldDirector'
 import { loadSceneTextures } from './render/textures'
 import { applyViewportToCanvas } from './render/viewport'
+import { interactionLabel, nearestInteraction, parseInteractionSpots } from './world/interactions'
+import { WORLD_MAPS } from './world/maps'
+import type { MapId } from './core/types'
 import { baitBadgeText } from './ui/baitBadgeText'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
 import { countdownBadgeText } from './ui/countdownBadgeText'
-import { baitEffectSource, buyBaitOutcome, equippedBaitView } from './ui/economyWiring'
+import { baitEffectSource, buyBaitOutcome, equippedBaitView, sellFishOutcome } from './ui/economyWiring'
 import { Hud } from './ui/hud'
 import { ModePanel } from './ui/modePanel'
 import { MuteStore } from './ui/muteStore'
@@ -30,8 +34,8 @@ import { roundSettlementText } from './ui/roundSettlementText'
 import { AudioSfxPlayer, MuteAwareSfxPlayer } from './ui/sfx'
 import { sfxForEvent } from './ui/sfxMapping'
 import { ShopPanel, type ShopBuyOutcome } from './ui/shopPanel'
+import { stallPressAction } from './ui/interactionPolicy'
 import { ToastLayer } from './ui/toastLayer'
-import { WaterPanel } from './ui/waterPanel'
 
 /** 浏览器 localStorage 适配器:读写两侧都吞异常(隐私模式/配额),游戏不受影响 */
 function localStorageKv(): KvStorage {
@@ -109,8 +113,12 @@ async function main(): Promise<void> {
   core.setRodParams(progression.rod().params)
   hud.setProgression(progression.level(), progression.rod().name)
   // 经济(票 #18):金币/鱼饵钱包,独立键名跨会话持久(损坏按初始状态降级);
-  // 本票接捕获入账与香饵抛竿消耗,商店购竿与购饵 UI 属后续票
+  // 本票接香饵抛竿消耗,商店购竿与购饵 UI 属后续票。
+  // 票 #39 起:金币唯一来源 = 摊位卖鱼 + 宝箱(spec §4.1),捕获不再即时入账
   const wallet = new WalletStore(storage)
+  // 背包(票 #39):渔获按(鱼种 × 品质)堆叠,纯核心 store;kv 持久化与
+  // 背包/储物箱面板归票 #40,本票只接捕获入包与摊位卖鱼
+  const backpack = new BackpackStore(FISH.map(f => f.id))
   // 鱼饵生效(票 #19 香饵 + 票 #21 浓饵;review 修复后两缝合一):核心循环在抛竿时刻
   // (进入 waiting 边沿,core cast 内)调用单一饵效果来源恰好一次,本竿饵消耗恰好一次,
   // 消耗与效果同源产出,不再有调用次序契约:
@@ -124,9 +132,6 @@ async function main(): Promise<void> {
   const panelExclusion = new PanelExclusion()
   // 图鉴面板:只读消费收集册,入口常驻(可用性随阶段变化)
   const collectionPanel = new CollectionPanel(collection, panelExclusion)
-  // 换水域面板(票 #15):入口仅待机可用(waterSwitchPolicy),切换调核心 setWater
-  // ——垂钓中核心层同样拒绝,双保险
-  const waterPanel = new WaterPanel(core, panelExclusion)
   // 商店面板(票 #20):购买回调在组合根接线 wallet/progression 的既有公开方法,core/ 零改动。
   // 购竿 = 可负担预检(读 wallet.coins)→ progression.purchaseRod(无意义购买在此拒绝:
   // 已拥有/初始竿/降档)→ wallet.spend 扣款 → 竿立即生效(绿条参数注入 + 顶栏竿名刷新)。
@@ -151,12 +156,16 @@ async function main(): Promise<void> {
   // 装备切换同样经组合根回调接线 wallet.equip(装备槽一种,切换不清余量)——
   // 面板保持只读消费钱包,写操作全走回调(与购竿/购饵同款纪律)
   const equipBait = (baitId: string): void => wallet.equip(baitId)
+  // 商店摊位兼收购(票 #39,spec §4.3):卖鱼回调接线 sellFishOutcome
+  // (背包取出 + wallet.earn 按分值×品质倍率入账一体),面板保持只读消费背包堆叠
   const shopPanel = new ShopPanel(
     wallet,
     progression,
     buyRodOutcome,
     buyBaitOutcome(wallet),
     equipBait,
+    backpack,
+    sellFishOutcome(backpack, wallet),
     panelExclusion,
   )
   // 模式面板(票 #24):顶栏「模式」入口 + 选择面板(无限休闲/限时挑战 + 单局最高纪录),
@@ -170,8 +179,38 @@ async function main(): Promise<void> {
   // 限时局进行中边沿基准(票 #24):判定单源在 roundJustEnded(roundEdgePolicy),
   // 此处只存上一帧局标志——true→false 且模式仍限时 = 归零强制结算完成
   let prevRoundActive = core.roundActive
+  // 动作键按下边沿基准(票 #36):与核心同帧消费同一 holding 信号
+  let prevHolding = false
 
-  // —— 输入:鼠标/触摸 + 键盘(空格 = 起竿,WASD/方向键 = 移动) ——
+  // —— 交互点系统(票 #36,spec §2.1–2.3):物件层声明 → 触发判定 → 动作 ——
+  // 解析交互点(钓位/摊位;note 等后续票 kind 不在本票解析范围);
+  // 触发 = 统一 1.5 tile(radius 属性可覆盖),重叠取最近。
+  // 交互点随图切换(票 #35 三图):按 mapId 惰性解析缓存,过场换图后即用新图集合。
+  const interactionCache = new Map<string, ReturnType<typeof parseInteractionSpots>>()
+  const interactionsOf = (mapId: MapId): ReturnType<typeof parseInteractionSpots> => {
+    let list = interactionCache.get(mapId)
+    if (!list) {
+      const map = WORLD_MAPS[mapId]
+      list = parseInteractionSpots(map.objects, map.tileWidth)
+      interactionCache.set(mapId, list)
+    }
+    return list
+  }
+  // 已开面板(互斥协调器保证至多一个):面板打开时世界动作全歇、浮签全隐、移动锁死
+  const openPanel = (): { close(): void } | null =>
+    [collectionPanel, shopPanel, modePanel].find(p => p.isOpen()) ?? null
+  // 每帧刷新的「范围内最近交互点」:交互门禁/浮签/自动切水/摊位动作四方同源,
+  // 不因各自取值时机不同而打架(核心门禁在 core.update 内消费的即本帧值)
+  let nearestTarget: ReturnType<typeof nearestInteraction> = null
+  const anyPanelOpen = (): boolean => openPanel() !== null
+  // 交互点来源注入(核心门禁:idle 按下须最近交互点是钓位才蓄力;
+  // 面板打开时来源恒 null——动作键优先关面板,同一次按下不会「关面板又开竿」)
+  core.setInteractionSource(() => {
+    if (anyPanelOpen()) return null
+    return nearestTarget?.kind === 'spot' ? { kind: 'spot' } : null
+  })
+
+  // —— 输入:鼠标/触摸 + 键盘(动作键 = E/空格/按住鼠标三等效,WASD/方向键 = 移动,ESC = 关面板) ——
   const keys = new Set<string>()
   let mouseHold = false
 
@@ -196,6 +235,11 @@ async function main(): Promise<void> {
     keys.clear()
     mouseHold = false
   })
+  // ESC 关面板(票 #36 spec §2.2 新增键位):与关闭钮/再按动作键同口径,幂等
+  window.addEventListener('keydown', e => {
+    if (e.code !== 'Escape') return
+    openPanel()?.close()
+  })
 
   app.ticker.add(tk => {
     const dt = Math.min(tk.deltaMS / 1000, 0.05) // 钳制大帧,防止切后台跳变
@@ -214,13 +258,58 @@ async function main(): Promise<void> {
       dy = dy / len
     }
 
+    // 动作键(票 #36 spec §2.2)= E ∨ 空格 ∨ 鼠标/触摸按住,同语义三等效;
+    // 按下边沿与核心同帧同源(同一 holding 信号),摊位开面板/关面板按意图策略走
+    const holding = mouseHold || keys.has('Space') || keys.has('KeyE')
+    const pressed = holding && !prevHolding
+    prevHolding = holding
+    // 范围内最近交互点(本帧单源);面板打开时世界交互全歇(浮签全隐、无动作)
+    const panelOpen = anyPanelOpen()
+    nearestTarget = panelOpen ? null : nearestInteraction(interactionsOf(director.mapId), core.px, core.py)
+
     // 过场中输入锁定(票 #35):组合根停止喂输入,核心停在 idle——
     // 核心循环不感知过场;位置冻结,存档门禁同样跳过(worldDirector 内判)
+    // 面板打开锁移动(spec §2.4):方向分量清零,核心侧无需感知面板
     if (!director.inputLocked) {
-      core.update(dt, { holding: mouseHold || keys.has('Space'), moveX: dx, moveY: dy })
+      core.update(dt, { holding, moveX: panelOpen ? 0 : dx, moveY: panelOpen ? 0 : dy })
     }
-    // 世界推进:过场状态机、出口检测、换图落位、存档门禁、场景渲染
-    director.update(tk.lastTime / 1000, dt)
+
+    // 动作键按下边沿 → 意图(关闭口径优先):关面板 / 摊位开商店 / 叙事物读彩蛋;
+    // 钓位蓄力抛竿不经此处——核心已按交互门禁在本帧 update 内处理。
+    // 叙事物(票 #37)仅在待机响应:小游戏连按 E 是玩法操作,垂钓中不弹彩蛋
+    // (与摊位「仅 idle 可开」同口径);toast 一句静态文案,零奖励、可重复查看
+    // 过场中同样不响应(输入锁定的组成部分,票 #35)
+    if (pressed && !director.inputLocked) {
+      const intent = stallPressAction(panelOpen, nearestTarget?.kind ?? null)
+      if (intent === 'close-panel') openPanel()?.close()
+      else if (intent === 'open-shop') shopPanel.open()
+      else if (intent === 'read-narrative' && core.phase === 'idle') {
+        const narrative = nearestTarget?.text
+        if (narrative) toasts.showNarrative(narrative)
+      }
+    }
+
+    // 钓位走近自动切所属水域(仅 idle;setWater 核心门禁保留,票 #15 禁切口径零改动;
+    // 水域来源 = 钓位物件 area 属性;图级兜底推导已随 #35 并入(deriveWaterArea,
+    // 组合根开机/换图落位时调用),此处只做钓位级精修)
+    if (
+      !panelOpen &&
+      !director.inputLocked &&
+      core.phase === 'idle' &&
+      nearestTarget?.kind === 'spot' &&
+      nearestTarget.area !== undefined &&
+      core.area !== nearestTarget.area
+    ) {
+      core.setWater(nearestTarget.area)
+    }
+    // 交互浮签供给(idle ∧ 无面板 ∧ 范围内有交互点):渲染层另有非 idle 兜底
+    const promptState =
+      core.phase === 'idle' && nearestTarget
+        ? { x: nearestTarget.x, y: nearestTarget.y, label: interactionLabel(nearestTarget.kind) }
+        : null
+    // 世界推进(票 #35):过场状态机、出口检测、换图落位、存档门禁、场景渲染
+    // (交互浮签随场景渲染一并供给,放最后——过场完成/换图在本帧内生效)
+    director.update(tk.lastTime / 1000, dt, promptState)
     // 结算捕获 → 登记进收集册与成长(两系统无耦合,核心循环自身不感知)。
     // 顺序不可换:先读捕获前快照 → 登记 → 再读快照 → 按纯函数决策弹提示
     if (core.phase === 'caught' && prevPhase !== 'caught' && core.fish) {
@@ -254,9 +343,11 @@ async function main(): Promise<void> {
         sfx.play(sfxForEvent('level-up'))
         hud.setProgression(progression.level(), progression.rod().name)
       }
-      // 经济:按捕获分值入账金币(图鉴 → 经验之后的第三路,三系统无耦合;
-      // 金币 = 鱼分值,非幂等每次都加,跨会话持久)
-      wallet.earn(core.fish.score)
+      // 经济(票 #39 有意规格变更):捕获 → 渔获入背包,不再即时入账金币
+      // (「捕获即得金币」退役;金币唯一来源 = 摊位卖鱼 + 宝箱,spec §4.1——
+      // 经济总量不变、时点后移)。品质由核心在结算沿 roll(独立派生种子),
+      // 组合根只读转接入包;得分/XP/图鉴三路照旧,均不受品质影响。
+      backpack.addFish(fishId, core.caughtQuality)
     }
     // —— 音效:相位边沿触发(映射纯函数查表;静音时播放器空操作)——
     // 抛竿入水 = 进入 waiting 边沿;咬钩 = 进入 bite 边沿;捕获/脱钩 = 结算相位边沿。
@@ -302,9 +393,7 @@ async function main(): Promise<void> {
     hud.setCountdown(countdownBadgeText(core.mode, core.timeRemaining))
     // 图鉴面板:入口可用性、自动收起、进度刷新(打开时核心循环照常推进)
     collectionPanel.update(core)
-    // 换水域面板(票 #15):入口可用性(仅待机)、自动收起、当前水域标识
-    waterPanel.update(core)
-    // 商店面板(票 #20):入口可用性(仅待机)、自动收起、余额/库存/竿状态刷新(打开时游戏照常推进)
+    // 商店面板(票 #20 → #36 摊位交互):离开待机自动收起、余额/库存/竿状态刷新(打开时游戏照常推进)
     shopPanel.update(core)
     // 模式面板(票 #24):入口可用性(仅待机)、自动收起、局毕自动回面板、当前模式与纪录刷新
     modePanel.update(core)

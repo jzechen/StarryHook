@@ -193,6 +193,9 @@ describe('WorldDirector:存档门禁(仅 idle 落盘;垂钓/过场中不写)', (
     const kv = countingKv()
     const core = new CoreLoop(new Rng(3))
     const director = new WorldDirector({ app: fakeApp(), textures: fakeTextures(), core, storage: kv })
+    // 票 #36 抛竿门禁:idle 按下须在钓位范围内——测试桩恒供「在钓位」,
+    // 只验存档门禁,不重复钓位判定(那是 interactions/核心门禁的测试域)
+    core.setInteractionSource(() => ({ kind: 'spot' }))
     let t = 0
     // 抛竿:按下蓄力 → 松开 → 等待
     tick(director, core, t, DT, { holding: true, moveX: 0, moveY: 0 })

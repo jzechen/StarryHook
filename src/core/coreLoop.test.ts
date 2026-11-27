@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { CoreLoop, PLAYER_HALF_H, PLAYER_HALF_W, type UpdateInput } from './coreLoop'
+import { rollQuality, sessionQualityRng } from './quality'
 import { Rng } from './rng'
 import { TUNE, type BarParams } from '../config'
+import type { FishQuality } from './types'
 
 const DT = 1 / 60
 const HOLD: UpdateInput = { holding: true, moveX: 0, moveY: 0 }
@@ -9,7 +11,12 @@ const IDLE: UpdateInput = { holding: false, moveX: 0, moveY: 0 }
 const RIGHT: UpdateInput = { holding: false, moveX: 1, moveY: 0 }
 
 function newLoop(seed = 42): CoreLoop {
-  return new CoreLoop(new Rng(seed))
+  // 票 #36 有意规格变更:idle 抛竿须经交互点(钓位范围内才可抛)。
+  // 既有用例的抛竿都发生在「钓位范围内」,助手统一注入恒定钓位来源;
+  // 门禁本身的行为见「交互点门禁」一组(显式覆盖来源)。
+  const l = new CoreLoop(new Rng(seed))
+  l.setInteractionSource(() => ({ kind: 'spot' }))
+  return l
 }
 
 function run(loop: CoreLoop, seconds: number, input: UpdateInput = IDLE): void {
@@ -222,6 +229,74 @@ describe('核心循环状态机(接缝:CoreLoop)', () => {
   })
 })
 
+describe('渔获品质(接缝:结算沿 roll,独立派生种子,票 #39 spec §4.2)', () => {
+  /** 一竿打到结算:fullPower 蓄满抛竿,否则一帧轻点(power = 0);返回结果(未咬钩/脱钩 = null) */
+  function fishOnce(
+    seed: number,
+    fullPower: boolean,
+  ): { loop: CoreLoop; caught: boolean; quality: FishQuality } | null {
+    const l = newLoop(seed)
+    if (fullPower) {
+      l.update(DT, HOLD)
+      run(l, 1, HOLD)
+      l.update(DT, IDLE)
+    } else {
+      l.update(DT, HOLD)
+      l.update(DT, IDLE)
+    }
+    expect(l.phase).toBe('waiting')
+    runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
+    if (l.fish === null) return null
+    l.update(DT, HOLD) // 咬钩窗口内起竿
+    runUntil(l, 60, HOLD, x => x.phase === 'caught' || x.phase === 'escaped')
+    return { loop: l, caught: l.phase === 'caught', quality: l.caughtQuality }
+  }
+
+  it('捕获结算沿 roll 品质:caughtQuality 落在三档内,同种子同输入可复现', () => {
+    for (let seed = 1; seed <= 30; seed++) {
+      const a = fishOnce(seed, true)
+      const b = fishOnce(seed, true)
+      expect(b!.caught).toBe(a!.caught)
+      expect(b!.quality).toBe(a!.quality)
+      if (a!.caught) {
+        expect(a!.quality === 'normal' || a!.quality === 'silver' || a!.quality === 'gold').toBe(true)
+        // 得分/图鉴轨不受品质影响:捕获得分恒 = 鱼分值(期望值来自目录,独立来源)
+        expect(a!.loop.score).toBe(a!.loop.fish!.score)
+      }
+    }
+  })
+
+  it('品质 roll 走独立派生种子:首次捕获的品质 = sessionQualityRng 首签(主序列不含品质抽)', () => {
+    let checked = 0
+    for (let seed = 1; seed <= 60 && checked < 10; seed++) {
+      const r = fishOnce(seed, true)
+      if (!r?.caught) continue
+      expect(r.quality).toBe(rollQuality(sessionQualityRng(seed), 1))
+      checked++
+    }
+    expect(checked).toBeGreaterThanOrEqual(5)
+  })
+
+  it('蓄力越高星级概率越高:固定 120 种子下,蓄满捕获的银/金星占比高于轻抛', () => {
+    const starRate = (fullPower: boolean): { stars: number; caught: number } => {
+      let stars = 0
+      let caught = 0
+      for (let seed = 1; seed <= 120; seed++) {
+        const r = fishOnce(seed, fullPower)
+        if (!r?.caught) continue
+        caught++
+        if (r.quality !== 'normal') stars++
+      }
+      return { stars, caught }
+    }
+    const full = starRate(true)
+    const tap = starRate(false)
+    expect(full.caught).toBeGreaterThan(30) // 两种蓄力下都有足量捕获样本
+    expect(tap.caught).toBeGreaterThan(30)
+    expect(full.stars / full.caught).toBeGreaterThan(tap.stars / tap.caught)
+  })
+})
+
 describe('竿档注入(接缝:换竿 → 物理生效)', () => {
   /** 组合根时序:先注入竿参数,再进入小游戏(解锁当竿 / 启动恢复同款) */
   function enterMinigame(seed: number, rod?: BarParams): CoreLoop {
@@ -316,6 +391,7 @@ describe('饵效果单缝注入(接缝:本竿饵效果 → 等待减半 × 浓�
       let hard = 0
       for (let seed = 1; seed <= 120; seed++) {
         const l = new CoreLoop(new Rng(seed), world)
+        l.setInteractionSource(() => ({ kind: 'spot' })) // 票 #36:抛竿须在钓位范围内
         if (rich) l.setBaitEffectSource(() => ({ waitScale: 1, richBait: true }))
         castFull(l)
         runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
@@ -326,6 +402,84 @@ describe('饵效果单缝注入(接缝:本竿饵效果 → 等待减半 × 浓�
     const plain = hardAtBite(false)
     const rich = hardAtBite(true)
     expect(rich).toBeGreaterThan(plain)
+  })
+})
+
+describe('交互点门禁(接缝:setInteractionSource,票 #36 有意规格变更:「原地任意处抛竿」→「钓位范围内才可抛」)', () => {
+  it('未注入交互来源:idle 按下不蓄力(缺省世界无交互点,范围外无动作)', () => {
+    const l = newLoop()
+    l.setInteractionSource(() => null)
+    l.update(DT, HOLD)
+    expect(l.phase).toBe('idle')
+    expect(l.power).toBe(0)
+  })
+
+  it('范围内最近是摊位(stall):按下不开竿(摊位动作 = 开商店,归组合根)', () => {
+    const l = newLoop()
+    l.setInteractionSource(() => ({ kind: 'stall' }))
+    l.update(DT, HOLD)
+    expect(l.phase).toBe('idle')
+  })
+
+  it('范围内是钓位(spot):按下蓄力、松开抛竿,手感与现行逐位一致', () => {
+    const a = newLoop() // 助手已注入恒定钓位来源
+    const b = newLoop()
+    b.setInteractionSource(() => ({ kind: 'spot' }))
+    castFull(a)
+    castFull(b)
+    expect(b.phase).toBe('waiting')
+    expect(b.waitTime).toBe(a.waitTime) // 同种子同输入:门禁不改抽取序列
+  })
+
+  it('按下瞬间不在范围:这一按不作数(按住走进范围也不补蓄,松开再按才触发)', () => {
+    let inRange = false
+    const l = newLoop()
+    l.setInteractionSource(() => (inRange ? { kind: 'spot' } : null))
+    l.update(DT, HOLD) // 范围外按下
+    expect(l.phase).toBe('idle')
+    inRange = true
+    run(l, 0.5, HOLD) // 按住走进范围:无按下边沿,不蓄力
+    expect(l.phase).toBe('idle')
+    l.update(DT, IDLE)
+    l.update(DT, HOLD) // 重新按下
+    expect(l.phase).toBe('charging')
+  })
+})
+
+describe('垂钓全程锁移动(接缝:update 移动窗口,票 #36 有意规格变更:charging/waiting 可走 → 收紧为仅 idle)', () => {
+  function stationAt(): CoreLoop {
+    const l = newLoop()
+    l.px = 100
+    l.py = 100
+    return l
+  }
+
+  it('蓄力中移动锁死:按住蓄力同时推方向,位置不动(抛竿起站定)', () => {
+    const l = stationAt()
+    l.update(DT, HOLD)
+    expect(l.phase).toBe('charging')
+    run(l, 0.5, { holding: true, moveX: 1, moveY: 1 })
+    expect(l.px).toBe(100)
+    expect(l.py).toBe(100)
+  })
+
+  it('等待中移动锁死:等待照走、收竿照常,但位置不动', () => {
+    const l = stationAt()
+    castFull(l)
+    expect(l.phase).toBe('waiting')
+    run(l, 0.5, { holding: false, moveX: 1, moveY: 1 })
+    expect(l.px).toBe(100)
+    expect(l.py).toBe(100)
+  })
+
+  it('回到 idle 恢复移动(结算停留后站走自如)', () => {
+    const l = stationAt()
+    castFull(l)
+    runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
+    run(l, 2, IDLE) // 咬钩窗口耗尽 + 结算停留走完
+    expect(l.phase).toBe('idle')
+    run(l, 1, { holding: false, moveX: 1, moveY: 0 })
+    expect(l.px).toBeCloseTo(100 + TUNE.move.speed, 10)
   })
 })
 

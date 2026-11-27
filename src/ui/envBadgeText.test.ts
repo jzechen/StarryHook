@@ -8,7 +8,7 @@ function envOf(season: EnvState['season'], daylight: EnvState['daylight'], weath
 }
 
 describe('环境徽章文案(接缝:纯函数,票 #15)', () => {
-  it('票面样例:春 · 日 · 晴(水域不进徽章,换水域面板可见)', () => {
+  it('票面样例:春 · 日 · 晴(水域不进徽章)', () => {
     expect(envBadgeText(envOf('spring', 'day', 'sunny'))).toBe('春 · 日 · 晴')
   })
 

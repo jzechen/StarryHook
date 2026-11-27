@@ -6,6 +6,7 @@ import type { MapId } from '../core/types'
 import { deriveWaterArea, isKnownMapId, WORLD_MAPS } from '../world/maps'
 import { warpAt, type WarpZone } from '../world/warps'
 import { blockedBox, worldCollisionSource } from '../world/worldMap'
+import type { InteractionPromptState } from './worldScene'
 import type { SceneTextures } from './textures'
 import { SceneTransition } from './sceneTransition'
 import { WorldScene } from './worldScene'
@@ -102,7 +103,7 @@ export class WorldDirector {
   }
 
   /** 每帧推进:过场状态机 → 换图落位 → 出口检测 → 存档门禁 → 场景渲染 */
-  update(t: number, dt: number): void {
+  update(t: number, dt: number, promptState?: InteractionPromptState | null): void {
     const action = this.transition.update(dt)
     if (action === 'switch' && this.transition.warp) this.applyWarp(this.transition.warp)
 
@@ -117,7 +118,7 @@ export class WorldDirector {
     }
 
     this.trySave(dt)
-    this.scene.update(this.core, t, dt)
+    this.scene.update(this.core, t, dt, promptState)
   }
 
   /** 换图落位(过场 'switch' 时刻,全黑瞬间):旧场景销毁、对侧入口出现 */

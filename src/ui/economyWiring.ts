@@ -1,7 +1,11 @@
 import { BAITS } from '../config'
+import type { BackpackStore } from '../core/backpack'
 import type { BaitEffect } from '../core/coreLoop'
+import { FISH } from '../core/fishCatalog'
+import { sellPriceFor } from '../core/quality'
+import type { FishQuality } from '../core/types'
 import type { WalletStore } from '../core/wallet'
-import type { ShopBuyOutcome } from './shopPanel'
+import type { ShopBuyOutcome, ShopSellOutcome } from './shopPanel'
 
 /** 香饵的等待时长修正系数(票 #19):TUNE.wait.min/max 同乘,分布形状不变 */
 export const SCENTED_BAIT_WAIT_SCALE = 0.5
@@ -49,4 +53,24 @@ export function equippedBaitView(wallet: WalletStore): { name: string; count: nu
   const id = wallet.equippedBait()
   const bait = BAITS.find(b => b.id === id)
   return bait ? { name: bait.name, count: wallet.baitCount(bait.id) } : null
+}
+
+/**
+ * 摊位卖鱼回调(组合根接线,票 #39 spec §4.3):从背包取出 n 条渔获,
+ * 按(鱼分值 × 品质倍率)经 wallet 既有 earn 入账——金币唯一来源 = 卖鱼 + 宝箱。
+ * 空堆叠/目录外鱼种 → 'empty'(不取货、不入账);count 超出余量按余量钳制
+ * (背包 take 的钳制语义),入账与取货同一次调用完成,不存在中间态。
+ */
+export function sellFishOutcome(
+  backpack: BackpackStore,
+  wallet: WalletStore,
+): (fishId: string, quality: FishQuality, count: number) => ShopSellOutcome {
+  return (fishId, quality, count) => {
+    const fish = FISH.find(f => f.id === fishId)
+    if (!fish) return 'empty'
+    const taken = backpack.take(fishId, quality, count)
+    if (taken <= 0) return 'empty'
+    wallet.earn(sellPriceFor(fish.score, quality) * taken)
+    return 'ok'
+  }
 }

@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { BackpackStore } from '../core/backpack'
 import { CoreLoop } from '../core/coreLoop'
+import { FISH } from '../core/fishCatalog'
+import { sellPriceFor, sessionQualityRng, rollQuality } from '../core/quality'
 import { Rng } from '../core/rng'
 import { WalletStore } from '../core/wallet'
 import { memoryStorage } from '../testing/memoryStorage'
-import { baitEffectSource, buyBaitOutcome, equippedBaitView } from './economyWiring'
+import { baitEffectSource, buyBaitOutcome, equippedBaitView, sellFishOutcome } from './economyWiring'
 
 const DT = 1 / 60
 const HOLD = { holding: true, moveX: 0, moveY: 0 }
@@ -57,6 +60,7 @@ describe('装备链路全链(组合层集成:购买 → 装备 → 抛竿消耗 
   it('购买香饵 → 自动装备 → 抛竿消耗一支 → 等待时长减半生效', () => {
     const wallet = new WalletStore(memoryStorage())
     const core = new CoreLoop(new Rng(42))
+    core.setInteractionSource(() => ({ kind: 'spot' })) // 票 #36:抛竿须在钓位范围内
     core.setBaitEffectSource(baitEffectSource(wallet))
 
     wallet.earn(30)
@@ -102,5 +106,104 @@ describe('装备链路全链(组合层集成:购买 → 装备 → 抛竿消耗 
     expect(buyBaitOutcome(wallet)('nonger')).toBe('ok')
     expect(wallet.consumeBaitForCast()).toBe(true) // 抛竿消耗一支
     expect(equippedBaitView(wallet)).toEqual({ name: '浓饵', count: 9 })
+  })
+})
+
+describe('摊位卖鱼接线(接缝:sellFishOutcome,取出渔获 + earn 分值×品质倍率,票 #39)', () => {
+  it('单卖:取 1 条入账单价(10 分 × 银星 1.5 = 15),背包同步减少', () => {
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id))
+    backpack.addFish('xiaobaitiao', 'silver')
+    expect(sellFishOutcome(backpack, wallet)('xiaobaitiao', 'silver', 1)).toBe('ok')
+    expect(wallet.coins()).toBe(15)
+    expect(backpack.count('xiaobaitiao', 'silver')).toBe(0)
+  })
+
+  it('全卖:入账 = 单价 × 条数(25 分金星 ×2 = 50/条,3 条 = 150),普通星 = 原分值', () => {
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id))
+    for (let i = 0; i < 3; i++) backpack.addFish('qianzhuinian', 'gold')
+    for (let i = 0; i < 2; i++) backpack.addFish('wenzhongji', 'normal')
+    const sell = sellFishOutcome(backpack, wallet)
+    expect(sell('qianzhuinian', 'gold', 3)).toBe('ok')
+    expect(sell('wenzhongji', 'normal', 2)).toBe('ok')
+    expect(wallet.coins()).toBe(50 * 3 + 15 * 2)
+    expect(backpack.entries()).toEqual([])
+  })
+
+  it('空堆叠/目录外鱼种 → empty:不取货、不入账,状态原样', () => {
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id))
+    const sell = sellFishOutcome(backpack, wallet)
+    expect(sell('xiaobaitiao', 'normal', 1)).toBe('empty')
+    expect(sell('幽灵鱼', 'gold', 1)).toBe('empty')
+    expect(wallet.coins()).toBe(0)
+    expect(backpack.entries()).toEqual([])
+  })
+
+  it('count 超出余量按余量钳制(全卖语义):卖 5 条只有 2 条 → 入账 2 条的价', () => {
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id))
+    for (let i = 0; i < 2; i++) backpack.addFish('shandiansuo', 'silver') // 50 × 1.5 = 75
+    expect(sellFishOutcome(backpack, wallet)('shandiansuo', 'silver', 5)).toBe('ok')
+    expect(wallet.coins()).toBe(75 * 2)
+    expect(backpack.count('shandiansuo', 'silver')).toBe(0)
+  })
+
+  it('经济链路全链(组合层集成:捕获入包不入账 → 摊位全卖入账)', () => {
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id))
+    const core = new CoreLoop(new Rng(42))
+    core.setInteractionSource(() => ({ kind: 'spot' })) // 票 #36:抛竿须在钓位范围内
+    // 有意规格变更(票 #39):捕获沿改向——wallet.earn 不再被调用,渔获入背包
+    const caught: { id: string; quality: ReturnType<typeof rollQuality>; score: number }[] = []
+    for (let seed = 1; seed <= 80 && caught.length === 0; seed++) {
+      const c = new CoreLoop(new Rng(seed))
+      c.setInteractionSource(() => ({ kind: 'spot' }))
+      c.update(DT, HOLD)
+      for (let i = 0; i < Math.round(1 / DT); i++) c.update(DT, HOLD)
+      c.update(DT, IDLE)
+      for (let i = 0; i < Math.round(10 / DT) && c.phase === 'waiting'; i++) c.update(DT, IDLE)
+      c.update(DT, HOLD) // 咬钩窗口内起竿
+      for (let i = 0; i < Math.round(60 / DT) && c.phase !== 'caught' && c.phase !== 'escaped'; i++)
+        c.update(DT, HOLD)
+      if (c.phase === 'caught' && c.fish) {
+        caught.push({ id: c.fish.id, quality: c.caughtQuality, score: c.fish.score })
+        backpack.addFish(c.fish.id, c.caughtQuality) // 组合根捕获沿同款接线
+      }
+    }
+    expect(caught.length).toBe(1)
+    expect(wallet.coins()).toBe(0) // 捕获不再即时入账(票 #39 有意规格变更)
+    expect(backpack.count(caught[0]!.id, caught[0]!.quality)).toBe(1)
+    expect(sellFishOutcome(backpack, wallet)(caught[0]!.id, caught[0]!.quality, 1)).toBe('ok')
+    expect(wallet.coins()).toBe(sellPriceFor(caught[0]!.score, caught[0]!.quality))
+  })
+
+  it('限时局渔获照入背包:模式层零感知(限时局捕获同样入包)', () => {
+    const backpack = new BackpackStore(FISH.map(f => f.id))
+    const core = new CoreLoop(new Rng(42))
+    core.setInteractionSource(() => ({ kind: 'spot' }))
+    expect(core.setMode('timed')).toBe(true)
+    let added = 0
+    for (let seed = 1; seed <= 80 && added === 0; seed++) {
+      const c = new CoreLoop(new Rng(seed), { weather: 'sunny' })
+      c.setInteractionSource(() => ({ kind: 'spot' }))
+      expect(c.setMode('timed')).toBe(true)
+      c.update(DT, HOLD)
+      for (let i = 0; i < Math.round(1 / DT); i++) c.update(DT, HOLD)
+      c.update(DT, IDLE)
+      for (let i = 0; i < Math.round(10 / DT) && c.phase === 'waiting'; i++) c.update(DT, IDLE)
+      c.update(DT, HOLD)
+      for (let i = 0; i < Math.round(60 / DT) && c.phase !== 'caught' && c.phase !== 'escaped'; i++)
+        c.update(DT, HOLD)
+      if (c.phase === 'caught' && c.fish) {
+        backpack.addFish(c.fish.id, c.caughtQuality)
+        added++
+        expect(backpack.count(c.fish.id, c.caughtQuality)).toBe(1)
+        // 品质 roll 与天气/主序列解耦:同种子下与无限局同品质(独立派生种子同源)
+        expect(c.caughtQuality).toBe(rollQuality(sessionQualityRng(seed), 1))
+      }
+    }
+    expect(added).toBe(1)
   })
 })

@@ -47,7 +47,7 @@ export class CollectionPanel {
 
   constructor(
     private collection: CollectionStore,
-    // 面板互斥协调器:构造时自注册,打开时经它收起其余面板(换水域/后续商店),
+    // 面板互斥协调器:构造时自注册,打开时经它收起其余面板(商店/模式),
     // 组合根不再串互斥回调
     private exclusion?: PanelExclusion,
   ) {
@@ -105,6 +105,11 @@ export class CollectionPanel {
     this.entryBtn.disabled = !this.allowed
     if (this.open && !this.allowed) this.setOpen(false)
     if (this.open) this.refresh()
+  }
+
+  /** 是否打开(组合根动作键意图/ESC 关面板用,票 #36) */
+  isOpen(): boolean {
+    return this.open
   }
 
   /** 供互斥协调器收起(其余面板打开时;对已收起面板幂等) */
