@@ -11,6 +11,7 @@ import { CollectionStore, type KvStorage } from './core/collection'
 import { COLLECTIBLES } from './core/collectibles'
 import { CoreLoop } from './core/coreLoop'
 import { FISH } from './core/fishCatalog'
+import { OrderBoardStore, sessionOrderRng } from './core/orderBoard'
 import { ProgressionStore } from './core/progression'
 import { Rng } from './core/rng'
 import { TimedBestStore } from './core/timedBest'
@@ -33,10 +34,11 @@ import { advanceStepClock } from './ui/footstepClock'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
 import { countdownBadgeText } from './ui/countdownBadgeText'
-import { baitEffectSource, buyBaitOutcome, equippedBaitView, grantChestLoot, sellFishOutcome } from './ui/economyWiring'
+import { baitEffectSource, buyBaitOutcome, deliverOrderOutcome, equippedBaitView, grantChestLoot, sellFishOutcome } from './ui/economyWiring'
 import { BackpackPanel } from './ui/backpackPanel'
 import { Hud } from './ui/hud'
 import { ModePanel } from './ui/modePanel'
+import { OrderPanel } from './ui/orderPanel'
 import { MuteStore } from './ui/muteStore'
 import { PanelExclusion } from './ui/panelExclusion'
 import { progressionToastText } from './ui/progressionToastPolicy'
@@ -156,6 +158,14 @@ async function main(): Promise<void> {
     storage,
     key: 'starryhook:storage',
   })
+  // 公告板(票 #55,spec 内容扩充「公告板与订单」):当前订单一单(队列制),
+  // 订单轮转走独立派生种子的 Rng(sessionOrderRng,与品质旁路同构,主序列一个
+  // draw 不动);kv 持久化跨会话保留(独立键),损坏按重出首单降级。
+  // 交付 = deliverOrderOutcome 接线(扣背包渔获 + 酬金入钱包 + 出新单一体)
+  const orders = new OrderBoardStore(sessionOrderRng(seed), {
+    storage,
+    key: 'starryhook:orders',
+  })
   // 鱼饵生效(票 #19 香饵 + 票 #21 浓饵;review 修复后两缝合一):核心循环在抛竿时刻
   // (进入 waiting 边沿,core cast 内)调用单一饵效果来源恰好一次,本竿饵消耗恰好一次,
   // 消耗与效果同源产出,不再有调用次序契约:
@@ -224,6 +234,10 @@ async function main(): Promise<void> {
     transferBetween(storageBox, backpack),
     panelExclusion,
   )
+  // 公告板面板(票 #55):河谷公告板交互点 E 开小面板——查看当前订单(鱼种 ×
+  // 品质门槛 × 数量 + 酬金与持有进度)、交付(扣包 + 酬金入钱包 + 出新单一体,
+  // 行内反馈沿商店 ShopBuyOutcome 风格,缺鱼/品质不足分列拒绝)
+  const orderPanel = new OrderPanel(orders, backpack, deliverOrderOutcome(orders, backpack, wallet), panelExclusion)
   // 轻提示层:新收录等常规轻提示,顶部居中,不拦截游戏输入
   const toasts = new ToastLayer()
   // 大满贯全屏演出(票 #43,spec §5.2):替代既有 toast——画布内横幅 +
@@ -261,7 +275,7 @@ async function main(): Promise<void> {
   }
   // 已开面板(互斥协调器保证至多一个):面板打开时世界动作全歇、浮签全隐、移动锁死
   const openPanel = (): { close(): void } | null =>
-    [collectionPanel, shopPanel, modePanel, backpackPanel, storagePanel].find(p => p.isOpen()) ?? null
+    [collectionPanel, shopPanel, modePanel, backpackPanel, storagePanel, orderPanel].find(p => p.isOpen()) ?? null
   // 每帧刷新的「范围内最近交互点」:交互门禁/浮签/自动切水/摊位动作四方同源,
   // 不因各自取值时机不同而打架(核心门禁在 core.update 内消费的即本帧值)
   let nearestTarget: ReturnType<typeof nearestInteraction> = null
@@ -351,8 +365,8 @@ async function main(): Promise<void> {
     prevTimeRemaining = core.timeRemaining
 
     // 动作键按下边沿 → 意图(关闭口径优先):关面板 / 摊位开商店 / 储物箱开转移
-    // 面板 / 宝箱一次性开启 / 叙事物读彩蛋;钓位蓄力抛竿不经此处——核心已按交互
-    // 门禁在本帧 update 内处理。
+    // 面板 / 宝箱一次性开启 / 公告板开订单面板 / 叙事物读彩蛋;钓位蓄力抛竿不经
+    // 此处——核心已按交互门禁在本帧 update 内处理。
     // 叙事物(票 #37)仅在待机响应:小游戏连按 E 是玩法操作,垂钓中不弹彩蛋
     // (与摊位「仅 idle 可开」同口径);toast 一句静态文案,零奖励、可重复查看
     // 过场中同样不响应(输入锁定的组成部分,票 #35)
@@ -363,6 +377,7 @@ async function main(): Promise<void> {
       if (intent === 'close-panel') openPanel()?.close()
       else if (intent === 'open-shop') shopPanel.open()
       else if (intent === 'open-storage') storagePanel.open()
+      else if (intent === 'open-board') orderPanel.open()
       else if (intent === 'open-chest' && core.phase === 'idle') {
         const chestId = nearestTarget?.chestId
         if (chestId && chests.open(chestId)) {
@@ -518,6 +533,9 @@ async function main(): Promise<void> {
     backpackPanel.update(core)
     // 储物箱面板(票 #40):离开待机自动收起、两栏内容刷新(打开时游戏照常推进)
     storagePanel.update(core)
+    // 公告板面板(票 #55):离开待机自动收起、当前订单与持有进度刷新
+    // (打开时游戏照常推进——垂钓中可积累,交付不限时)
+    orderPanel.update(core)
   })
 }
 
