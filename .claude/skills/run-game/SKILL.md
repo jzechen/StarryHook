@@ -32,3 +32,5 @@ description: 启动 StarryHook dev 服务并用无头 Chrome 实机截图验收;
 - headless rAF 节流:launch 参数必须含 `--disable-background-timer-throttling --disable-renderer-backgrounding`(脚本已内置);纯 `--screenshot` 时机不可控,一律走 CDP。
 - 底部帮助行与场景横幅曾重叠(#45 实机验收发现)——新增底部居中的 UI 时截图核对这一带。
 - localStorage 位置快照跨 run 残留:换场景前先 `localStorage.clear()` 或显式 seed。
+- 小游戏实时伺服不可行:CDP 回路仅 ~4–6Hz,罩不住 0.08 轨宽的同步窗(人类 60Hz 无此
+  瓶颈)——此类实时判定语义走测试层验收(真实 CoreLoop 集成),截图只验视觉存在性。

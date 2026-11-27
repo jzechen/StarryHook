@@ -32,13 +32,31 @@ describe('sortFishByDifficulty(接缝:图鉴条目排序)', () => {
     ])
   })
 
-  it('生产目录:排序结果即 spec 的难度升序票面(1,2,3,3,5)', () => {
+  it('生产目录:排序结果即难度升序(票 #53 扩容后 18 条;同难度保持目录序)', () => {
     expect(sortFishByDifficulty(FISH).map(f => f.id)).toEqual([
+      // 难度 1
       'xiaobaitiao',
+      'cuilinTaiyangyu',
+      // 难度 2
       'wenzhongji',
+      'niquQiu',
+      'woliuShen',
+      'jinlinLi',
+      // 难度 3
       'qianzhuinian',
       'qiqiuHetun',
+      'denglongNian',
+      'tongxuJi',
+      'yuyingZun',
+      'jiliuHongzun',
+      'wuyingLu',
+      // 难度 4
+      'tiejiaLing',
+      'yexingzheNian',
+      'yueyingMan',
+      // 难度 5
       'shandiansuo',
+      'shuangqiangGouyu',
     ])
   })
 

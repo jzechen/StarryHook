@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { FISH } from './fishCatalog'
 import { DEFAULT_AREA, WATER_AREAS, waterAreaOf } from './waterAreas'
 
+/** 池塘红线鱼(票 #53):既有 5 种「任意真实时间全可达」,新鱼只加不减 */
+const POND_V1_IDS = ['xiaobaitiao', 'wenzhongji', 'qianzhuinian', 'qiqiuHetun', 'shandiansuo']
+
 describe('三水域注册表(接缝:纯数据)', () => {
   it('三片水域 = 池塘/河流/湖,id 唯一,池塘为默认', () => {
     expect(WATER_AREAS.map(a => a.id)).toEqual(['pond', 'river', 'lake'])
@@ -10,10 +13,14 @@ describe('三水域注册表(接缝:纯数据)', () => {
     expect(DEFAULT_AREA).toBe('pond')
   })
 
-  it('池塘 = 全部 5 种鱼且权重全为正(既有统计测试红线:任意真实时间全可达的基底)', () => {
+  it('池塘红线(票 #53 改向:扩容后仍全为正,且既有 5 种一条不少——新鱼只加不减)', () => {
     const pond = WATER_AREAS.find(a => a.id === 'pond')!
-    expect(Object.keys(pond.baseWeights).sort()).toEqual(FISH.map(f => f.id).sort())
     expect(Object.values(pond.baseWeights).every(w => w > 0)).toBe(true)
+    for (const id of POND_V1_IDS) expect(pond.baseWeights[id], id).toBe(1)
+    // 新鱼只做加法:池塘鱼池 = 既有 5 种 + 名册村舍 4 种
+    expect(Object.keys(pond.baseWeights).sort()).toEqual(
+      [...POND_V1_IDS, 'cuilinTaiyangyu', 'denglongNian', 'niquQiu', 'tongxuJi'].sort(),
+    )
   })
 
   it('每片水域:鱼池非空、权重全为正、鱼 id 均在目录中、代表鱼在鱼池内', () => {

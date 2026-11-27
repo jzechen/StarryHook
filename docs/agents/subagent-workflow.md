@@ -19,7 +19,9 @@ merger:
 1. 串行执行:同一时刻主检出只进一个 merger;
 2. 进场先 `git checkout <整合分支> && git status --short` 确认干净;
    发现外来未跟踪/未提交文件 → 原样保留并在报告里指出,不吞不删;
-3. 合并后复跑 `pnpm test && pnpm typecheck && pnpm build` 再报告。
+3. 合并后复跑 `pnpm test && pnpm typecheck && pnpm build` 再报告;
+4. 报告合并结果前先 `git branch --merged <整合分支>` 核实各票分支状态,
+   不凭记忆断言「某分支未并入」。
 
 ## 实现者简报模板
 

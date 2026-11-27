@@ -60,6 +60,19 @@ describe('出鱼权重修正引擎(接缝:computePoolWeights)', () => {
     expect(computePoolWeights(SYNTH, SYNTH_POOL, env({ season: 'summer', daylight: 'night' }), 0)[1]).toBe(6)
   })
 
+  it('天气硬门(票 #53 雾影鲈「雨天+夜晚」首用):亲和集合不含当前天气 → 归零,含 → 正常;浓饵不越门', () => {
+    const rainOnly: FishDef[] = [
+      {
+        id: 'wr', name: '甲', behavior: 'smooth', difficulty: 3, score: 25, color: 0x1, shape: 'round',
+        habitat: { areas: ['lake'], weather: ['rain'] },
+      },
+    ]
+    const pool = { wr: 2 }
+    expect(computePoolWeights(rainOnly, pool, env({ area: 'lake', weather: 'sunny' }), 0)).toEqual([0])
+    expect(computePoolWeights(rainOnly, pool, env({ area: 'lake', weather: 'rain' }), 0)).toEqual([2])
+    expect(computePoolWeights(rainOnly, pool, env({ area: 'lake', weather: 'sunny' }), 0, true)).toEqual([0])
+  })
+
   it('不在基底鱼池的鱼权重为 0(亲和匹配也进不来)', () => {
     const withoutSe = { ...SYNTH_POOL, se: 0 }
     const w = computePoolWeights(SYNTH, withoutSe, env({ season: 'winter', daylight: 'night', weather: 'rain' }), 0)
@@ -216,13 +229,73 @@ describe('守护:真实数据环境穷举(4 季 × 2 昼夜 × 2 天气 × 3 水
     }
   })
 
-  it('池塘红线:全部 5 种鱼在任意环境组合下权重 > 0(任意真实时间全可达,护既有 130 测)', () => {
+  /** 池塘红线鱼(票 #53):既有 5 种「任意真实时间全可达」,新鱼只加不减 */
+  const POND_V1_IDS = ['xiaobaitiao', 'wenzhongji', 'qianzhuinian', 'qiqiuHetun', 'shandiansuo']
+
+  it('池塘红线:既有 5 种在任意环境组合下权重 > 0(票 #53 改向:红线收窄到既有 5 种,新鱼按名册挂条件)', () => {
+    const v1 = POND_V1_IDS.map(id => ({ id, index: FISH.findIndex(f => f.id === id) }))
     for (const { season, daylight, weather } of combos().filter(c => c.areaId === 'pond')) {
       for (const power of [0, 1]) {
         const w = computePoolWeights(FISH, baseOf('pond'), { area: 'pond', season, daylight, weather }, power)
-        expect(w.every(x => x > 0), `${season}/${daylight}/${weather}/power=${power}`).toBe(true)
+        for (const { id, index } of v1) {
+          expect(w[index], `${id}/${season}/${daylight}/${weather}/power=${power}`).toBeGreaterThan(0)
+        }
       }
     }
+  })
+
+  /**
+   * 条件矩阵覆盖(票 #53,spec #52 用户故事 2/3):每个(季节 × 昼夜 × 天气)
+   * 组合至少一种「专属目标」鱼。专属 = 三条同时成立:
+   * 1) 该组合下可达——在其亲和水域的基底鱼池中权重 > 0(硬门由引擎归零体现);
+   * 2) 显式亲和命中——至少一个维度对组合值声明了硬门(含该值)或软倍率 > 1
+   *    (全无声明的万金油鱼如小白条不算专属);
+   * 3) 无减益——组合值不落在该鱼任何 mul < 1 上(被该环境压制的鱼不算专属)。
+   */
+  it('条件矩阵覆盖:每个(季节×昼夜×天气)组合至少一种专属目标鱼', () => {
+    for (const { season, daylight, weather } of combos()) {
+      const dedicated = FISH.filter(fish => {
+        const h = fish.habitat
+        const hit =
+          h?.seasons?.includes(season) === true ||
+          h?.daylight?.includes(daylight) === true ||
+          h?.weather?.includes(weather) === true ||
+          (h?.seasonMul?.[season] ?? 1) > 1 ||
+          (h?.daylightMul?.[daylight] ?? 1) > 1 ||
+          (h?.weatherMul?.[weather] ?? 1) > 1
+        const penalized =
+          (h?.seasonMul?.[season] ?? 1) < 1 ||
+          (h?.daylightMul?.[daylight] ?? 1) < 1 ||
+          (h?.weatherMul?.[weather] ?? 1) < 1
+        if (!hit || penalized) return false
+        const areas = h?.areas ?? WATER_AREAS.map(a => a.id)
+        return areas.some(areaId => {
+          const w = computePoolWeights(FISH, baseOf(areaId), { area: areaId, season, daylight, weather }, 0)
+          return w[FISH.findIndex(f => f.id === fish.id)]! > 0
+        })
+      })
+      expect(dedicated.map(f => f.id), `${season}/${daylight}/${weather} 无专属目标鱼`).not.toHaveLength(0)
+    }
+  })
+
+  it('维度专属:每个季节/昼夜/天气取值都有显式亲和鱼(雨天/夜晚/冬季各有专属目标,spec #52)', () => {
+    const seasonHit = (season: (typeof SEASONS)[number]) =>
+      FISH.filter(f => f.habitat?.seasons?.includes(season) || (f.habitat?.seasonMul?.[season] ?? 1) > 1)
+    const daylightHit = (daylight: (typeof DAYLIGHTS)[number]) =>
+      FISH.filter(f => f.habitat?.daylight?.includes(daylight) || (f.habitat?.daylightMul?.[daylight] ?? 1) > 1)
+    const weatherHit = (weather: (typeof WEATHERS)[number]) =>
+      FISH.filter(f => f.habitat?.weather?.includes(weather) || (f.habitat?.weatherMul?.[weather] ?? 1) > 1)
+    for (const season of SEASONS) expect(seasonHit(season).map(f => f.id), `季节 ${season}`).not.toHaveLength(0)
+    for (const daylight of DAYLIGHTS) expect(daylightHit(daylight).map(f => f.id), `昼夜 ${daylight}`).not.toHaveLength(0)
+    for (const weather of WEATHERS) expect(weatherHit(weather).map(f => f.id), `天气 ${weather}`).not.toHaveLength(0)
+  })
+
+  it('稀有组合挂双硬门:雾影鲈(雨天+夜晚)与霜枪狗鱼(冬季+夜晚)各挂两道硬门(图鉴压轴)', () => {
+    const byId = (id: string) => FISH.find(f => f.id === id)!
+    expect(byId('wuyingLu').habitat?.weather).toEqual(['rain'])
+    expect(byId('wuyingLu').habitat?.daylight).toEqual(['night'])
+    expect(byId('shuangqiangGouyu').habitat?.seasons).toEqual(['winter'])
+    expect(byId('shuangqiangGouyu').habitat?.daylight).toEqual(['night'])
   })
 
   it('池塘红线:任意环境下蓄满时闪电梭份额高于轻抛(既有统计测试的引擎侧全环境等价)', () => {
@@ -276,11 +349,17 @@ describe('守护:浓饵生效下的环境穷举(票 #21,96 组合 × richBait=tr
     }
   })
 
-  it('池塘红线:全部 5 种鱼在任意环境组合下权重 > 0(浓饵下仍全可达,护图鉴进度)', () => {
+  it('池塘红线:既有 5 种在任意环境组合下权重 > 0(浓饵下仍全可达,护图鉴进度;票 #53 改向同上)', () => {
+    const v1 = ['xiaobaitiao', 'wenzhongji', 'qianzhuinian', 'qiqiuHetun', 'shandiansuo'].map(id => ({
+      id,
+      index: FISH.findIndex(f => f.id === id),
+    }))
     for (const { season, daylight, weather } of combos().filter(c => c.areaId === 'pond')) {
       for (const power of [0, 1]) {
         const w = computePoolWeights(FISH, baseOf('pond'), { area: 'pond', season, daylight, weather }, power, true)
-        expect(w.every(x => x > 0), `${season}/${daylight}/${weather}/power=${power}`).toBe(true)
+        for (const { id, index } of v1) {
+          expect(w[index], `${id}/${season}/${daylight}/${weather}/power=${power}`).toBeGreaterThan(0)
+        }
       }
     }
   })

@@ -61,12 +61,13 @@ describe('collectionToasts(接缝:图鉴提示决策)', () => {
 })
 
 describe('snapshotOf(接缝:收集册快照读取,组合根链路冒烟)', () => {
-  it('先读 → 登记 → 再读:最后一条鱼同时触发新收录与大满贯', () => {
+  it('先读 → 登记 → 再读:最后一条鱼同时触发新收录与大满贯(最后一条 = 目录末条,随目录扩容跟随)', () => {
     const s = new CollectionStore(IDS, memoryStorage())
-    for (const id of IDS.slice(0, 4)) s.recordCatch(id)
-    const before = snapshotOf(s, 'shandiansuo')
-    s.recordCatch('shandiansuo')
-    const after = snapshotOf(s, 'shandiansuo')
+    const last = IDS[IDS.length - 1]!
+    for (const id of IDS.slice(0, -1)) s.recordCatch(id)
+    const before = snapshotOf(s, last)
+    s.recordCatch(last)
+    const after = snapshotOf(s, last)
     expect(collectionToasts(before, after)).toEqual({ newEntry: true, grandSlam: true })
   })
 

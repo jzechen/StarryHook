@@ -4,11 +4,20 @@ import { CHESTS } from '../core/chests'
 import { COLLECTIBLES } from '../core/collectibles'
 import { CoreLoop } from '../core/coreLoop'
 import { FISH } from '../core/fishCatalog'
+import { ORDERS_KEY, OrderBoardStore, ORDER_TEMPLATES, orderReward } from '../core/orderBoard'
 import { sellPriceFor, sessionQualityRng, rollQuality } from '../core/quality'
 import { Rng } from '../core/rng'
 import { WalletStore } from '../core/wallet'
 import { memoryStorage } from '../testing/memoryStorage'
-import { baitEffectSource, buyBaitOutcome, equippedBaitView, grantChestLoot, sellFishOutcome } from './economyWiring'
+import {
+  baitEffectSource,
+  buyBaitOutcome,
+  deliverOrderOutcome,
+  equippedBaitView,
+  grantChestLoot,
+  grantLoot,
+  sellFishOutcome,
+} from './economyWiring'
 
 const DT = 1 / 60
 const HOLD = { holding: true, moveX: 0, moveY: 0 }
@@ -223,11 +232,13 @@ describe('宝箱掉落结算接线(接缝:grantChestLoot,票 #41 spec §4.5)', (
   it('鱼饵宝箱:走库存直加(无扣款),装备槽不动', () => {
     const wallet = new WalletStore(memoryStorage())
     const backpack = new BackpackStore(FISH.map(f => f.id), COLLECTIBLES.map(c => c.id))
-    const chest = CHESTS.find(c => c.loot.type === 'bait')!
-    grantChestLoot(chest, wallet, backpack)
-    expect(wallet.coins()).toBe(0)
-    expect(wallet.baitCount('xianger')).toBe(5)
-    expect(wallet.equippedBait()).toBeNull()
+    for (const chest of CHESTS) {
+      if (chest.loot.type !== 'bait') continue
+      grantChestLoot(chest, wallet, backpack)
+      expect(wallet.coins()).toBe(0)
+      expect(wallet.baitCount(chest.loot.baitId)).toBe(chest.loot.count)
+      expect(wallet.equippedBait()).toBeNull()
+    }
   })
 
   it('收藏品宝箱:backpack.addCollectible 入包(目录 = COLLECTIBLES,票 #41 填充)', () => {
@@ -239,7 +250,8 @@ describe('宝箱掉落结算接线(接缝:grantChestLoot,票 #41 spec §4.5)', (
       grantChestLoot(chest, wallet, backpack)
       expect(backpack.countCollectible(chest.loot.collectibleId)).toBe(1)
     }
-    expect(backpack.collectibleEntries().length).toBeGreaterThanOrEqual(2)
+    // 票 #56 有意规格变更:柳纹木雕移出世界宝箱表后,世界表收藏品箱仅剩湖畔珍珠
+    expect(backpack.collectibleEntries().length).toBe(1)
   })
 
   it('表内每个宝箱都可结算(内容表与接线对齐,无漏接的掉落类型)', () => {
@@ -250,6 +262,124 @@ describe('宝箱掉落结算接线(接缝:grantChestLoot,票 #41 spec §4.5)', (
     }).not.toThrow()
     expect(wallet.coins()).toBe(30)
     expect(wallet.baitCount('xianger')).toBe(5)
-    expect(backpack.collectibleEntries()).toHaveLength(2)
+    // 票 #56 有意规格变更:树影的宝箱改掉浓饵 ×3(柳纹木雕改钓获专属)
+    expect(wallet.baitCount('nonger')).toBe(3)
+    expect(backpack.collectibleEntries()).toHaveLength(1)
+  })
+})
+
+describe('钓上宝箱发放接线(接缝:grantLoot,票 #56:宝箱随渔获一并入包)', () => {
+  it('金币掉落:wallet.earn 入账(金币唯一来源 = 卖鱼 + 宝箱)', () => {
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id), COLLECTIBLES.map(c => c.id))
+    grantLoot({ type: 'coins', coins: 30 }, wallet, backpack)
+    expect(wallet.coins()).toBe(30)
+    expect(backpack.collectibleEntries()).toEqual([])
+  })
+
+  it('鱼饵掉落:库存直加(无扣款),装备槽不动', () => {
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id), COLLECTIBLES.map(c => c.id))
+    grantLoot({ type: 'bait', baitId: 'nonger', count: 3 }, wallet, backpack)
+    expect(wallet.coins()).toBe(0)
+    expect(wallet.baitCount('nonger')).toBe(3)
+    expect(wallet.equippedBait()).toBeNull()
+  })
+
+  it('收藏品掉落:backpack.addCollectible 入包(柳纹木雕钓获专属,目录外忽略)', () => {
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id), COLLECTIBLES.map(c => c.id))
+    grantLoot({ type: 'collectible', collectibleId: 'willow-carving' }, wallet, backpack)
+    grantLoot({ type: 'collectible', collectibleId: 'willow-carving' }, wallet, backpack)
+    expect(backpack.countCollectible('willow-carving')).toBe(2)
+    grantLoot({ type: 'collectible', collectibleId: '不存在' }, wallet, backpack)
+    expect(backpack.collectibleEntries()).toHaveLength(1)
+  })
+})
+
+describe('订单交付接线(接缝:deliverOrderOutcome,票 #55:扣包 + 酬金 + 出新单一体)', () => {
+  /** 预置公告板当前订单 = 快照直写(不依赖池表抽签顺序,测试钉死已知一单) */
+  function boardWith(order: { fishId: string; minQuality: 'normal' | 'silver' | 'gold'; count: number }): OrderBoardStore {
+    const storage = memoryStorage()
+    storage.set(ORDERS_KEY, JSON.stringify({ current: order }))
+    return new OrderBoardStore(new Rng(1), { storage, key: ORDERS_KEY })
+  }
+
+  it('交付成功:按低品质在前的贪心扣包,酬金 = 分值 × 数量 × 1.5 入钱包,随即出新单', () => {
+    const board = boardWith({ fishId: 'xiaobaitiao', minQuality: 'silver', count: 3 })
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id))
+    backpack.addFish('xiaobaitiao', 'silver', 3)
+    backpack.addFish('xiaobaitiao', 'gold', 1)
+    const deliver = deliverOrderOutcome(board, backpack, wallet)
+    expect(deliver()).toBe('ok')
+    // 银星堆先出:3 条全从银星堆扣,金星堆不动
+    expect(backpack.count('xiaobaitiao', 'silver')).toBe(0)
+    expect(backpack.count('xiaobaitiao', 'gold')).toBe(1)
+    // 酬金 = 10 分 × 3 条 × 1.5 = 45(与品质无关)
+    expect(wallet.coins()).toBe(45)
+    // 队列制:交付完成即出新单(不同单,池表内)
+    expect(ORDER_TEMPLATES).toContainEqual(board.current())
+    expect(board.current()).not.toEqual({ fishId: 'xiaobaitiao', minQuality: 'silver', count: 3 })
+  })
+
+  it('品质不足拒绝:普通堆再多也不补(quality 分列),不扣包、不入账、不换单', () => {
+    const order = { fishId: 'wenzhongji', minQuality: 'silver' as const, count: 2 }
+    const board = boardWith(order)
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id))
+    backpack.addFish('wenzhongji', 'normal', 10)
+    const deliver = deliverOrderOutcome(board, backpack, wallet)
+    expect(deliver()).toBe('quality')
+    expect(backpack.count('wenzhongji', 'normal')).toBe(10)
+    expect(wallet.coins()).toBe(0)
+    expect(board.current()).toEqual(order)
+  })
+
+  it('缺鱼拒绝(missing 分列):数量不足不扣包、不入账、不换单', () => {
+    const order = { fishId: 'qiqiuHetun', minQuality: 'normal' as const, count: 3 }
+    const board = boardWith(order)
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id))
+    backpack.addFish('qiqiuHetun', 'normal', 2)
+    const deliver = deliverOrderOutcome(board, backpack, wallet)
+    expect(deliver()).toBe('missing')
+    expect(backpack.count('qiqiuHetun', 'normal')).toBe(2)
+    expect(wallet.coins()).toBe(0)
+    expect(board.current()).toEqual(order)
+  })
+
+  it('混合品质凑数:银星 + 金星两段一起扣(跨堆凑满一单)', () => {
+    const board = boardWith({ fishId: 'shandiansuo', minQuality: 'silver', count: 4 })
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id))
+    backpack.addFish('shandiansuo', 'normal', 9)
+    backpack.addFish('shandiansuo', 'silver', 1)
+    backpack.addFish('shandiansuo', 'gold', 3)
+    const deliver = deliverOrderOutcome(board, backpack, wallet)
+    expect(deliver()).toBe('ok')
+    expect(backpack.count('shandiansuo', 'normal')).toBe(9) // 普通堆不参与(门槛银星)
+    expect(backpack.count('shandiansuo', 'silver')).toBe(0) // 银星 1 条先出
+    expect(backpack.count('shandiansuo', 'gold')).toBe(0) // 金星 3 条补满
+    expect(wallet.coins()).toBe(300) // 50 分 × 4 条 × 1.5(酬金与品质无关)
+  })
+
+  it('连续交付:一单交完再交下一单(队列轮转,酬金逐单入账)', () => {
+    const board = boardWith({ fishId: 'xiaobaitiao', minQuality: 'normal', count: 2 })
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id))
+    // 全鱼种 × 三品质满仓:池表轮转到哪单都可直接交付(本测只验链路)
+    for (const fish of FISH) {
+      for (const quality of ['normal', 'silver', 'gold'] as const) backpack.addFish(fish.id, quality, 9)
+    }
+    const deliver = deliverOrderOutcome(board, backpack, wallet)
+    expect(deliver()).toBe('ok')
+    expect(wallet.coins()).toBe(30) // 首单 = 10 分 × 2 条 × 1.5(快照钉死)
+    const second = board.current()
+    const fish = FISH.find(f => f.id === second.fishId)!
+    expect(deliver()).toBe('ok')
+    // 第二单酬金 = 该鱼分值 × 数量 × 1.5(公式单测已钉,此处验接线逐单入账)
+    expect(wallet.coins()).toBe(30 + orderReward(fish.score, second.count))
+    expect(backpack.count(second.fishId, 'normal')).toBe(9 - (second.minQuality === 'normal' ? second.count : 0))
   })
 })

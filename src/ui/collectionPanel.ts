@@ -70,7 +70,7 @@ export class CollectionPanel {
       // 未捕获由 .locked 的滤镜压成统一灰剪影(不泄名称与配色),动画一并停掉
       const spriteEl = document.createElement('span')
       spriteEl.className = 'fish-sprite'
-      spriteEl.style.backgroundPositionY = `${fishSpriteOffsetY(PANEL_FISH[i]!.shape, SPRITE_SCALE)}px`
+      spriteEl.style.backgroundPositionY = `${fishSpriteOffsetY(PANEL_FISH[i]!.id, SPRITE_SCALE)}px`
       const nameEl = document.createElement('span')
       nameEl.className = 'fish-name'
       nameEl.textContent = '???'

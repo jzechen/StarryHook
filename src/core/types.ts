@@ -49,6 +49,8 @@ export interface FishHabitat {
   seasons?: readonly Season[]
   /** 可出现的昼夜集合(硬门);缺省 = 全昼夜 */
   daylight?: readonly Daylight[]
+  /** 可出现的天气集合(硬门);缺省 = 全天气(票 #53 雾影鲈「雨天+夜晚」首用) */
+  weather?: readonly Weather[]
   /** 季节权重倍率(软修正,不归零);缺省 = 1 */
   seasonMul?: Partial<Record<Season, number>>
   /** 昼夜权重倍率(软修正,不归零);缺省 = 1 */
