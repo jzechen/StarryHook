@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { CoreLoop, PLAYER_HALF_H, PLAYER_HALF_W, type UpdateInput } from './coreLoop'
+import { rollQuality, sessionQualityRng } from './quality'
 import { Rng } from './rng'
 import { TUNE, type BarParams } from '../config'
+import type { FishQuality } from './types'
 
 const DT = 1 / 60
 const HOLD: UpdateInput = { holding: true, moveX: 0, moveY: 0 }
@@ -224,6 +226,74 @@ describe('核心循环状态机(接缝:CoreLoop)', () => {
       if (fishAtBite(s, false) === 'shandiansuo') light++
     }
     expect(full).toBeGreaterThan(light)
+  })
+})
+
+describe('渔获品质(接缝:结算沿 roll,独立派生种子,票 #39 spec §4.2)', () => {
+  /** 一竿打到结算:fullPower 蓄满抛竿,否则一帧轻点(power = 0);返回结果(未咬钩/脱钩 = null) */
+  function fishOnce(
+    seed: number,
+    fullPower: boolean,
+  ): { loop: CoreLoop; caught: boolean; quality: FishQuality } | null {
+    const l = newLoop(seed)
+    if (fullPower) {
+      l.update(DT, HOLD)
+      run(l, 1, HOLD)
+      l.update(DT, IDLE)
+    } else {
+      l.update(DT, HOLD)
+      l.update(DT, IDLE)
+    }
+    expect(l.phase).toBe('waiting')
+    runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
+    if (l.fish === null) return null
+    l.update(DT, HOLD) // 咬钩窗口内起竿
+    runUntil(l, 60, HOLD, x => x.phase === 'caught' || x.phase === 'escaped')
+    return { loop: l, caught: l.phase === 'caught', quality: l.caughtQuality }
+  }
+
+  it('捕获结算沿 roll 品质:caughtQuality 落在三档内,同种子同输入可复现', () => {
+    for (let seed = 1; seed <= 30; seed++) {
+      const a = fishOnce(seed, true)
+      const b = fishOnce(seed, true)
+      expect(b!.caught).toBe(a!.caught)
+      expect(b!.quality).toBe(a!.quality)
+      if (a!.caught) {
+        expect(a!.quality === 'normal' || a!.quality === 'silver' || a!.quality === 'gold').toBe(true)
+        // 得分/图鉴轨不受品质影响:捕获得分恒 = 鱼分值(期望值来自目录,独立来源)
+        expect(a!.loop.score).toBe(a!.loop.fish!.score)
+      }
+    }
+  })
+
+  it('品质 roll 走独立派生种子:首次捕获的品质 = sessionQualityRng 首签(主序列不含品质抽)', () => {
+    let checked = 0
+    for (let seed = 1; seed <= 60 && checked < 10; seed++) {
+      const r = fishOnce(seed, true)
+      if (!r?.caught) continue
+      expect(r.quality).toBe(rollQuality(sessionQualityRng(seed), 1))
+      checked++
+    }
+    expect(checked).toBeGreaterThanOrEqual(5)
+  })
+
+  it('蓄力越高星级概率越高:固定 120 种子下,蓄满捕获的银/金星占比高于轻抛', () => {
+    const starRate = (fullPower: boolean): { stars: number; caught: number } => {
+      let stars = 0
+      let caught = 0
+      for (let seed = 1; seed <= 120; seed++) {
+        const r = fishOnce(seed, fullPower)
+        if (!r?.caught) continue
+        caught++
+        if (r.quality !== 'normal') stars++
+      }
+      return { stars, caught }
+    }
+    const full = starRate(true)
+    const tap = starRate(false)
+    expect(full.caught).toBeGreaterThan(30) // 两种蓄力下都有足量捕获样本
+    expect(tap.caught).toBeGreaterThan(30)
+    expect(full.stars / full.caught).toBeGreaterThan(tap.stars / tap.caught)
   })
 })
 

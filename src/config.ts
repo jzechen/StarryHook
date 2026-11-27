@@ -53,6 +53,19 @@ export const TUNE = {
   poolBias: 0.9,
   /** 浓饵对出鱼权重的修正强度(票 #21):装备生效时 weight ×(1 + richBaitBias × difficulty)——难度 1 ×1.2、难度 3 ×1.6、难度 5 ×2.0,恒 > 1 永不归零 */
   richBaitBias: 0.2,
+  /**
+   * 渔获品质概率表(票 #39,spec §4.2):蓄力既选鱼种、也定品质——
+   * 银星概率 = silverBase + 蓄力 × silverChargeBonus,金星同构,普通 = 余量。
+   * 起步调参:轻抛银 12%/金 3%,蓄满银 30%/金 10%。
+   */
+  quality: {
+    silverBase: 0.12,
+    silverChargeBonus: 0.18,
+    goldBase: 0.03,
+    goldChargeBonus: 0.07,
+    /** 品质卖价倍率:卖价 = 鱼分值 × 倍率(银 ×1.5、金 ×2 量级;半数分值四舍五入到整数金币) */
+    sellMul: { normal: 1, silver: 1.5, gold: 2 },
+  },
   world: {
     /** 会话天气为雨的概率(会话开始一次抽样,会话内恒定;晴 = 1 − 该值) */
     rainChance: 0.3,

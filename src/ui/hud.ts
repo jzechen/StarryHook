@@ -2,6 +2,7 @@ import type { CoreLoop } from '../core/coreLoop'
 import type { TimedBestStore } from '../core/timedBest'
 import type { EnvState } from '../core/types'
 import { envBadgeText } from './envBadgeText'
+import { catchSettlementText } from './roundSettlementText'
 import { topBarScores } from './topBarScores'
 
 /**
@@ -162,7 +163,10 @@ export class Hud {
         hint = '按住或连点,让绿条罩住鱼!'
         break
       case 'caught':
-        hint = core.fish ? `钓到了「${core.fish.name}」 +${core.fish.score} 分!` : '钓到了!'
+        // 捕获结算文本(票 #39):文案派生单源 catchSettlementText,银/金星渔获注品质
+        hint = core.fish
+          ? catchSettlementText(core.fish.name, core.fish.score, core.caughtQuality)
+          : '钓到了!'
         break
       case 'escaped':
         hint = '跑掉了……再来一竿'

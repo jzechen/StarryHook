@@ -91,6 +91,16 @@
       .shop-item .shop-buy:disabled { opacity: .4; cursor: not-allowed; }
       #shop-feedback { margin-top: 8px; opacity: .95; }
       #shop-feedback[hidden] { display: none; }
+      /* 渔获区块(票 #39,spec §4.3):余额下方常驻收购位,行与卖出钮沿用
+         .shop-item/.shop-buy 同族;空包占位与行同底色,靠降不透明度区分层级 */
+      #shop-catch { margin-top: 10px; }
+      .shop-section-title { opacity: .9; }
+      #shop-catch-list { margin-top: 6px; display: grid; gap: 6px; }
+      #shop-catch-empty {
+        margin-top: 6px; padding: 7px 12px; border-radius: 9px;
+        background: rgba(23, 80, 107, .35); opacity: .7;
+      }
+      #shop-catch-empty[hidden] { display: none; }
       #collection-panel {
         pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 292px;
         background: rgba(12, 47, 63, .92);
@@ -200,8 +210,15 @@
           <b id="shop-coins"></b><!-- 金币余额(GLOSSARY 金币)常驻面板头,初始文本由 ShopPanel 依钱包写入 -->
           <button id="shop-close" type="button" class="pill" aria-label="关闭商店">✕ 关闭</button>
         </div>
+        <!-- 渔获区块(票 #39,spec §4.3 商店摊位兼收购):余额旁常驻,按(鱼种 × 品质)堆叠,
+             行内「卖 1 / 全卖」,卖出走 wallet.earn(组合根接线);空包给占位提示 -->
+        <div id="shop-catch">
+          <div class="shop-section-title">渔获</div>
+          <div id="shop-catch-list"></div><!-- 行由 ShopPanel 依背包堆叠生成:目录序 × 品质序,星标缀在鱼名后 -->
+          <div id="shop-catch-empty" hidden>背包里还没有渔获</div>
+        </div>
         <div id="shop-list"></div><!-- 行由 ShopPanel 依竿表(RODS)与鱼饵表(BAITS)生成:竿三档 + 香饵 + 浓饵(均含购买,饵行含装备切换与「装备中」尾注) -->
-        <div id="shop-feedback" hidden></div><!-- 购买反馈:面板内行内提示,不用 alert -->
+        <div id="shop-feedback" hidden></div><!-- 购买/卖出反馈:面板内行内提示,不用 alert -->
       </div>
       <div id="mode-panel" hidden>
         <div class="panel-head">

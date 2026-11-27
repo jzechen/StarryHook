@@ -4,10 +4,19 @@ import { stepCatchBar } from './catchBar'
 import { FISH } from './fishCatalog'
 import { computePoolWeights } from './fishPool'
 import { stepFish } from './fishMotion'
+import { rollQuality, sessionQualityRng } from './quality'
 import type { Rng } from './rng'
 import { DEFAULT_AREA, waterAreaOf } from './waterAreas'
 import { daylightOf, seasonOf, sessionWeather } from './worldEnv'
-import type { EnvState, FishDef, LoopPhase, MinigameState, WaterAreaId, Weather } from './types'
+import type {
+  EnvState,
+  FishDef,
+  FishQuality,
+  LoopPhase,
+  MinigameState,
+  WaterAreaId,
+  Weather,
+} from './types'
 
 export interface UpdateInput {
   /** 指针/空格是否按住 */
@@ -97,6 +106,11 @@ export class CoreLoop {
   castX = PLAYER_HALF_W
   castY = PLAYER_HALF_H
   fish: FishDef | null = null
+  /**
+   * 本次捕获的渔获品质(票 #39):捕获结算沿由独立派生种子的 Rng roll,
+   * 捕获边沿被组合根消费(渔获入包);非捕获沿保持普通档。
+   */
+  caughtQuality: FishQuality = 'normal'
   /** 响应窗口剩余秒数 */
   biteWindow = 0
   mg: MinigameState | null = null
@@ -120,6 +134,8 @@ export class CoreLoop {
   /** 交互点来源(票 #36 注入缝):缺省无交互点(idle 按下无动作);组合根启动时注入一次 */
   private interact: InteractionSource = () => null
   private rng: Rng
+  /** 品质会话 Rng(票 #39):独立派生种子,捕获结算沿每次抽一签;主随机序列一个 draw 不动 */
+  private qualityRng: Rng
   /** 本次抛竿的出鱼权重(蓄力时算出) */
   private pool: number[] = []
   /** 当前竿的绿条参数(默认 = 现行手感;成长系统经 setRodParams 注入) */
@@ -153,6 +169,9 @@ export class CoreLoop {
     // 天气:独立派生种子的 Rng 在会话开始抽样一次——主随机序列一个 draw 都不动,
     // 既有固定种子测试的抽取序列保持逐位一致;同种子 → 同天气(?seed 可复现)
     this.weather = world.weather ?? sessionWeather(rng.seed)
+    // 品质(票 #39):同款独立派生种子 Rng,会话开始派生一次,捕获结算沿每次抽一签
+    // ——主随机序列的抽取次数不增不减,既有固定种子测试逐位不变;同种子 → 同品质序列
+    this.qualityRng = sessionQualityRng(rng.seed)
   }
 
   /** 当前水域(只读;切换走 setWater) */
@@ -309,6 +328,7 @@ export class CoreLoop {
           this.reelT += dt
           if (this.reelT >= TUNE.bite.reelHold) {
             this.fish = null
+            this.caughtQuality = 'normal'
             this.phase = 'idle'
           }
         } else {
@@ -340,6 +360,7 @@ export class CoreLoop {
   resetSession(): void {
     this.score = 0
     this.fish = null
+    this.caughtQuality = 'normal'
     this.mg = null
     this.phase = 'idle'
     // 模式层(票 #23):基线随会话得分同归 0——限时局中重开计分,本局得分 = 0 − 0 连续不出负
@@ -364,6 +385,7 @@ export class CoreLoop {
       case 'waiting':
       case 'bite':
         this.fish = null
+        this.caughtQuality = 'normal'
         this.mg = null
         this.phase = 'idle'
         break
@@ -414,6 +436,7 @@ export class CoreLoop {
     this.waitRemaining = this.rng.range(TUNE.wait.min * scale, TUNE.wait.max * scale)
     this.reelT = 0
     this.fish = null
+    this.caughtQuality = 'normal'
     this.phase = 'waiting'
   }
 
@@ -465,6 +488,10 @@ export class CoreLoop {
       // 不推高 core.best——单局纪录的持久化判定在组合根归零结算处
       // (TimedBestStore.recordIfHigher),两轨各走各的,此处不重复判定。
       if (this.modeId === 'casual') this.best = Math.max(this.best, this.score)
+      // 品质 roll(票 #39,捕获结算沿):独立派生种子的 Rng 抽一签,主随机序列
+      // 一个 draw 都不动;蓄力既选鱼种、也定品质(概率受本次抛竿蓄力驱动),
+      // 只影响卖价,不影响得分/图鉴(得分已在上一行照旧登记)。
+      this.caughtQuality = rollQuality(this.qualityRng, this.power)
     }
     this.settleTime = TUNE.resolution.holdTime
     this.phase = caught ? 'caught' : 'escaped'

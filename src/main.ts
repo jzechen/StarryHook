@@ -4,6 +4,7 @@ import { Application } from 'pixi.js'
 // 不做预载:该包为单文件全量中文字集(woff2 约 600KB),预载会挤占首屏关键资源
 import '@fontsource/fusion-pixel-12px-proportional-sc'
 import { RODS } from './config'
+import { BackpackStore } from './core/backpack'
 import { CollectionStore, type KvStorage } from './core/collection'
 import { CoreLoop } from './core/coreLoop'
 import { FISH } from './core/fishCatalog'
@@ -22,7 +23,7 @@ import { baitBadgeText } from './ui/baitBadgeText'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
 import { countdownBadgeText } from './ui/countdownBadgeText'
-import { baitEffectSource, buyBaitOutcome, equippedBaitView } from './ui/economyWiring'
+import { baitEffectSource, buyBaitOutcome, equippedBaitView, sellFishOutcome } from './ui/economyWiring'
 import { Hud } from './ui/hud'
 import { ModePanel } from './ui/modePanel'
 import { MuteStore } from './ui/muteStore'
@@ -114,8 +115,12 @@ async function main(): Promise<void> {
   core.setRodParams(progression.rod().params)
   hud.setProgression(progression.level(), progression.rod().name)
   // 经济(票 #18):金币/鱼饵钱包,独立键名跨会话持久(损坏按初始状态降级);
-  // 本票接捕获入账与香饵抛竿消耗,商店购竿与购饵 UI 属后续票
+  // 本票接香饵抛竿消耗,商店购竿与购饵 UI 属后续票。
+  // 票 #39 起:金币唯一来源 = 摊位卖鱼 + 宝箱(spec §4.1),捕获不再即时入账
   const wallet = new WalletStore(storage)
+  // 背包(票 #39):渔获按(鱼种 × 品质)堆叠,纯核心 store;kv 持久化与
+  // 背包/储物箱面板归票 #40,本票只接捕获入包与摊位卖鱼
+  const backpack = new BackpackStore(FISH.map(f => f.id))
   // 鱼饵生效(票 #19 香饵 + 票 #21 浓饵;review 修复后两缝合一):核心循环在抛竿时刻
   // (进入 waiting 边沿,core cast 内)调用单一饵效果来源恰好一次,本竿饵消耗恰好一次,
   // 消耗与效果同源产出,不再有调用次序契约:
@@ -153,12 +158,16 @@ async function main(): Promise<void> {
   // 装备切换同样经组合根回调接线 wallet.equip(装备槽一种,切换不清余量)——
   // 面板保持只读消费钱包,写操作全走回调(与购竿/购饵同款纪律)
   const equipBait = (baitId: string): void => wallet.equip(baitId)
+  // 商店摊位兼收购(票 #39,spec §4.3):卖鱼回调接线 sellFishOutcome
+  // (背包取出 + wallet.earn 按分值×品质倍率入账一体),面板保持只读消费背包堆叠
   const shopPanel = new ShopPanel(
     wallet,
     progression,
     buyRodOutcome,
     buyBaitOutcome(wallet),
     equipBait,
+    backpack,
+    sellFishOutcome(backpack, wallet),
     panelExclusion,
   )
   // 模式面板(票 #24):顶栏「模式」入口 + 选择面板(无限休闲/限时挑战 + 单局最高纪录),
@@ -310,9 +319,11 @@ async function main(): Promise<void> {
         sfx.play(sfxForEvent('level-up'))
         hud.setProgression(progression.level(), progression.rod().name)
       }
-      // 经济:按捕获分值入账金币(图鉴 → 经验之后的第三路,三系统无耦合;
-      // 金币 = 鱼分值,非幂等每次都加,跨会话持久)
-      wallet.earn(core.fish.score)
+      // 经济(票 #39 有意规格变更):捕获 → 渔获入背包,不再即时入账金币
+      // (「捕获即得金币」退役;金币唯一来源 = 摊位卖鱼 + 宝箱,spec §4.1——
+      // 经济总量不变、时点后移)。品质由核心在结算沿 roll(独立派生种子),
+      // 组合根只读转接入包;得分/XP/图鉴三路照旧,均不受品质影响。
+      backpack.addFish(fishId, core.caughtQuality)
     }
     // —— 音效:相位边沿触发(映射纯函数查表;静音时播放器空操作)——
     // 抛竿入水 = 进入 waiting 边沿;咬钩 = 进入 bite 边沿;捕获/脱钩 = 结算相位边沿。
