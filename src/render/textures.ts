@@ -1,6 +1,7 @@
 import { Assets, Rectangle, Texture } from 'pixi.js'
-import type { FishDef, Facing } from '../core/types'
-import { FISH_FRAME_COUNT, FISH_FRAME_SIZE, FISH_SHAPE_ROW } from './fishAtlas'
+import { FISH } from '../core/fishCatalog'
+import type { Facing } from '../core/types'
+import { FISH_FRAME_COUNT, FISH_FRAME_SIZE } from './fishAtlas'
 
 /**
  * 场景纹理:素材文件 → 图集切片的唯一入口(ADR-0002 精灵化)。
@@ -72,8 +73,8 @@ export interface SceneTextures {
   farmerStand: Texture
   /** 浮标:单个精灵贴图 */
   bobber: Texture
-  /** 鱼精灵:每种鱼 2 帧游动动画(帧 0 = 常态),按鱼形取用 */
-  fishFrames: Record<FishDef['shape'], Texture[]>
+  /** 鱼精灵:每种鱼 2 帧游动动画(帧 0 = 常态),按鱼种 id 取用(票 #53 行序契约) */
+  fishFrames: Record<string, Texture[]>
 }
 
 /** 从纹理源切出单帧 */
@@ -121,16 +122,10 @@ export async function loadSceneTextures(): Promise<SceneTextures> {
   ])
   const waveRows = sliceGrid(waveSheet.source, 4, WAVE_FRAME_COUNT, TILE, TILE)
   const charRows = sliceGrid(chars.source, 4, PLAYER_FRAME_COUNT, TILE, TILE)
-  // 鱼图集:行 = 鱼(行序契约见 fishAtlas.ts),列 = 帧;逐鱼显式取行,
-  // core 鱼形全集与图集行序的对应关系由 Record 类型兜底(缺行/多行都报类型错)
-  const fishRows = sliceGrid(fishAtlas.source, Object.keys(FISH_SHAPE_ROW).length, FISH_FRAME_COUNT, FISH_FRAME_SIZE, FISH_FRAME_SIZE)
-  const fishFrames = {
-    slim: fishRows[FISH_SHAPE_ROW.slim],
-    round: fishRows[FISH_SHAPE_ROW.round],
-    heavy: fishRows[FISH_SHAPE_ROW.heavy],
-    puff: fishRows[FISH_SHAPE_ROW.puff],
-    bolt: fishRows[FISH_SHAPE_ROW.bolt],
-  }
+  // 鱼图集:行 = 鱼种(目录序,行序契约见 fishAtlas.ts),列 = 帧;
+  // 按目录逐鱼取行,行数 = 目录长度(图集行数与之同步,生成管线契约测试钉定)
+  const fishRows = sliceGrid(fishAtlas.source, FISH.length, FISH_FRAME_COUNT, FISH_FRAME_SIZE, FISH_FRAME_SIZE)
+  const fishFrames = Object.fromEntries(FISH.map((fish, index) => [fish.id, fishRows[index]!]))
   return {
     waterFrames: sliceStrip(flow.source, WATER_FRAME_COUNT, TILE, TILE),
     grassTile: slice(grass.source, new Rectangle(0, 0, TILE, TILE)),

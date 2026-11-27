@@ -103,8 +103,15 @@ function daylightSegment(habitat: FishHabitat): string | null {
   return softSegment(DAYLIGHT_ORDER, habitat.daylightMul, DAYLIGHT_LABELS, '、', '加成', '较少')
 }
 
-/** 天气段:无硬门域,仅看 weatherMul(「雨天加成」);无区分 → null */
+/**
+ * 天气段:硬门(weather 真子集,票 #53 雾影鲈/霜枪狗鱼首用)→「仅雨天」;
+ * 否则看 weatherMul(「雨天加成」);均无 → null。(硬门优先于软修正,同季节/昼夜段)
+ */
 function weatherSegment(habitat: FishHabitat): string | null {
+  const gate = habitat.weather
+  if (gate && gate.length > 0 && gate.length < WEATHER_ORDER.length) {
+    return '仅' + canonicalOf(WEATHER_ORDER, gate).map(w => WEATHER_LABELS[w]).join('、')
+  }
   return softSegment(WEATHER_ORDER, habitat.weatherMul, WEATHER_LABELS, '、', '加成', '较少')
 }
 

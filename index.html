@@ -224,7 +224,12 @@
       }
       button.storage-move:hover:enabled { filter: brightness(1.06); }
       #storage-hint { margin-top: 10px; opacity: .7; }
-      #collection-panel { width: 352px; }
+      /* 图鉴面板(票 #53 扩容 18 行):加 max-height 滚动壳,行序超出视口可滚
+         (与背包/储物箱同款;面板公共壳的 overflow:hidden 由此逐面板放行) */
+      #collection-panel {
+        width: 352px;
+        max-height: calc(100vh - 76px); overflow-y: auto;
+      }
       #collection-panel[hidden] { display: none; }
       /* 公告板面板(票 #55,spec 内容扩充「公告板与订单」):河谷公告板交互点 E 开,
          木框小面板(壳同族);当前订单一行(鱼种 × 品质门槛 × 数量 + 酬金与持有进度)
@@ -254,16 +259,16 @@
       .fish-item .fish-habitat { flex: 1 1 100%; font-size: 12px; opacity: .7; }
       .fish-item.locked { opacity: .45; color: var(--ui-text-dim); }
       .fish-item.locked .fish-detail { font-size: 12px; }
-      /* 条目鱼精灵(票 #11):fish-atlas.png 作 CSS sprite,2x 放大 + pixelated;
+      /* 条目鱼精灵(票 #11,票 #53 扩容):fish-atlas.png 作 CSS sprite,2x 放大 + pixelated;
          2 帧游动动画与小游戏同周期(0.2s/帧);background-position-y 由
-         collectionPanel.ts 消费 fishAtlas.ts 的 fishSpriteOffsetY 逐条写入。
-         本组尺寸 32px、背景尺寸 64×160、帧位移 -32px 均为「16px 基线 × 2x」的
+         collectionPanel.ts 消费 fishAtlas.ts 的 fishSpriteOffsetY 逐条写入(行 = 鱼种)。
+         本组尺寸 32px、背景尺寸 64×576、帧位移 -32px 均为「16px 基线 × 2x」的
          CSS 侧同值,倍率单源见 collectionPanel.ts 的 SPRITE_SCALE(注释互指) */
       .fish-sprite {
         flex: none; align-self: center;
         width: 32px; height: 32px;
         background-image: url('/sprites/fish-atlas.png');
-        background-size: 64px 160px; /* 32×80 图集按 2x 缩放 */
+        background-size: 64px 576px; /* 32×288 图集(18 种鱼)按 2x 缩放 */
         background-repeat: no-repeat;
         image-rendering: pixelated;
         animation: fish-swim .4s linear infinite;

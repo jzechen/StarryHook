@@ -277,11 +277,11 @@ describe('渔获品质(接缝:结算沿 roll,独立派生种子,票 #39 spec §4
     expect(checked).toBeGreaterThanOrEqual(5)
   })
 
-  it('蓄力越高星级概率越高:固定 120 种子下,蓄满捕获的银/金星占比高于轻抛', () => {
+  it('蓄力越高星级概率越高:固定 400 种子下,蓄满捕获的银/金星占比高于轻抛(票 #53:鱼池扩容后轻抛捕获率下降,样本量随之上调,方向断言不变)', () => {
     const starRate = (fullPower: boolean): { stars: number; caught: number } => {
       let stars = 0
       let caught = 0
-      for (let seed = 1; seed <= 120; seed++) {
+      for (let seed = 1; seed <= 400; seed++) {
         const r = fishOnce(seed, fullPower)
         if (!r?.caught) continue
         caught++
