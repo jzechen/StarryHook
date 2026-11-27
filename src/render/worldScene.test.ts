@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Texture } from 'pixi.js'
+import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js'
 import { describe, expect, it, vi } from 'vitest'
 import type { CoreLoop } from '../core/coreLoop'
 import type { LoopPhase } from '../core/types'
@@ -39,6 +39,7 @@ function fakeTextures(): SceneTextures {
     playerFrames: { down: n(4), up: n(4), left: n(4), right: n(4) },
     townTiles: n(132),
     chestFrames: { closed: tex(), open: tex() },
+    farmerStand: tex(),
     bobber: tex(),
     fishFrames: { slim: n(2), round: n(2), heavy: n(2), puff: n(2), bolt: n(2) },
   }
@@ -341,5 +342,278 @@ describe('进度流光(票 #43:≥70% 启动、回落即停,渲染层接线)', (
     const at = instructionsAt(0.7)
     expect(near).toBe(below)
     expect(at).toBeGreaterThan(below)
+  })
+})
+
+describe('人物程序化细节接线(票 #49:行走 bob + 待机呼吸,接缝 = player-body 精灵)', () => {
+  /** 60fps 驱动 n 帧(每帧 dt=1/60,t 自增);opts.move = 每帧东移 70px/s × dt */
+  function drive(
+    worldRoot: Container,
+    scene: WorldScene,
+    core: CoreLoop,
+    n: number,
+    opts: { move?: boolean; t0?: number } = {},
+  ): { body: Sprite; ys: number[]; textures: Texture[]; scaleYs: number[] } {
+    const body = findLabeled(worldRoot, 'player-body') as unknown as Sprite
+    const ys: number[] = []
+    const textures: Texture[] = []
+    const scaleYs: number[] = []
+    const t0 = opts.t0 ?? 0
+    for (let f = 0; f < n; f++) {
+      if (opts.move) core.px += 70 / 60
+      scene.update(core, t0 + f / 60, 1 / 60)
+      ys.push(body.y)
+      textures.push(body.texture)
+      scaleYs.push(body.scale.y)
+    }
+    return { body, ys, textures, scaleYs }
+  }
+
+  it('行走 bob:匀速行走时脚部点竖直起伏(最高抬 2px、着地回基准),朝向帧照常轮换', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const core = fakeCore('idle')
+    const baseline = 7 // PLAYER_FOOT_OFFSET:静止时贴图底边相对脚部点的偏移
+    const { ys, textures } = drive(sceneRoot, scene, core, 40, { move: true })
+    expect(Math.max(...ys)).toBe(baseline)
+    expect(Math.min(...ys)).toBe(baseline - 2)
+    expect(new Set(textures).size).toBe(4) // 4 帧都出现(相位按位移推进)
+  })
+
+  it('静止不 bob(位移 0 时 y 只在基准/呼吸微抬两档);呼吸 1.6s 周期内两态可辨', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const core = fakeCore('idle')
+    const idle = drive(sceneRoot, scene, core, 120, { t0: 0 })
+    // 呼吸两态:放松(基准 7)与吸气(整像素上抬 1 → 6);整周期回到放松
+    expect(new Set(idle.ys).size).toBeLessThanOrEqual(2)
+    expect(idle.ys[0]).toBe(7)
+    expect(Math.min(...idle.ys)).toBe(6)
+    expect(idle.ys[96]).toBe(7) // 96 帧 = 1.6s 整周期
+    expect(idle.scaleYs[0]).toBe(1)
+    expect(Math.max(...idle.scaleYs)).toBeCloseTo(1.06, 10)
+    expect(idle.scaleYs[96]).toBeCloseTo(1, 4)
+  })
+
+  it('移动中无呼吸(三态可辨:移动 = bob,静止 = 呼吸)', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const core = fakeCore('idle')
+    const walking = drive(sceneRoot, scene, core, 40, { move: true })
+    for (const s of walking.scaleYs) expect(s).toBe(1)
+  })
+})
+
+describe('持竿姿态接线(票 #49:垂钓锁朝水朝向 + 抛竿前倾,接缝 = player-body 精灵)', () => {
+  /** 村舍池水域矩形中心(玩家在池上方岸边垂钓 → 应朝下) */
+  function pondCenter(): { x: number; y: number } {
+    const wr = village.waterRectPx
+    return { x: wr.x + wr.width / 2, y: wr.y + wr.height / 2 }
+  }
+
+  it('垂钓中渲染朝向锁向水面:核心朝向朝上,渲染帧取「朝水」行的帧 0', () => {
+    const { app, world } = fakeApp()
+    const tex = fakeTextures()
+    const scene = new WorldScene(app, tex, village)
+    const sceneRoot = world()
+    const core = fakeCore('waiting')
+    core.facing = 'up' // 走进钓位时的行进朝向
+    // 玩家站在水域上方岸边:瞄准点在下方 → 渲染应朝下(与核心朝向不同)
+    const c = pondCenter()
+    core.px = c.x
+    core.py = c.y - 40
+    core.castX = core.px
+    core.castY = core.py
+    scene.update(core, 0, 0.016)
+    const body = findLabeled(sceneRoot, 'player-body') as unknown as Sprite
+    expect(body.texture).toBe(tex.playerFrames.down[0])
+  })
+
+  it('idle 不锁朝向:同一站位渲染回核心朝向', () => {
+    const { app, world } = fakeApp()
+    const tex = fakeTextures()
+    const scene = new WorldScene(app, tex, village)
+    const sceneRoot = world()
+    const core = fakeCore('idle')
+    core.facing = 'up'
+    scene.update(core, 0, 0.016)
+    const body = findLabeled(sceneRoot, 'player-body') as unknown as Sprite
+    expect(body.texture).toBe(tex.playerFrames.up[0])
+  })
+
+  it('抛竿前倾:朝右垂钓时抛竿中段 rotation 为正(约 0.12rad),落水后回正', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const core = fakeCore('charging')
+    const c = pondCenter()
+    core.px = c.x - 40 // 池西侧 → 朝水 = 朝右
+    core.py = c.y
+    core.facing = 'left'
+    core.castX = core.px
+    core.castY = core.py
+    scene.update(core, 0, 0.016)
+    const body = findLabeled(sceneRoot, 'player-body') as unknown as Sprite
+    // charging 已锁朝水(朝右)
+    expect(body.rotation).toBe(0)
+
+    core.phase = 'waiting' // 抛竿沿:castT 归零起飞
+    scene.update(core, 0.016, 0.016)
+    // 前倾中段采样(峰值在 castT=0.5 ≈ 0.11s 处)
+    let peak = 0
+    for (let f = 2; f <= 14; f++) {
+      scene.update(core, f * 0.016, 0.016)
+      peak = Math.max(peak, body.rotation)
+    }
+    expect(peak).toBeGreaterThan(0.05)
+    // 0.22s 飞行结束:回正
+    for (let f = 15; f < 20; f++) scene.update(core, f * 0.016, 0.016)
+    expect(body.rotation).toBe(0)
+  })
+
+  it('结算相位(caught/escaped)保持持竿朝向,不中途翻回行进朝向', () => {
+    const { app, world } = fakeApp()
+    const tex = fakeTextures()
+    const scene = new WorldScene(app, tex, village)
+    const sceneRoot = world()
+    const core = fakeCore('waiting')
+    const c = pondCenter()
+    core.px = c.x
+    core.py = c.y - 40
+    core.facing = 'left'
+    core.castX = core.px
+    core.castY = core.py
+    scene.update(core, 0, 0.016)
+    core.phase = 'caught'
+    scene.update(core, 0.016, 0.016)
+    const body = findLabeled(sceneRoot, 'player-body') as unknown as Sprite
+    expect(body.texture).toBe(tex.playerFrames.down[0])
+  })
+
+  it('查询点贴住水 cell(无他 cell 可瞄):保持当前朝向,不静默翻成 up', () => {
+    // 村舍池缩成单 cell,玩家站在该 cell 内:瞄准点即自身(零向量),
+    // 朝向量化无解 → rodFacing 不动,渲染帧取核心朝向(帧 0)
+    const water = new Array(village.width * village.height).fill(0)
+    water[13 * village.width + 26] = 1
+    const pond = { ...village, water, waterRectPx: { x: 26 * 16, y: 13 * 16, width: 16, height: 16 } }
+    const { app, world } = fakeApp()
+    const tex = fakeTextures()
+    const scene = new WorldScene(app, tex, pond)
+    const sceneRoot = world()
+    const core = fakeCore('charging')
+    core.px = 26 * 16 + 8
+    core.py = 13 * 16 + 8
+    core.facing = 'down'
+    core.castX = core.px
+    core.castY = core.py
+    scene.update(core, 0, 0.016)
+    const body = findLabeled(sceneRoot, 'player-body') as unknown as Sprite
+    expect(body.texture).toBe(tex.playerFrames.down[0])
+  })
+})
+
+describe('脚下影子(票 #49:椭圆半透明,贴地随 bob 微缩淡,接缝 = player-shadow Graphics)', () => {
+  it('影子常驻(站立/行走/垂钓都在),钉在角色容器内地面线(不随 bob 抬起)', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const core = fakeCore('idle')
+    scene.update(core, 0, 0.016)
+    const shadow = findLabeled(sceneRoot, 'player-shadow') as Graphics
+    expect(shadow.visible).toBe(true)
+
+    // 行走至 bob 最高点:身体 y < 基准,影子在容器内的位置不动(贴地)
+    const shadowY = shadow.position.y
+    const body = findLabeled(sceneRoot, 'player-body') as unknown as Sprite
+    let sawLift = false
+    for (let f = 1; f <= 40; f++) {
+      core.px += 70 / 60
+      scene.update(core, f * 0.016, 0.016)
+      if (body.y < 7) sawLift = true
+      expect(shadow.position.y).toBe(shadowY)
+    }
+    expect(sawLift).toBe(true)
+  })
+
+  it('影子几何随 bob 缩淡:行走中椭圆半宽随抬升收窄(指令重画,半径变化)', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const core = fakeCore('idle')
+    // 静止:影子按基准几何绘制
+    scene.update(core, 0, 0.016)
+    const shadow = findLabeled(sceneRoot, 'player-shadow') as Graphics
+    const restInstructions = shadow.context.instructions.length
+    expect(restInstructions).toBeGreaterThan(0)
+    // 行走中仍每帧重画且不累积(指令数稳定 = clear → 重画)
+    for (let f = 1; f <= 30; f++) {
+      core.px += 70 / 60
+      scene.update(core, f * 0.016, 0.016)
+    }
+    expect(shadow.context.instructions.length).toBe(restInstructions)
+  })
+})
+
+describe('摊位农夫真件(票 #49:#36 替身退役,接缝 = worldScene farmer 精灵)', () => {
+  it('农夫立绘用 Tiny Farm 真件纹理(非角色帧替身),无暖色 tint', () => {
+    const { app, world } = fakeApp()
+    const tex = fakeTextures()
+    new WorldScene(app, tex, village)
+    const sceneRoot = world()
+    // 村舍图有摊位物件(136,112):农夫立于摊板后一格
+    let farmer: Sprite | undefined
+    const walk = (node: Container): void => {
+      if (!farmer && node instanceof Sprite && node.texture === tex.farmerStand) farmer = node
+      for (const child of node.children) walk(child)
+    }
+    walk(sceneRoot)
+    expect(farmer).toBeDefined()
+    expect(farmer!.tint).toBe(0xffffff)
+    expect(farmer!.position.x).toBe(136)
+    expect(farmer!.position.y).toBe(112 - 16)
+  })
+})
+
+describe('出口接近浮签(接缝:WorldScene.update 第 5 参,票 #46:被动无键帽)', () => {
+  const HINT = { x: 888, y: 208, label: '东 · 河谷 →' }
+
+  function findWarpPrompt(root: Container): Container {
+    let found: Container | undefined
+    const walk = (node: Container): void => {
+      if (node.label === 'warp-prompt') found = node
+      for (const child of node.children) walk(child)
+    }
+    walk(root)
+    if (!found) throw new Error('场景树里没有 warp-prompt 容器')
+    return found
+  }
+
+  it('idle 且组合根供给接近签:显示,位置为整数像素(挂 world 层随相机滚动)', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    scene.update(fakeCore('idle'), 0.3, 0.016, null, HINT)
+    const prompt = findWarpPrompt(world())
+    expect(prompt.visible).toBe(true)
+    expect(Number.isInteger(prompt.position.x)).toBe(true)
+    expect(Number.isInteger(prompt.position.y)).toBe(true)
+  })
+
+  it('未传(组合根已判空:面板打开/无接近出口):隐藏', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    scene.update(fakeCore('idle'), 0, 0.016)
+    expect(findWarpPrompt(world()).visible).toBe(false)
+  })
+
+  it('垂钓循环中(非 idle)强制隐藏:渲染层兜底,与组合根双保险', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    for (const phase of ['charging', 'waiting', 'bite', 'minigame', 'caught', 'escaped'] as const) {
+      scene.update(fakeCore(phase), 0, 0.016, null, HINT)
+      expect(findWarpPrompt(world()).visible).toBe(false)
+    }
   })
 })

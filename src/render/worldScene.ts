@@ -1,11 +1,14 @@
 import { Application, Container, Graphics, Sprite, Text, TilingSprite } from 'pixi.js'
+import { advanceWalkPhase, breathPose, castLeanPose, facingToward, shadowPose, walkBobOffset } from './characterMotion'
 import { computeCamera } from './camera'
 import { AREA_PALETTES } from './areaPalette'
 import { DEFAULT_AREA } from '../core/waterAreas'
 import type { CoreLoop } from '../core/coreLoop'
-import type { LoopPhase, WaterAreaId } from '../core/types'
+import type { Facing, LoopPhase, WaterAreaId } from '../core/types'
 import { BASE_GROUND_GID, waterFillsBounds, type WorldMapData } from '../world/worldMap'
-import { InteractionPrompt } from './interactionPrompt'
+import { waterAimPoint } from '../world/waterDistance'
+import type { WarpHint } from '../world/warpHint'
+import { InteractionPrompt, PassivePrompt } from './interactionPrompt'
 import { ScreenShake, shakeTrigger } from './screenShake'
 import { SplashLayer } from './splash'
 import { shimmerActive, shimmerBand } from './progressShimmer'
@@ -22,7 +25,8 @@ import { FISH_FRAME_COUNT, PLAYER_FRAME_COUNT, TILE, WAVE_FRAME_COUNT, WATER_FRA
  * 河谷带状走逐 cell 水精灵)→ 岸线泡沫(逐 tile,由水 cell 邻接现算,
  * 不入地图数据)→ 装饰(deco 层逐 tile Sprite + 视口剔除)→ 实体
  * (角色/浮标/鱼线/蓄力条/咬钩「!」)→ 捕获水花(票 #43 粒子池)→
- * 交互浮签 → 覆盖 UI(小游戏面板 + 进度流光,屏空间,不随相机滚动);
+ * 交互浮签 / 出口接近浮签(票 #46,被动无键帽)→ 覆盖 UI(小游戏面板 +
+ * 进度流光,屏空间,不随相机滚动);
  * 屏幕 shake(票 #43)以整数偏移叠加在两容器的平移上。
  *
  * 坐标系:核心循环输出世界像素(脚部点);画布固定 480×270 逻辑分辨率
@@ -35,12 +39,8 @@ import { FISH_FRAME_COUNT, PLAYER_FRAME_COUNT, TILE, WAVE_FRAME_COUNT, WATER_FRA
 const WATER_FRAME_PERIOD = 0.15
 /** 岸线波纹帧轮换周期(秒)——8 帧一轮 2.4s,浪涌节奏(沿 pondScene) */
 const WAVE_FRAME_PERIOD = 0.3
-/** 行走动画帧周期(秒)——4 帧一轮(沿 pondScene) */
-const WALK_FRAME_PERIOD = 0.14
 /** 小游戏鱼精灵帧周期(秒)——2 帧交替(沿 pondScene) */
 const FISH_FRAME_PERIOD = 0.2
-/** 判定「在移动」的每帧最小位移(逻辑像素) */
-const MOVE_EPS = 0.1
 /** 角色脚底相对核心坐标点(px/py)的偏移:贴图底边落在脚部点 */
 const PLAYER_FOOT_OFFSET = 7
 /** 波纹贴片土侧宽度:泡沫带起点距水边的像素数(沿 pondScene) */
@@ -133,11 +133,15 @@ export class WorldScene {
   private line = new Graphics()
   private chargeBar = new Graphics()
   private player = new Container()
+  /** 脚下影子(票 #49):贴地椭圆,随 bob 微缩淡;画在角色精灵之下 */
+  private shadow = new Graphics()
   private playerSprite: Sprite
   private bobberSprite = new Container()
   private bang: Text
   /** 交互浮签(票 #36):画布内像素浮签,挂 world 层随相机滚动 */
   private prompt = new InteractionPrompt()
+  /** 出口接近浮签(票 #46):被动无键帽变体,同族视觉,挂 world 层 */
+  private warpPrompt = new PassivePrompt()
   /** 捕获水花(票 #43):轻量 sprite 粒子池,挂 world 层,坐标 = 鱼漂世界坐标 */
   private splash = new SplashLayer()
   /** 屏幕 shake(票 #43):相机偏移量,像素取整后加到世界/覆盖 UI 两容器 */
@@ -154,9 +158,11 @@ export class WorldScene {
   private biteT = 0
   /** 最近一次应用的水域色调(变化才重设 tint) */
   private renderedArea: WaterAreaId | null = null
-  // —— 角色动画状态(朝向由核心持有,票 #35;渲染侧只管行走计时) ——
-  /** 行走动画计时;静止时归零回到待机帧 */
-  private walkT = 0
+  // —— 角色动画状态(朝向由核心持有,票 #35;行走相位/bob/呼吸曲线在 characterMotion,票 #49) ——
+  /** 行走相位(按实际位移推进,票 #49);静止时归零回到待机帧 */
+  private walkPhase = 0
+  /** 持竿朝向(票 #49):垂钓中锁「朝水」;回 idle 释放,渲染回核心朝向 */
+  private rodFacing: Facing | null = null
   private prevPx = -1
   private prevPy = -1
 
@@ -228,13 +234,12 @@ export class WorldScene {
       this.chestSprites.push({ chestId, sprite })
     }
 
-    // 静态农夫(票 #36):摊位交互点后一格的摊主立绘,画在 deco 之上、角色之下
-    // (玩家从摊前走过时在前景)。素材库无 Kenney 农夫件(Tiny Farm 未入库,
-    // tiny-town 无角色 tile)——沿用角色待机帧 + 暖色调偏移与玩家区分,
-    // 贴图补齐后此处只换纹理。坐标随摊位物件走(数据驱动,不写死像素)。
-    this.farmer = new Sprite(textures.playerFrames.down[0]!)
+    // 静态农夫(票 #36 立项,票 #49 换真件):摊位交互点后一格的摊主立绘,
+    // 画在 deco 之上、角色之下(玩家从摊前走过时在前景)。素材 = Tiny Farm
+    // tile 0109 派生立绘(textures.farmerStand,#36 的暖色 tint 替身就此退役),
+    // 坐标随摊位物件走(数据驱动,不写死像素)。
+    this.farmer = new Sprite(textures.farmerStand)
     this.farmer.anchor.set(0.5, 1)
-    this.farmer.tint = 0xc9a06a
     this.farmer.visible = false
     const stallObj = map.objects.find(o => o.type === 'stall')
     if (stallObj) {
@@ -266,11 +271,17 @@ export class WorldScene {
     this.mgFishSprite.anchor.set(0.5)
     this.mgFishSprite.visible = false
 
-    // 角色:脚底锚在核心坐标点下方(沿 pondScene)
+    // 角色:脚底锚在核心坐标点下方(沿 pondScene);程序化姿态(bob/呼吸/
+    // 前倾)直接应用到该精灵,label 供场景树测试定位(票 #49)
     this.playerSprite = new Sprite(textures.playerFrames.down[0]!)
     this.playerSprite.anchor.set(0.5, 1)
     this.playerSprite.position.set(0, PLAYER_FOOT_OFFSET)
-    this.player.addChild(this.playerSprite)
+    this.playerSprite.label = 'player-body'
+    // 脚下影子(票 #49):先画影子再画角色(精灵压住影子后半),位置 = 角色
+    // 容器内的地面线(脚底处),不随 bob 抬起——人抬起时影子留在地面读作离地
+    this.shadow.label = 'player-shadow'
+    this.shadow.position.set(0, PLAYER_FOOT_OFFSET)
+    this.player.addChild(this.shadow, this.playerSprite)
 
     app.stage.addChild(this.world, this.ui)
     this.world.addChild(
@@ -289,6 +300,7 @@ export class WorldScene {
       this.bang,
       this.splash.container,
       this.prompt.container,
+      this.warpPrompt.container,
     )
     this.ui.addChild(this.track, this.mgBar, this.mgFishSprite, this.mgProgress)
 
@@ -371,7 +383,13 @@ export class WorldScene {
     })
   }
 
-  update(core: CoreLoop, t: number, dt: number, prompt?: InteractionPromptState | null): void {
+  update(
+    core: CoreLoop,
+    t: number,
+    dt: number,
+    prompt?: InteractionPromptState | null,
+    warpPrompt?: WarpHint | null,
+  ): void {
     const W = this.app.screen.width
     const H = this.app.screen.height
 
@@ -383,13 +401,37 @@ export class WorldScene {
     this.world.position.set(Math.round(-cam.x + shake.x), Math.round(-cam.y + shake.y))
     this.ui.position.set(shake.x, shake.y)
 
+    // 浮标落点(世界像素;钳在水域内):抛竿点向水域中心,远近由蓄力决定。
+    // 提到阶段切换之前计算——抛竿沿的「朝水朝向」要用同一落点(票 #49)
+    const wr = this.map.waterRectPx
+    const ox = core.castX
+    const oy = core.castY
+    const cx = wr.x + wr.width / 2
+    const cy = wr.y + wr.height / 2
+    const k = 0.3 + 0.5 * core.bobberDist
+    const tx = Math.max(wr.x + BOBBER_INSET, Math.min(wr.x + wr.width - BOBBER_INSET, ox + (cx - ox) * k))
+    const ty = Math.max(wr.y + BOBBER_INSET, Math.min(wr.y + wr.height - BOBBER_INSET, oy + (cy - oy) * k))
+
     // 阶段切换检测(渲染侧动画计时)+ juice 触发沿(票 #43):shake 仅
     // 咬钩/捕获两边沿(screenShake.shakeTrigger 单源钉死),水花只随捕获沿
-    // 在鱼漂位置起(spec §5.2 唯二触发点,其余相位零演出)
+    // 在鱼漂位置起(spec §5.2 唯二触发点,其余相位零演出)。
+    // 持竿朝向沿(票 #49):蓄力沿 = 朝最近水面(蓄力时尚无浮标落点);抛竿沿 =
+    // 朝浮标落点;回 idle 释放(垂钓全程锁定,结算相位不翻回行进朝向)
     let caughtEdge = false
     if (core.phase !== this.prevPhase) {
       if (core.phase === 'waiting') this.castT = 0
       if (core.phase === 'bite') this.biteT = 0
+      if (core.phase === 'charging') {
+        const aim = waterAimPoint(this.map, core.px, core.py)
+        // 朝向量化可能无解(瞄准点即自身/零向量):保持当前朝向,不瞎翻
+        const aimFacing = aim ? facingToward(aim.x - core.px, aim.y - core.py) : null
+        if (aimFacing) this.rodFacing = aimFacing
+      }
+      if (core.phase === 'waiting') {
+        const castFacing = facingToward(tx - core.px, ty - core.py)
+        if (castFacing) this.rodFacing = castFacing
+      }
+      if (core.phase === 'idle') this.rodFacing = null
       const shakeKind = shakeTrigger(this.prevPhase, core.phase)
       if (shakeKind) this.shake.trigger(shakeKind)
       caughtEdge = core.phase === 'caught'
@@ -432,29 +474,39 @@ export class WorldScene {
       chest.sprite.texture = this.chestIsOpen(chest.chestId) ? this.textures.chestFrames.open : this.textures.chestFrames.closed
     }
 
-    // 角色朝向与行走:朝向由核心持有(票 #35:过场保持行进方向 + 存档口径
-    // 同源,渲染侧不再自推导);渲染侧只按位移推进行走动画计时
-    if (this.prevPx >= 0) {
-      const dx = core.px - this.prevPx
-      const dy = core.py - this.prevPy
-      if (Math.hypot(dx, dy) > MOVE_EPS) this.walkT += dt
-      else this.walkT = 0
-    }
+    // 角色朝向与行走:朝向由核心持有(票 #35),垂钓中覆盖为持竿朝向(票 #49)。
+    // 行走相位按**实际位移**推进(票 #49:像素驱动 = 步频帧时序对齐移速,
+    // 静止/被挡自动归零回待机);bob/呼吸/前倾曲线出整数像素姿态,应用到
+    // 精灵(锚在脚底:呼吸纵伸向上、bob 抬起离地、前倾绕脚底旋转)
+    let movedPx = 0
+    if (this.prevPx >= 0) movedPx = Math.hypot(core.px - this.prevPx, core.py - this.prevPy)
     this.prevPx = core.px
     this.prevPy = core.py
-    this.playerSprite.texture =
-      this.textures.playerFrames[core.facing][Math.floor(this.walkT / WALK_FRAME_PERIOD) % PLAYER_FRAME_COUNT]!
+    this.walkPhase = advanceWalkPhase(this.walkPhase, movedPx)
+    const walking = this.walkPhase > 0
+    const frame = walking ? Math.floor(this.walkPhase) % PLAYER_FRAME_COUNT : 0
+    // 三态观感(票 #49):移动 = bob;静止 idle = 呼吸;垂钓/结算 = 持竿定身
+    // (朝水朝向 + 抛竿前倾,casterT 与浮标飞行同源)
+    const facing = this.rodFacing ?? core.facing
+    const pose = walking
+      ? { dy: walkBobOffset(this.walkPhase), scaleY: 1, rotation: 0 }
+      : core.phase === 'idle'
+        ? breathPose(t)
+        : castLeanPose(this.castT, facing)
+    this.playerSprite.texture = this.textures.playerFrames[facing][frame]!
+    this.playerSprite.position.y = PLAYER_FOOT_OFFSET + pose.dy
+    this.playerSprite.scale.set(1, pose.scaleY)
+    this.playerSprite.rotation = pose.rotation
     this.player.position.set(Math.round(core.px), Math.round(core.py))
 
-    // 浮标落点:从抛竿点向水域中心,远近由蓄力决定(世界像素;钳在水域内)
-    const wr = this.map.waterRectPx
-    const ox = core.castX
-    const oy = core.castY
-    const cx = wr.x + wr.width / 2
-    const cy = wr.y + wr.height / 2
-    const k = 0.3 + 0.5 * core.bobberDist
-    const tx = Math.max(wr.x + BOBBER_INSET, Math.min(wr.x + wr.width - BOBBER_INSET, ox + (cx - ox) * k))
-    const ty = Math.max(wr.y + BOBBER_INSET, Math.min(wr.y + wr.height - BOBBER_INSET, oy + (cy - oy) * k))
+    // 脚下影子(票 #49):贴地不随容器内位移,几何随 bob 抬升微缩淡
+    // (shadowPose 单源;呼吸是脚不动的纵伸,不算离地,影子不动)
+    const sp = shadowPose(walking ? -walkBobOffset(this.walkPhase) : 0)
+    this.shadow
+      .clear()
+      .ellipse(0, 0, sp.rx, sp.ry)
+      .fill({ color: 0x0b1f12, alpha: sp.alpha })
+
     const showBobber = core.phase !== 'idle' && core.phase !== 'charging'
     let bx = tx
     let by = ty
@@ -528,6 +580,16 @@ export class WorldScene {
       this.prompt.showAt(prompt.x, prompt.y, t)
     } else {
       this.prompt.hide()
+    }
+
+    // 出口接近浮签(票 #46):被动无键帽,锚在出口触发区旁;与交互签同款
+    // 双保险——组合根按「idle ∧ 无面板 ∧ 非过场 ∧ 无交互签」供给,渲染层
+    // 非 idle 强制隐藏(垂钓循环与过场中不显)
+    if (warpPrompt && core.phase === 'idle') {
+      this.warpPrompt.setLabel(warpPrompt.label)
+      this.warpPrompt.showAt(warpPrompt.x, warpPrompt.y, t)
+    } else {
+      this.warpPrompt.hide()
     }
 
     // 钓鱼小游戏面板(右侧;屏空间不随相机滚动;轨道/绿条/进度条几何绘制沿 pondScene)

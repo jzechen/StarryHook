@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { deriveWaterArea, WORLD_MAPS } from './maps'
+import { deriveWaterArea, SCENE_NAMES, WORLD_MAPS } from './maps'
 import { CHESTS } from '../core/chests'
 import { parseInteractionSpots } from './interactions'
-import { warpsOf, type WarpZone } from './warps'
-import { isBlockedCell, waterFillsBounds, type WorldMapData } from './worldMap'
+import { exitCorridorOf, warpsOf, type WarpZone } from './warps'
+import { BASE_GROUND_GID, isBlockedCell, waterFillsBounds, type WorldMapData } from './worldMap'
 
 /**
  * 三图布局与连通(票 #35,spec §1.1/§1.4/§1.5 红线):
@@ -50,6 +50,20 @@ function cellOfPoint(map: WorldMapData, px: number, py: number): [number, number
   return [Math.floor(px / map.tileWidth), Math.floor(py / map.tileWidth)]
 }
 
+/** 出口走廊(票 #46,几何单源 = warps.exitCorridorOf):树墙收边的豁免区 */
+type Corridor = ReturnType<typeof exitCorridorOf>
+
+function inCorridor(c: Corridor, tx: number, ty: number, map: WorldMapData): boolean {
+  const x = tx * map.tileWidth
+  const y = ty * map.tileWidth
+  return x >= c.x0 && x < c.x1 && y >= c.y0 && y < c.y1
+}
+
+/** 收边圈成员(最外圈与第二圈,树墙+围栏) */
+function isRimCell(map: WorldMapData, tx: number, ty: number): boolean {
+  return [0, 1, map.width - 2, map.width - 1].includes(tx) || [0, 1, map.height - 2, map.height - 1].includes(ty)
+}
+
 describe('三图公共不变量(村舍/河谷/湖畔)', () => {
   for (const [mapId, map] of Object.entries(WORLD_MAPS)) {
     it(`[${mapId}] 尺寸 = 60×26 tile(2 屏宽 × 1.5 屏高)`, () => {
@@ -59,14 +73,18 @@ describe('三图公共不变量(村舍/河谷/湖畔)', () => {
       expect(map.heightPx).toBe(416)
     })
 
-    it(`[${mapId}] 外圈收边:最外圈与第二圈(树墙+围栏)全部不可走`, () => {
+    it(`[${mapId}] 外圈收边:最外圈与第二圈(树墙+围栏)全部不可走,唯出口走廊豁免(票 #46 有意放宽)`, () => {
+      const corridors = warpsOf(map).map(w => exitCorridorOf(map, w))
+      const exempt = (tx: number, ty: number): boolean => corridors.some(c => inCorridor(c, tx, ty, map))
       for (let tx = 0; tx < map.width; tx++) {
         for (const ty of [0, 1, map.height - 2, map.height - 1]) {
+          if (exempt(tx, ty)) continue
           expect(isBlockedCell(map, tx, ty)).toBe(true)
         }
       }
       for (let ty = 0; ty < map.height; ty++) {
         for (const tx of [0, 1, map.width - 2, map.width - 1]) {
+          if (exempt(tx, ty)) continue
           expect(isBlockedCell(map, tx, ty)).toBe(true)
         }
       }
@@ -132,6 +150,29 @@ describe('河谷 river.json(河流横带 + 深湾 + 商店摊位)', () => {
     expect(stalls[0]!.name).toBe('商店摊位')
     const [tx, ty] = cellOfPoint(map, stalls[0]!.x, stalls[0]!.y)
     expect(isBlockedCell(map, tx, ty)).toBe(false)
+  })
+
+  it('河谷东路牌立在路北草地 (54,11)(实机验收:原 (54,12) 压行车道北排)', () => {
+    // 路牌 tile(gid 84)字面量落位:路北侧草地,仍贴东出口(warp (912,208));
+    // 行车道 = 东行土路 12–13 两排,牌子带 collision 不得压占任一排
+    const SIGN_GID = 84
+    expect(map.deco[11 * map.width + 54]).toBe(SIGN_GID)
+    expect(map.deco[12 * map.width + 54]).not.toBe(SIGN_GID)
+    expect(isBlockedCell(map, 54, 11)).toBe(true) // 牌子带 collision(叙事物惯例)
+    expect(isBlockedCell(map, 54, 12)).toBe(false)
+    expect(isBlockedCell(map, 54, 13)).toBe(false)
+    // 新位不在东出口触发区、不在出口走廊内(走廊不变量之外的本位兜底)
+    const warp = warpsOf(map).find(w => w.target === 'lake')!
+    const px = 54 * map.tileWidth
+    const py = 11 * map.tileWidth
+    const inZone = px >= warp.x && px < warp.x + warp.width && py >= warp.y && py < warp.y + warp.height
+    const corridor = exitCorridorOf(map, warp)
+    expect(inZone).toBe(false)
+    expect(inCorridor(corridor, 54, 11, map)).toBe(false)
+    // 叙事物件锚在牌 tile 中心(与村舍/湖畔路牌同款约定),物件点随 tile 上移
+    const sign = parseInteractionSpots(map.objects, map.tileWidth).find(s => s.kind === 'sign' && s.name === '河谷东路牌')!
+    expect(sign.x).toBe(54 * map.tileWidth + map.tileWidth / 2)
+    expect(sign.y).toBe(11 * map.tileWidth + map.tileWidth / 2)
   })
 })
 
@@ -248,6 +289,68 @@ describe('出口图与三图连通(村舍 ↔ 河谷 ↔ 湖畔)', () => {
       for (const stall of map.objects.filter(o => o.type === 'stall')) expectReached(mapId, stall.x, stall.y, `摊位「${stall.name}」`)
       for (const warp of zones[mapId]!) expectReached(mapId, warp.x + warp.width / 2, warp.y + warp.height / 2, `出口 → ${warp.target}`)
     }
+  })
+})
+
+describe('出口视觉开口(票 #46:树墙开口 + 土路延伸出画)', () => {
+  it('每条出口:走廊内(触发区 → 图边)全部可行走且铺非基底地面(土路出画,渲染读作路)', () => {
+    for (const [mapId, map] of Object.entries(WORLD_MAPS)) {
+      for (const warp of warpsOf(map)) {
+        const c = exitCorridorOf(map, warp)
+        for (let ty = 0; ty < map.height; ty++) {
+          for (let tx = 0; tx < map.width; tx++) {
+            if (!inCorridor(c, tx, ty, map)) continue
+            const gid = map.ground[ty * map.width + tx]!
+            expect(isBlockedCell(map, tx, ty), `${mapId} → ${warp.target} 走廊 cell(${tx},${ty}) 可行走`).toBe(false)
+            expect(gid !== 0 && gid !== BASE_GROUND_GID, `${mapId} → ${warp.target} 走廊 cell(${tx},${ty}) 铺土路`).toBe(true)
+          }
+        }
+      }
+    }
+  })
+
+  it('每条出口的缺口 = 收边圈上 3–4 格(树墙开口宽度,票面口径 3–4 tile)', () => {
+    for (const [mapId, map] of Object.entries(WORLD_MAPS)) {
+      for (const warp of warpsOf(map)) {
+        const c = exitCorridorOf(map, warp)
+        let gap = 0
+        for (let ty = 0; ty < map.height; ty++) {
+          for (let tx = 0; tx < map.width; tx++) {
+            if (isRimCell(map, tx, ty) && inCorridor(c, tx, ty, map) && !isBlockedCell(map, tx, ty)) gap++
+          }
+        }
+        expect(gap, `${mapId} → ${warp.target} 收边圈缺口格数`).toBeGreaterThanOrEqual(3)
+        expect(gap, `${mapId} → ${warp.target} 收边圈缺口格数`).toBeLessThanOrEqual(4)
+      }
+    }
+  })
+
+  it('开口只在出口:收边圈上可行走的格子必然落在某条出口走廊内(不因放宽开天窗)', () => {
+    for (const [mapId, map] of Object.entries(WORLD_MAPS)) {
+      const corridors = warpsOf(map).map(w => exitCorridorOf(map, w))
+      for (let ty = 0; ty < map.height; ty++) {
+        for (let tx = 0; tx < map.width; tx++) {
+          if (!isRimCell(map, tx, ty)) continue
+          if (isBlockedCell(map, tx, ty)) continue
+          expect(
+            corridors.some(c => inCorridor(c, tx, ty, map)),
+            `${mapId} 收边圈 cell(${tx},${ty}) 可行走但不在出口走廊`,
+          ).toBe(true)
+        }
+      }
+    }
+  })
+})
+
+describe('场景名文案(票 #46:入图横幅与出口浮签的单一来源)', () => {
+  it('三图文案:村舍池塘 / 河谷 / 湖畔(票面口径,独立字面量)', () => {
+    expect(SCENE_NAMES.village).toBe('村舍池塘')
+    expect(SCENE_NAMES.river).toBe('河谷')
+    expect(SCENE_NAMES.lake).toBe('湖畔')
+  })
+
+  it('键集 = 已入库场景集(加图漏补文案在测试期暴露)', () => {
+    expect(Object.keys(SCENE_NAMES).sort()).toEqual(Object.keys(WORLD_MAPS).sort())
   })
 })
 

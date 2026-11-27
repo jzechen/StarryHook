@@ -6,43 +6,52 @@
     <title>StarryHook · 星钩垂钓</title>
     <style>
       * { box-sizing: border-box; }
-      /* ── 皮肤主题令牌(票 #42,spec §5.1 批二):一处定义、全 DOM 生效 ──
-         面板族 / 顶栏 pill 组 / toast 的色板、边框、圆角、标题条、阴影、
-         焦点态、禁用态全部只允许引用这里的变量,逐面板不得再写硬编码色值。
-         深色基底延续批一:深青蓝面板面 × 浅青描边 × 金色强调,质感升级
-         只加阴影 / 标题条 / 焦点环,不动布局与字号。
+      /* ── 皮肤主题令牌(票 #48,spec #45「星露谷风格全铺」):CC0 九宫格素材载体 ──
+         样张选型见票 #47 评论区;切片契约与素材清单见 public/ui/kenney-rpg/README.md
+         (面板/牌类 slice 8、按钮类 slice 12、pressed = 换源)。一处定义、全 DOM 生效
+         (#42 纪律延续):面板族 / 顶栏 pill 组 / toast 的素材引用、画布面裸文字、
+         焦点态、禁用态只允许引用这里的变量,逐面板不得再写硬编码色值。
+         素材件圆角由素材自带,radius 置 0;批一深色令牌退役(清单见票 #47 评论区与
+         public/ui/kenney-rpg/README.md),悬停反馈 = border-image-source 换 pressed
+         素材(按钮)/ 提亮(行面)。
+         border 仍声明实色(--ui-border 系)作素材加载失败的兜底描边。
          (html/body 的 #2c3b2a 是画布信箱底色,与 main.ts 场景底成对,不属 DOM 主题面。) */
       :root {
-        /* 色板 */
-        --ui-text: #eaf4f6;                       /* 常规前景 */
-        --ui-text-dim: #9fb4ba;                   /* 次级 / 锁定前景 */
-        --ui-accent: #ffd23f;                     /* 金色强调:得分/金币/倒计时/当前模式描边 */
-        --ui-surface: rgba(12, 47, 63, .92);      /* 面板面 */
-        --ui-surface-pill: rgba(12, 47, 63, .8);  /* 顶栏 pill 面 */
-        --ui-surface-toast: rgba(12, 47, 63, .88);/* toast 面(比 pill 实一点,压得住画布) */
-        --ui-titlebar: rgba(9, 34, 46, .65);      /* 面板标题条(通栏) */
-        --ui-row: rgba(23, 80, 107, .35);         /* 行 / 条目 / 空区占位底 */
-        --ui-row-raised: rgba(23, 80, 107, .5);   /* 行内小钮底 */
-        --ui-row-hover: rgba(23, 80, 107, .7);    /* 行悬停 */
-        --ui-surface-hover: rgba(23, 80, 107, .9);/* pill 悬停 */
-        --ui-band-gold: rgba(96, 69, 12, .92);    /* 大满贯金带面 */
-        --ui-gold-text: #fff3b0;                  /* 大满贯金带前景 */
-        /* 边框 */
-        --ui-border: rgba(159, 216, 232, .5);
-        --ui-border-soft: rgba(159, 216, 232, .4);
-        --ui-border-accent: rgba(255, 210, 63, .55);
-        --ui-border-accent-strong: rgba(255, 210, 63, .9);
-        /* 圆角 */
-        --ui-radius-panel: 14px;
-        --ui-radius-row: 9px;
-        --ui-radius-pill: 999px;
-        /* 阴影 */
-        --ui-shadow-panel: 0 6px 18px rgba(0, 0, 0, .38);
-        --ui-shadow-pill: 0 2px 8px rgba(0, 0, 0, .3);
-        --ui-text-shadow: 0 1px 4px rgba(0, 0, 0, .6);
-        /* 焦点态 / 禁用态 */
-        --ui-focus: var(--ui-accent);
-        --ui-disabled-opacity: .4;
+        /* 素材件:border-image 源(切片号在规则侧注明) */
+        --ui-img-panel: url('/ui/kenney-rpg/panel_brown.png');              /* 面板木框 slice 8,不取 fill,内里衬 --ui-surface */
+        --ui-img-titlebar: url('/ui/kenney-rpg/panelInset_brown.png');      /* 面板标题木牌 slice 8 fill */
+        --ui-img-row: url('/ui/kenney-rpg/panelInset_beige.png');           /* 行 / 条目 / 空区占位面 slice 8 fill */
+        --ui-img-row-active: url('/ui/kenney-rpg/panel_beigeLight.png');    /* 当前模式行 = 浅牌面(与 tan 行面拉开层级) slice 8 fill */
+        --ui-img-toast: url('/ui/kenney-rpg/panel_beigeLight.png');         /* toast 圆角牌 slice 8 fill */
+        --ui-img-button: url('/ui/kenney-rpg/buttonLong_brown.png');        /* 主按钮 / 顶栏 pill slice 12 */
+        --ui-img-button-pressed: url('/ui/kenney-rpg/buttonLong_brown_pressed.png');
+        --ui-img-button-soft: url('/ui/kenney-rpg/buttonLong_beige.png');   /* 行内小钮 / 牌上关闭钮 slice 12 */
+        --ui-img-button-soft-pressed: url('/ui/kenney-rpg/buttonLong_beige_pressed.png');
+        /* 纯色件:画布上方裸文本(得分/纪录/徽章/hint/seed,浮在场景上)──
+           暖深字在深绿画布上不可读:画布面一律暖米白 + 暖金数字 + 轻投影(#47 样张共同决策) */
+        --ui-canvas-text: #f2e7cf;
+        --ui-canvas-accent: #ffd77a;
+        --ui-canvas-text-shadow: 0 1px 3px rgba(0, 0, 0, .55);
+        /* 纯色件:面板内文字与强调 */
+        --ui-text: #4a3423;                       /* 面板内暖字(深棕) */
+        --ui-text-dim: #7a6647;                   /* 次级 / 锁定 */
+        --ui-accent: #8a5a10;                     /* 面板内强调(toast 字/当前项) */
+        --ui-surface: #ece3ce;                    /* 面板内里纯色(米纸) */
+        /* 纯色件:边框兜底 / 焦点 / 禁用 */
+        --ui-border: #886644;
+        --ui-border-soft: rgba(136, 102, 68, .6);
+        --ui-border-accent: #886644;
+        --ui-border-accent-strong: #6d543a;
+        --ui-focus: #a5650d;                      /* 焦点环(素材件上仍用 outline) */
+        --ui-disabled-opacity: .45;
+        /* 阴影(素材件上仍生效) */
+        --ui-shadow-panel: 0 8px 18px rgba(30, 20, 10, .45);
+        --ui-shadow-pill: 0 2px 5px rgba(30, 20, 10, .35);
+        /* 素材件圆角自带;面板内浅底不投影(画布面用 --ui-canvas-text-shadow) */
+        --ui-radius-panel: 0px;
+        --ui-radius-row: 0px;
+        --ui-radius-pill: 0px;
+        --ui-text-shadow: none;
       }
       html, body { margin: 0; height: 100%; overflow: hidden; background: #2c3b2a; }
       #game { position: fixed; inset: 0; overflow: hidden; }
@@ -61,24 +70,31 @@
         font-synthesis: none;
         color: var(--ui-text);
       }
+      /* 顶栏浮在场景上:裸文字走画布面令牌(暖米白 + 轻投影),数字暖金。
+         flex-wrap 兜底窄窗:绝对定位 + body overflow hidden,不换行时右侧
+         pill(重开/静音)会被裁出画面不可点,放不下即折到下一行 */
       #topbar {
         position: absolute; top: 14px; left: 16px; right: 16px;
-        display: flex; align-items: center; gap: 14px;
-        text-shadow: var(--ui-text-shadow);
-        font-size: 12px;
+        display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
+        color: var(--ui-canvas-text);
+        text-shadow: var(--ui-canvas-text-shadow);
+        font-size: 12px; white-space: nowrap;
       }
-      #topbar b { font-size: 24px; font-weight: normal; color: var(--ui-accent); }
-      /* 胶囊按钮公共样式:图鉴入口 / 重开 / 静音 / 各面板关闭共用;
+      #topbar b { font-size: 24px; font-weight: normal; color: var(--ui-canvas-accent); }
+      /* 胶囊按钮公共样式(票 #48 素材化):图鉴入口 / 重开 / 静音 / 各面板关闭共用
+         Kenney 木钮(slice 12,边厚压到 8px 保紧凑控件高度);悬停 = 换 pressed 素材,
          焦点态(键盘可达)与禁用态(置灰)由下面的统一规则承载,不逐钮重复 */
       .pill {
         pointer-events: auto;
-        font: inherit; font-size: 12px; padding: 4px 14px;
-        color: var(--ui-text); background: var(--ui-surface-pill);
-        border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill); cursor: pointer;
+        font: inherit; font-size: 12px; padding: 2px 10px; white-space: nowrap;
+        color: var(--ui-canvas-text); background: transparent;
+        border: 8px solid var(--ui-border); border-image-source: var(--ui-img-button);
+        border-image-slice: 12; border-radius: var(--ui-radius-pill); cursor: pointer;
+        min-height: 28px;
         box-shadow: var(--ui-shadow-pill);
       }
-      .pill:hover:enabled { background: var(--ui-surface-hover); }
-      /* 焦点态(票 #42 统一):键盘焦点统一金色描边,不占布局(outline);
+      .pill:hover:enabled { border-image-source: var(--ui-img-button-pressed); }
+      /* 焦点态(票 #42 统一):键盘焦点统一金棕描边,不占布局(outline);
          鼠标点按不触发(:focus-visible),与既有「点击后 blur 防误触」口径不冲突 */
       #hud button:focus-visible {
         outline: 2px solid var(--ui-focus); outline-offset: 2px;
@@ -90,79 +106,100 @@
       /* 环境徽章(票 #15):季节 · 昼夜 · 天气,文案由 envBadgeText 派生,内容变化才重写 */
       #env-badge { letter-spacing: 1px; opacity: .95; }
       /* 金币(票 #17 故事 2)与装备饵余量徽章(review 修复):顶栏紧凑小字,不另占行;
-         金币取商店面板头同款金色,饵余量跟环境徽章同灰度层级,克制不挤 */
-      #coins { color: var(--ui-accent); }
+         金币取画布面暖金(与得分/倒计时同层),饵余量跟环境徽章同灰度层级,克制不挤 */
+      #coins { color: var(--ui-canvas-accent); }
       #bait-badge { opacity: .95; }
       #bait-badge[hidden] { display: none; }
-      /* 倒计时(票 #24):限时挑战逐秒「1:23」,金色与金币/得分同层;无限模式整元素隐藏 */
-      #countdown { color: var(--ui-accent); }
+      /* 倒计时(票 #24):限时挑战逐秒「1:23」,暖金与金币/得分同层;无限模式整元素隐藏 */
+      #countdown { color: var(--ui-canvas-accent); }
       #countdown[hidden] { display: none; }
-      /* 面板族公共壳(票 #42 统一):五面板同一张面、描边、圆角、标题条与投影;
-         布局壳(定位/宽度/滚动)仍逐面板声明。标题条 = 通栏色带 + 下缘分隔线,
-         负外边距吃掉面板内边距,靠面板 overflow 裁掉圆角处的色带 */
+      /* 面板族公共壳(票 #42 统一,票 #48 素材化):五面板同一张木框九宫格
+         (slice 8,边厚画进 2x = 16px)+ 米纸内里;九宫格边厚吃内容宽,
+         面板宽度按 #47 几何清单逐面板重定(商店 276→336,其余同边厚补偿 +60)。
+         标题条 = 内嵌木牌(panelInset_brown fill,见 .panel-head),不再通栏负外边距;
+         border-image 不吃 border-radius,圆角由素材自带(radius 置 0) */
       #mode-panel, #shop-panel, #backpack-panel, #storage-panel, #collection-panel {
         pointer-events: auto; position: absolute; top: 60px; right: 16px;
         overflow: hidden;
         background: var(--ui-surface);
-        border: 1px solid var(--ui-border); border-radius: var(--ui-radius-panel);
+        border: 16px solid var(--ui-border); border-image-source: var(--ui-img-panel);
+        border-image-slice: 8; border-radius: var(--ui-radius-panel);
         box-shadow: var(--ui-shadow-panel);
         padding: 12px 14px; font-size: 12px;
       }
+      /* 标题条:内嵌木牌(fill 件,面板 padding 内),负外边距通栏色带随 #48 退役 */
       .panel-head {
         display: flex; align-items: center; gap: 10px;
-        margin: -12px -14px 0; padding: 8px 14px;
-        background: var(--ui-titlebar);
-        border-bottom: 1px solid var(--ui-border-soft);
+        margin: 0 0 6px; padding: 6px 10px;
+        color: var(--ui-canvas-text);
+        border: 12px solid var(--ui-border); border-image-source: var(--ui-img-titlebar);
+        border-image-slice: 8 fill; border-radius: var(--ui-radius-panel);
       }
+      .panel-head b { color: var(--ui-canvas-accent); }
       .panel-title { font-size: 12px; }
+      /* 行 / 条目 / 空区占位公共面(票 #48):panelInset_beige 平入九宫格
+         (slice 8 fill,边厚 7px + 3px 内边距,#47 样张实测);悬停无平色面,
+         交互行靠轻提亮区分(见 .mode-item / button.storage-move) */
+      .shop-item, .mode-item, .fish-item, button.storage-move,
+      #shop-catch-empty, #backpack-catch-empty, #backpack-collectible-empty, .storage-empty {
+        padding: 3px 7px;
+        background: transparent;
+        border: 7px solid var(--ui-border-soft); border-image-source: var(--ui-img-row);
+        border-image-slice: 8 fill; border-radius: var(--ui-radius-row);
+      }
       /* 模式面板(票 #24):与既有面板同族样式,面板经 PanelExclusion 互斥打开;
          单局最高纪录(限时单局纪录)常驻面板尾(单局口径,跨会话持久,见 core/timedBest.ts) */
-      #mode-panel { width: 244px; }
+      #mode-panel { width: 304px; }
       #mode-panel[hidden] { display: none; }
       #mode-list { margin: 10px 0 0; display: grid; gap: 6px; }
       .mode-item {
-        display: flex; align-items: baseline; gap: 10px; width: 100%;
-        font: inherit; text-align: left; padding: 7px 12px;
-        color: var(--ui-text); background: var(--ui-row);
-        border: 1px solid transparent; border-radius: var(--ui-radius-row); cursor: pointer;
+        display: flex; align-items: center; gap: 10px; width: 100%;
+        font: inherit; text-align: left;
+        color: var(--ui-text); cursor: pointer;
       }
-      .mode-item:hover { background: var(--ui-row-hover); }
+      .mode-item:hover:enabled { filter: brightness(1.06); }
       .mode-item .mode-hint { margin-left: auto; opacity: .9; }
-      .mode-item.current { border-color: var(--ui-border-accent); }
+      /* 当前模式 = 抬起框(panel_beige fill)与平入行面区分 */
+      .mode-item.current { border-image-source: var(--ui-img-row-active); }
       .mode-item .mode-current { color: var(--ui-accent); }
       #mode-best { margin-top: 10px; opacity: .9; }
       /* 商店面板(票 #20;票 #36 起入口 = 世界摊位交互):与图鉴/模式面板同族样式,
-         经 PanelExclusion 互斥打开;金币余额常驻面板头,行内提示承载购买反馈(不用 alert) */
-      #shop-panel { width: 276px; }
+         经 PanelExclusion 互斥打开;金币余额常驻面板头,行内提示承载购买反馈(不用 alert);
+         宽度 276→336(#47 几何清单:九宫格边厚 32px 吃内容宽,276px 折行是实测风险) */
+      #shop-panel { width: 336px; }
       #shop-panel[hidden] { display: none; }
-      #shop-coins { font-size: 24px; font-weight: normal; color: var(--ui-accent); }
+      #shop-coins { font-size: 24px; font-weight: normal; color: var(--ui-canvas-accent); }
       #shop-list { margin: 10px 0 0; display: grid; gap: 6px; }
       .shop-item {
-        display: flex; align-items: baseline; gap: 10px;
-        padding: 7px 12px; border-radius: var(--ui-radius-row); background: var(--ui-row);
+        display: flex; align-items: center; gap: 10px;
       }
-      .shop-item .shop-detail { margin-left: auto; opacity: .9; text-align: right; }
-      .shop-item .shop-buy { padding: 2px 10px; background: var(--ui-row-raised); border-color: var(--ui-border-soft); }
+      /* 名称不折行(#47 样张实测措施):行内空间让给详情列,防名称竖排 */
+      .shop-item .shop-name { white-space: nowrap; }
+      .shop-item .shop-detail { margin-left: auto; opacity: .9; text-align: right; min-width: 84px; }
+      /* 行内小钮(#47 样张实测):Kenney 米色木钮,边厚压到 5px 保住紧凑控件高度,
+         nowrap 防标签折行;悬停换 pressed 素材 */
+      .shop-item .shop-buy {
+        padding: 0 4px; min-height: 20px; white-space: nowrap;
+        color: var(--ui-text); background: transparent;
+        border-width: 5px; border-image-source: var(--ui-img-button-soft);
+      }
+      .shop-item .shop-buy:hover:enabled { border-image-source: var(--ui-img-button-soft-pressed); }
       /* 金币不足置灰:购买钮禁用即压暗(统一禁用态规则承载),价格与竿名保持可读 */
       #shop-feedback { margin-top: 8px; opacity: .95; }
       #shop-feedback[hidden] { display: none; }
       /* 渔获区块(票 #39,spec §4.3):余额下方常驻收购位,行与卖出钮沿用
-         .shop-item/.shop-buy 同族;空包占位与行同底色,靠降不透明度区分层级 */
+         .shop-item/.shop-buy 同族;空包占位与行同族面,靠降不透明度区分层级 */
       #shop-catch { margin-top: 10px; }
       .shop-section-title { opacity: .9; }
       #shop-catch-list { margin-top: 6px; display: grid; gap: 6px; }
-      /* 空区占位(商店渔获 / 背包两区 / 储物箱两栏)统一走行底色 + 降不透明度层级;
+      /* 空区占位(商店渔获 / 背包两区 / 储物箱两栏)统一走行面九宫格 + 降不透明度层级;
          外边距按容器分:商店/背包是块级流需补 6px,储物箱在 gap 网格内不另加 */
-      #shop-catch-empty, #backpack-catch-empty, #backpack-collectible-empty, .storage-empty {
-        padding: 7px 12px; border-radius: var(--ui-radius-row);
-        background: var(--ui-row); opacity: .7;
-      }
       #shop-catch-empty, #backpack-catch-empty, #backpack-collectible-empty { margin-top: 6px; }
       #shop-catch-empty[hidden] { display: none; }
       /* 背包面板(票 #40,spec §4.4):渔获区 + 收藏品区,行样式沿用 .shop-item
-         同族(批二 #42 统一主题化时一并收编);两区常驻、空区占位降不透明度 */
+         同族;两区常驻、空区占位降不透明度;max-height 滚动区随面板加宽重验(#48) */
       #backpack-panel {
-        width: 276px;
+        width: 336px;
         max-height: calc(100vh - 76px); overflow-y: auto;
       }
       #backpack-panel[hidden] { display: none; }
@@ -170,9 +207,9 @@
       #backpack-catch-list, #backpack-collectible-list { margin-top: 6px; display: grid; gap: 6px; }
       #backpack-catch-empty[hidden], #backpack-collectible-empty[hidden] { display: none; }
       /* 储物箱面板(票 #40,spec §4.4):两栏转移(左背包/右储物箱),行 = 整行按钮,
-         点按整堆转移;列头与空栏占位同背包面板层级 */
+         点按整堆转移;列头与空栏占位同背包面板层级;max-height 滚动区同上重验(#48) */
       #storage-panel {
-        width: 420px;
+        width: 480px;
         max-width: calc(100vw - 32px); max-height: calc(100vh - 76px); overflow-y: auto;
       }
       #storage-panel[hidden] { display: none; }
@@ -180,25 +217,20 @@
       .storage-col { display: grid; gap: 6px; align-content: start; }
       #storage-backpack-list, #storage-box-list { display: grid; gap: 6px; }
       .storage-empty[hidden] { display: none; }
-      /* 转移行:整行按钮继承 .shop-item 底色,补齐按钮重置与悬停反馈 */
+      /* 转移行:整行按钮继承行面九宫格,补齐按钮重置;悬停轻提亮(行面无 pressed 件) */
       button.storage-move {
-        width: 100%; border: none; cursor: pointer;
+        width: 100%; cursor: pointer;
         font: inherit; color: inherit; text-align: left;
       }
-      button.storage-move:hover { background: var(--ui-row-hover); }
+      button.storage-move:hover:enabled { filter: brightness(1.06); }
       #storage-hint { margin-top: 10px; opacity: .7; }
-      #collection-panel { width: 292px; }
+      #collection-panel { width: 352px; }
       #collection-panel[hidden] { display: none; }
-      #collection-progress { font-size: 24px; font-weight: normal; color: var(--ui-accent); }
-      #collection-close {
-        margin-left: auto; font-size: 12px; padding: 2px 10px;
-        background: var(--ui-row-raised);
-        border-color: var(--ui-border-soft);
-      }
+      #collection-progress { font-size: 24px; font-weight: normal; color: var(--ui-canvas-accent); }
+      #collection-close { margin-left: auto; }
       #collection-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
       .fish-item {
-        display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px;
-        padding: 7px 12px; border-radius: var(--ui-radius-row); background: var(--ui-row);
+        display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px;
       }
       .fish-item .fish-detail { margin-left: auto; font-size: 12px; opacity: .9; }
       /* 出没条件次行(票 #16):文案由 ui/collectionPanelHabitat.ts 依亲和字段派生,
@@ -231,10 +263,13 @@
         display: flex; flex-direction: column; align-items: center; gap: 8px;
         pointer-events: none;
       }
+      /* toast(票 #48 素材化):胶囊形制让位 Kenney 圆角牌
+         (panel_beigeLight fill,slice 8,边厚 14px);字色 = 面板内强调(深金棕) */
       .toast {
-        padding: 7px 24px; font-size: 24px; letter-spacing: 2px;
-        color: var(--ui-accent); background: var(--ui-surface-toast);
-        border: 1px solid var(--ui-border-accent); border-radius: var(--ui-radius-pill);
+        padding: 2px 12px; font-size: 24px; letter-spacing: 2px;
+        color: var(--ui-accent); background: transparent;
+        border: 14px solid var(--ui-border); border-image-source: var(--ui-img-toast);
+        border-image-slice: 8 fill; border-radius: var(--ui-radius-pill);
         text-shadow: var(--ui-text-shadow);
         box-shadow: var(--ui-shadow-pill);
         /* 动画时序由 toastLayer.ts 依 TOAST_LIFETIME_MS 推导后内联写入,此处只留 keyframes */
@@ -245,11 +280,12 @@
       #hint {
         position: absolute; bottom: 34px; left: 0; right: 0;
         text-align: center; font-size: 24px; letter-spacing: 1px;
-        text-shadow: var(--ui-text-shadow);
+        color: var(--ui-canvas-text);
+        text-shadow: var(--ui-canvas-text-shadow);
       }
-      #hint.urgent { color: var(--ui-accent); animation: pulse .35s ease-in-out infinite alternate; }
+      #hint.urgent { color: var(--ui-canvas-accent); animation: pulse .35s ease-in-out infinite alternate; }
       @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.12); } }
-      #seed { position: absolute; bottom: 10px; right: 12px; font-size: 12px; opacity: .55; }
+      #seed { position: absolute; bottom: 10px; right: 12px; font-size: 12px; opacity: .55; color: var(--ui-canvas-text); text-shadow: var(--ui-canvas-text-shadow); }
     </style>
   </head>
   <body>
