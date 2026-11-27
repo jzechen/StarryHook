@@ -84,6 +84,46 @@ describe('交互点解析(接缝:parseInteractionSpots,票 #36)', () => {
     const [spot] = parseInteractionSpots([obj()], 16)
     expect(spot!.area).toBeUndefined()
   })
+
+  it('钓位微差(票 #38):spotMul JSON 串属性解析为 per-fish 倍率表', () => {
+    const [spot] = parseInteractionSpots([obj({ properties: { area: 'river', spotMul: '{"qianzhuinian":2}' } })], 16)
+    expect(spot!.spotMul).toEqual({ qianzhuinian: 2 })
+  })
+
+  it('钓位微差:spotMul 直接物件形态(手写地图)同样解析', () => {
+    const [spot] = parseInteractionSpots([obj({ properties: { spotMul: { qiqiuHetun: 2 } } })], 16)
+    expect(spot!.spotMul).toEqual({ qiqiuHetun: 2 })
+  })
+
+  it('钓位微差:无 spotMul 属性 = 无修饰(undefined)', () => {
+    const [spot] = parseInteractionSpots([obj({ properties: { area: 'pond' } })], 16)
+    expect(spot!.spotMul).toBeUndefined()
+  })
+
+  it('钓位微差纪律进解析器:倍率 < 1 / 非数 / 非有限 → 抛错(只增不减)', () => {
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: '{"qianzhuinian":0.5}' } })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: { qianzhuinian: 0 } } })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: { qianzhuinian: -2 } } })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: { qianzhuinian: '翻倍' } } })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: { qianzhuinian: Number.POSITIVE_INFINITY } } })], 16)).toThrow()
+  })
+
+  it('钓位微差:键不是鱼目录 id → 抛错(拼写错挡在解析期,不引新鱼种)', () => {
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: '{"qianzhuiNian":2}' } })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: { 神秘鱼: 2 } } })], 16)).toThrow()
+  })
+
+  it('钓位微差:spotMul 非物件(数组/非法 JSON/标量)→ 抛错', () => {
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: '[2]' } })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: '{qianzhuinian:2}' } })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: 42 } })], 16)).toThrow()
+  })
+
+  it('钓位微差:非钓位(stall)不挂倍率,属性格式照常校验', () => {
+    const spots = parseInteractionSpots([obj({ name: '杂货摊', type: 'stall', properties: { spotMul: '{"xiaobaitiao":2}' } })], 16)
+    expect(spots[0]!.spotMul).toBeUndefined()
+    expect(() => parseInteractionSpots([obj({ name: '杂货摊', type: 'stall', properties: { spotMul: '{bad' } })], 16)).toThrow()
+  })
 })
 
 describe('触发判定(接缝:nearestInteraction,票 #36)', () => {
