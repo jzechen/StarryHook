@@ -89,6 +89,32 @@ describe('WalletStore(接缝:经济)', () => {
     expect(s.coins()).toBe(940)
   })
 
+  it('宝箱鱼饵直加(票 #41):无扣款入库指定竿数,金币原样不动', () => {
+    const s = new WalletStore(memoryStorage())
+    s.earn(12)
+    s.grantBait('xianger', 5)
+    expect(s.baitCount('xianger')).toBe(5)
+    expect(s.coins()).toBe(12)
+  })
+
+  it('宝箱鱼饵直加:在既有余量上累加,不覆盖、不动装备槽', () => {
+    const s = new WalletStore(memoryStorage())
+    s.grantBait('xianger', 5)
+    s.equip('nonger')
+    s.grantBait('xianger', 3)
+    expect(s.baitCount('xianger')).toBe(8)
+    expect(s.equippedBait()).toBe('nonger')
+  })
+
+  it('宝箱鱼饵直加:目录外饵 id / 非正数量忽略(与目录外忽略纪律一致)', () => {
+    const s = new WalletStore(memoryStorage())
+    s.grantBait('幽灵饵', 5)
+    s.grantBait('xianger', 0)
+    s.grantBait('xianger', -2)
+    expect(s.baitCount('幽灵饵')).toBe(0)
+    expect(s.baitCount('xianger')).toBe(0)
+  })
+
   it('装备槽同时一种:装备香饵后再装备浓饵,槽位切换且双方余量都不清', () => {
     const s = new WalletStore(memoryStorage())
     s.earn(1000)

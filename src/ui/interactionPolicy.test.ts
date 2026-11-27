@@ -26,6 +26,14 @@ describe('动作键意图(接缝:stallPressAction,票 #36)', () => {
     expect(stallPressAction(false, 'storage')).toBe('open-storage')
   })
 
+  it('无面板、宝箱在前:按下 = 开箱(票 #41,spec §4.5;一次性由已开态 store 把关)', () => {
+    expect(stallPressAction(false, 'chest')).toBe('open-chest')
+  })
+
+  it('面板打开时宝箱同样让位关面板(关闭口径优先,票 #41 沿用 #36 优先级)', () => {
+    expect(stallPressAction(true, 'chest')).toBe('close-panel')
+  })
+
   it('面板打开时储物箱同样让位关面板(关闭口径优先,票 #40 沿用 #36 优先级)', () => {
     expect(stallPressAction(true, 'storage')).toBe('close-panel')
   })

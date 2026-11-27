@@ -1,6 +1,7 @@
 import { FISH } from '../core/fishCatalog'
 import type { WaterAreaId } from '../core/types'
 import { WATER_AREAS } from '../core/waterAreas'
+import { chestDef } from '../core/chests'
 import type { WorldMapObject } from './worldMap'
 
 /**
@@ -13,11 +14,12 @@ import type { WorldMapObject } from './worldMap'
  * 票 #38 追加钓位微差(spec §3):spot 物件可选 spotMul 属性(per-fish 倍率表),
  * 抛竿时随当前钓位进入权重引擎;
  * 票 #40 追加 storage(村舍储物箱,spec §4.4):交互 = 动作键开两栏转移面板;
- * chest 由后续票按同一物件层声明扩展(kind 表 + 动作短词表即插即用)。
+ * 票 #41 追加 chest(宝箱,spec §4.5):物件 chest 属性引用内容表 id
+ * (core/chests.ts),交互 = 动作键一次性开启,掉落按表结算。
  */
 
 /** 本票落地的交互 kind(spec §2.1 全集的子集;后续票追加) */
-export type InteractionKind = 'spot' | 'stall' | 'sign' | 'note' | 'storage'
+export type InteractionKind = 'spot' | 'stall' | 'sign' | 'note' | 'storage' | 'chest'
 
 /** 默认触发半径(tile;spec §2.1「统一 1.5 tile」) */
 export const DEFAULT_RADIUS_TILES = 1.5
@@ -41,6 +43,8 @@ export interface InteractionSpotDef {
   readonly spotMul?: Readonly<Record<string, number>>
   /** 叙事物彩蛋文案(sign/note 专用;物件 text 属性,交互时整句弹出,不入玩法状态) */
   readonly text?: string
+  /** 宝箱内容表 id(chest 专用;物件 chest 属性,必须命中 CHESTS 表) */
+  readonly chestId?: string
 }
 
 /** 叙事物 kind(spec §2.5:路牌 sign / 井与石台 note;零奖励,不持久化已读) */
@@ -51,13 +55,14 @@ export function isNarrativeKind(kind: string): boolean {
   return (NARRATIVE_KINDS as ReadonlySet<string>).has(kind)
 }
 
-/** 动作短词表(浮签文案;chest = 开启等后续票按 kind 扩表) */
+/** 动作短词表(浮签文案;后续票按 kind 扩表) */
 const ACTION_LABELS: Readonly<Record<InteractionKind, string>> = {
   spot: '抛竿',
   stall: '商店',
   sign: '查看',
   note: '查看',
   storage: '储物箱',
+  chest: '开启',
 }
 
 /** 交互点动作短词(未知 kind = 空串:浮签不渲染无主文案) */
@@ -114,7 +119,14 @@ function parseSpotMul(o: WorldMapObject, raw: unknown): Record<string, number> {
 
 /** 物件层条目 → 交互点定义;kind 非交互返回 null(调用方过滤) */
 function toInteractionSpot(o: WorldMapObject, tileWidth: number): InteractionSpotDef | null {
-  if (o.type !== 'spot' && o.type !== 'stall' && o.type !== 'sign' && o.type !== 'note' && o.type !== 'storage') {
+  if (
+    o.type !== 'spot' &&
+    o.type !== 'stall' &&
+    o.type !== 'sign' &&
+    o.type !== 'note' &&
+    o.type !== 'storage' &&
+    o.type !== 'chest'
+  ) {
     return null
   }
   const kind = o.type as InteractionKind
@@ -137,6 +149,19 @@ function toInteractionSpot(o: WorldMapObject, tileWidth: number): InteractionSpo
   // 钓位微差(票 #38):属性存在即校验格式(与 area 同款),只挂到钓位上
   const spotMulRaw = o.properties['spotMul']
   const spotMul = spotMulRaw !== undefined ? parseSpotMul(o, spotMulRaw) : undefined
+  // 宝箱(票 #41):chest 属性必填且必须命中内容表 id(拼写错挡在解析期,
+  // 防地图引用不存在的箱——开箱结算无表可查)
+  let chestId: string | undefined
+  if (kind === 'chest') {
+    if (typeof spotMulRaw !== 'undefined') {
+      throw new Error(`宝箱「${o.name}」不支持 spotMul 属性(宝箱无钓位微差)`)
+    }
+    const raw = o.properties['chest']
+    if (typeof raw !== 'string' || !chestDef(raw)) {
+      throw new Error(`宝箱「${o.name}」的 chest 属性不是内容表 id:${String(raw)}`)
+    }
+    chestId = raw
+  }
   return {
     kind,
     name: o.name,
@@ -146,6 +171,7 @@ function toInteractionSpot(o: WorldMapObject, tileWidth: number): InteractionSpo
     ...(kind === 'spot' && area !== undefined ? { area: area as WaterAreaId } : {}),
     ...(kind === 'spot' && spotMul !== undefined ? { spotMul } : {}),
     ...(isNarrativeKind(kind) && text !== undefined ? { text: text as string } : {}),
+    ...(chestId !== undefined ? { chestId } : {}),
   }
 }
 

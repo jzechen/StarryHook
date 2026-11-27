@@ -249,6 +249,40 @@
      "visible": true,
      "x": 200,
      "y": 200
+    },
+    {
+     "point": true,
+     "name": "篱笆角的宝箱",
+     "id": 9,
+     "rotation": 0,
+     "type": "chest",
+     "visible": true,
+     "x": 40,
+     "y": 376,
+     "properties": [
+      {
+       "name": "chest",
+       "type": "string",
+       "value": "village-hedge"
+      }
+     ]
+    },
+    {
+     "point": true,
+     "name": "树影的宝箱",
+     "id": 10,
+     "rotation": 0,
+     "type": "chest",
+     "visible": true,
+     "x": 584,
+     "y": 72,
+     "properties": [
+      {
+       "name": "chest",
+       "type": "string",
+       "value": "village-grove"
+      }
+     ]
     }
    ],
    "opacity": 1,
@@ -259,7 +293,7 @@
   }
  ],
  "nextlayerid": 5,
- "nextobjectid": 9,
+ "nextobjectid": 11,
  "orientation": "orthogonal",
  "renderorder": "right-down",
  "tiledversion": "1.11.0",

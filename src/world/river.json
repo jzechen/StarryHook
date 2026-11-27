@@ -4890,6 +4890,23 @@
        "value": "东 · 湖畔"
       }
      ]
+    },
+    {
+     "point": true,
+     "name": "河湾的宝箱",
+     "id": 10,
+     "rotation": 0,
+     "type": "chest",
+     "visible": true,
+     "x": 392,
+     "y": 232,
+     "properties": [
+      {
+       "name": "chest",
+       "type": "string",
+       "value": "river-bend"
+      }
+     ]
     }
    ],
    "opacity": 1,
@@ -4900,7 +4917,7 @@
   }
  ],
  "nextlayerid": 5,
- "nextobjectid": 10,
+ "nextobjectid": 11,
  "orientation": "orthogonal",
  "renderorder": "right-down",
  "tiledversion": "1.11.0",

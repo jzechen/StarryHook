@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { deriveWaterArea, WORLD_MAPS } from './maps'
+import { CHESTS } from '../core/chests'
 import { parseInteractionSpots } from './interactions'
 import { warpsOf, type WarpZone } from './warps'
 import { isBlockedCell, waterFillsBounds, type WorldMapData } from './worldMap'
@@ -293,5 +294,111 @@ describe('deriveWaterArea(位置 → 水域单一推导来源;v1 图级映射)',
 
   it('未知场景 id 抛错(挡住拼错的 mapId 流入核心)', () => {
     expect(() => deriveWaterArea('nope' as never, 0, 0)).toThrow()
+  })
+})
+
+describe('宝箱落位数据(票 #41,spec §4.5:3–4 个藏装饰角落)', () => {
+  /** 三图宝箱物件(解析路径:chest 属性 → chestId,含目录校验) */
+  function chestsOf(): { mapId: string; name: string; x: number; y: number; chestId: string }[] {
+    const out: { mapId: string; name: string; x: number; y: number; chestId: string }[] = []
+    for (const [mapId, map] of Object.entries(WORLD_MAPS)) {
+      for (const spot of parseInteractionSpots(map.objects, map.tileWidth)) {
+        if (spot.kind === 'chest' && spot.chestId !== undefined) {
+          out.push({ mapId, name: spot.name, x: spot.x, y: spot.y, chestId: spot.chestId })
+        }
+      }
+    }
+    return out
+  }
+
+  it('宝箱总数 3–4,内容表与地图物件一一对应(无幽灵箱、无漏摆的箱)', () => {
+    const placed = chestsOf()
+    expect(placed.length).toBeGreaterThanOrEqual(3)
+    expect(placed.length).toBeLessThanOrEqual(4)
+    expect(new Set(placed.map(c => c.chestId)).size).toBe(placed.length)
+    expect(new Set(placed.map(c => c.chestId))).toEqual(new Set(CHESTS.map(c => c.id)))
+  })
+
+  it('三图都有宝箱(分布覆盖 village/river/lake)', () => {
+    const mapIds = new Set(chestsOf().map(c => c.mapId))
+    expect(mapIds.has('village')).toBe(true)
+    expect(mapIds.has('river')).toBe(true)
+    expect(mapIds.has('lake')).toBe(true)
+  })
+
+  it('每个宝箱:物件点可行走,且半径内有可行走格(能走近按 E)', () => {
+    for (const [mapId, map] of Object.entries(WORLD_MAPS)) {
+      for (const spot of parseInteractionSpots(map.objects, map.tileWidth)) {
+        if (spot.kind !== 'chest') continue
+        const tx = Math.floor(spot.x / map.tileWidth)
+        const ty = Math.floor(spot.y / map.tileWidth)
+        expect(isBlockedCell(map, tx, ty), `${mapId} 宝箱「${spot.name}」物件点可行走`).toBe(false)
+        const reach = [
+          [tx, ty],
+          [tx + 1, ty],
+          [tx - 1, ty],
+          [tx, ty + 1],
+          [tx, ty - 1],
+        ].some(([cx, cy]) => !isBlockedCell(map, cx!, cy!))
+        expect(reach, `${mapId} 宝箱「${spot.name}」半径内可行走`).toBe(true)
+      }
+    }
+  })
+
+  it('落点不变量(沿 #37 先例):宝箱与同图其它交互点触发半径互不重叠(≥48px)', () => {
+    for (const [mapId, map] of Object.entries(WORLD_MAPS)) {
+      const spots = parseInteractionSpots(map.objects, map.tileWidth)
+      for (const chest of spots.filter(s => s.kind === 'chest')) {
+        for (const other of spots) {
+          if (other === chest) continue
+          const dist = Math.hypot(other.x - chest.x, other.y - chest.y)
+          expect(dist, `${mapId} 宝箱「${chest.name}」↔「${other.name}」距离`).toBeGreaterThanOrEqual(48)
+        }
+      }
+    }
+  })
+
+  it('宝箱不压出口触发区(藏角落 ≠ 卡在走廊里)', () => {
+    for (const [mapId, map] of Object.entries(WORLD_MAPS)) {
+      for (const spot of parseInteractionSpots(map.objects, map.tileWidth)) {
+        if (spot.kind !== 'chest') continue
+        for (const warp of warpsOf(map)) {
+          const nearX = spot.x + spot.radiusPx > warp.x && spot.x - spot.radiusPx < warp.x + warp.width
+          const nearY = spot.y + spot.radiusPx > warp.y && spot.y - spot.radiusPx < warp.y + warp.height
+          expect(nearX && nearY, `${mapId} 宝箱「${spot.name}」距出口触发区`).toBe(false)
+        }
+      }
+    }
+  })
+
+  it('三图连通:全部宝箱自村舍出生点可达(同款跨图洪填)', () => {
+    // 与上方「三图连通」同一洪填;此处只对宝箱物件重放断言(独立可读)
+    const seen = new Set<string>()
+    const queue: { mapId: string; tx: number; ty: number }[] = []
+    const village = WORLD_MAPS.village!
+    const [sx, sy] = [Math.floor(village.spawn.x / 16), Math.floor(village.spawn.y / 16)]
+    queue.push({ mapId: 'village', tx: sx, ty: sy })
+    const zones = Object.fromEntries(Object.entries(WORLD_MAPS).map(([id, m]) => [id, warpsOf(m)]))
+    while (queue.length) {
+      const { mapId, tx, ty } = queue.pop()!
+      const key = `${mapId}:${tx}:${ty}`
+      if (seen.has(key)) continue
+      const map = WORLD_MAPS[mapId as keyof typeof WORLD_MAPS]
+      if (tx < 0 || ty < 0 || tx >= map.width || ty >= map.height) continue
+      if (isBlockedCell(map, tx, ty)) continue
+      seen.add(key)
+      queue.push({ mapId, tx: tx + 1, ty }, { mapId, tx: tx - 1, ty }, { mapId, tx, ty: ty + 1 }, { mapId, tx, ty: ty - 1 })
+      for (const warp of zones[mapId]!) {
+        const cx = tx * map.tileWidth + map.tileWidth / 2
+        const cy = ty * map.tileWidth + map.tileWidth / 2
+        if (cx >= warp.x && cx < warp.x + warp.width && cy >= warp.y && cy < warp.y + warp.height) {
+          queue.push({ mapId: warp.target, tx: Math.floor(warp.tx / 16), ty: Math.floor(warp.ty / 16) })
+        }
+      }
+    }
+    for (const chest of chestsOf()) {
+      const key = `${chest.mapId}:${Math.floor(chest.x / 16)}:${Math.floor(chest.y / 16)}`
+      expect(seen.has(key), `宝箱「${chest.name}」(${chest.mapId})可达`).toBe(true)
+    }
   })
 })

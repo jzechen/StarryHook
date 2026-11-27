@@ -13,6 +13,7 @@
 | --- | --- | --- | --- |
 | `water-flow.png` | OGA「Animated flowing water 2d 16x16」,作者 InThePixel,<https://opengameart.org/content/animated-flowing-water-2d-16x16> | CC0 | 13 帧流水条,原样入库未改动 |
 | `tiny-town.png` | Kenney「Tiny Town」v1.0 的 `Tilemap/tilemap_packed.png`,<https://kenney.nl/assets/tiny-town> | CC0 | 世界地图 packed 表(192×176,12 列 × 11 行,无间隔),原样入库未改动;tile 编号行优先 `tile_N = packed (N÷12, N%12)`(调研留痕:票 #26),地图 JSON(src/world/village.json)以单 tileset 引用,切片经 textures.ts |
+| `tiny-dungeon.png` | Kenney「Tiny Dungeon」v1.0 的 `Tilemap/tilemap_packed.png`,<https://kenney.nl/assets/tiny-dungeon> | CC0 | 宝箱素材(票 #41):同规格 packed 表(192×176,12 列 × 11 行)原样入库未改动,与 tiny-town 同一行优先编号;本票只取宝箱两态帧(tile 89 闭箱 / tile 90 开箱,盖板掀起 = 空箱外观),切片经 textures.ts(`CHEST_TILE_CLOSED/OPEN`) |
 | `shoreline-waves.png` | 派生自 OGA「16x16 Shoreline Wave Animation Tiles」,作者 Zabin,<https://opengameart.org/content/16x16-shoreline-wave-animation-tiles> | CC0 | 见下方派生规则 |
 | `grass.png` | 派生自 OGA「16x16 tileset: water, grass and sand」,作者 Syrsly,<https://opengameart.org/content/16x16-tileset-water-grass-and-sand> | CC0 | 见下方派生规则 |
 | `character.png` | 派生自 OGA「Character sprite + walk animation」,作者 Flixberry Entertainment,<https://opengameart.org/content/character-sprite-walk-animation> | CC0 | 见下方派生规则 |
@@ -38,3 +39,9 @@
   与本作水色不合,未采用;如后续需要草水过渡 9-patch 可再评估。
 - 波纹原件的 CURVE 拐角件(16×32 双排)未采用:池塘矩形非 tile 对齐
   (高 178.2px ≈ 11.14 tile),直边泡沫 + 描边已足够,拐角件留待需要时再接。
+- 宝箱件(票 #41)选 Kenney「Tiny Dungeon」:Tiny Town 全表无宝箱件,
+  Tiny Dungeon 的两态宝箱(tile 89 闭箱 / 90 开箱)与 16×16 基线、
+  Kenney 色板同族,免派生;OGA 检索到的单件宝箱多为 24×32 或带署名要求,未采用。
+  下载走 Kenney 签名直链(管线留痕见 `public/sfx/README.md` 下载过程节,
+  2026-11-27 取包,随包 License.txt 声明 CC0);整表入库备用,#42/#43 需要 dungeon
+  系贴图时按同一切片契约扩展 textures.ts 即可。

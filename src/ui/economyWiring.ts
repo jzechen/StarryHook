@@ -1,5 +1,6 @@
 import { BAITS } from '../config'
 import type { BackpackStore } from '../core/backpack'
+import type { ChestDef } from '../core/chests'
 import type { BaitEffect } from '../core/coreLoop'
 import { FISH } from '../core/fishCatalog'
 import { sellPriceFor } from '../core/quality'
@@ -73,4 +74,18 @@ export function sellFishOutcome(
     wallet.earn(sellPriceFor(fish.score, quality) * taken)
     return 'ok'
   }
+}
+
+/**
+ * 宝箱掉落结算(组合根接线,票 #41 spec §4.5「开箱即结算」):按内容表把
+ * 一次掉落直接送进既有库存路径,无中间态——金币 wallet.earn(金币唯一来源
+ * = 卖鱼 + 宝箱)、鱼饵 wallet.grantBait(库存直加,无扣款)、收藏品
+ * backpack.addCollectible(目录外忽略)。一次性判定不在此处:组合根先经
+ * ChestOpenedStore.open 恰好一次成功后才调用(开箱态为结算唯一入口)。
+ */
+export function grantChestLoot(chest: ChestDef, wallet: WalletStore, backpack: BackpackStore): void {
+  const loot = chest.loot
+  if (loot.type === 'coins') wallet.earn(loot.coins)
+  else if (loot.type === 'bait') wallet.grantBait(loot.baitId, loot.count)
+  else backpack.addCollectible(loot.collectibleId)
 }
