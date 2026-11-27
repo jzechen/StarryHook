@@ -118,7 +118,7 @@ describe('解析器拒绝坏数据(纯函数契约,合成最小图)', () => {
     tilesetData?: unknown
     width?: number
     data?: number[]
-  } = {}): unknown {
+  } = {}): Record<string, unknown> {
     const layers = overrides.layers ?? [
       { type: 'tilelayer', name: 'ground', data: new Array(144).fill(1) },
       { type: 'tilelayer', name: 'water', data: (() => {

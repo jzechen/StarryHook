@@ -12,9 +12,33 @@ import type { EnvState, FishDef, LoopPhase, MinigameState, WaterAreaId, Weather 
 export interface UpdateInput {
   /** 指针/空格是否按住 */
   holding: boolean
-  /** 移动方向分量(x 已按宽高比折算,单位:屏幕高度/秒) */
+  /** 移动方向分量(已斜向归一,|v| ≤ 1;速度 = TUNE.move.speed 世界像素/秒) */
   moveX: number
   moveY: number
+}
+
+/** 角色脚部碰撞盒半尺寸(像素;spec §1.3:碰撞盒 < 1 tile) */
+export const PLAYER_HALF_W = 5
+export const PLAYER_HALF_H = 3
+
+/**
+ * 世界碰撞来源(票 #34 注入缝):移动阻挡与边界钳制的参数来源。
+ * 核心不 import 地图/渲染,只消费「这个脚部盒是否被挡」的谓词输出
+ * (图 #25 纪律:核心循环只允许参数来源参数化级扩展)。
+ */
+export interface WorldCollisionSource {
+  /** 世界像素尺寸(边界钳制) */
+  readonly widthPx: number
+  readonly heightPx: number
+  /** 脚部碰撞盒(中心 cx,cy,半宽 halfW,半高 halfH)是否与不可走区域(水 tile/大件)重叠 */
+  blockedBox(cx: number, cy: number, halfW: number, halfH: number): boolean
+}
+
+/** 缺省世界:单屏 480×270、无 tile 碰撞(未注入时核心自洽可测;组合根注入真实地图) */
+const DEFAULT_WORLD: WorldCollisionSource = {
+  widthPx: 480,
+  heightPx: 270,
+  blockedBox: () => false,
 }
 
 /** 模式层(票 #23):无限休闲(现状)或限时挑战(纯计时壳,倒计时归零强制结算) */
@@ -51,12 +75,12 @@ export class CoreLoop {
   power = 0
   /** 本次抛竿远近 0..1(演出用) */
   bobberDist = 0
-  /** 玩家位置(归一化) */
-  px = 0.1
-  py = 0.85
+  /** 玩家位置(世界像素,脚部点;缺省 = 缺省世界左上合法位,组合根注入出生点覆盖) */
+  px = PLAYER_HALF_W
+  py = PLAYER_HALF_H
   /** 抛竿瞬间的玩家位置(浮标起飞点,等待中不随移动漂移) */
-  castX = 0.1
-  castY = 0.85
+  castX = PLAYER_HALF_W
+  castY = PLAYER_HALF_H
   fish: FishDef | null = null
   /** 响应窗口剩余秒数 */
   biteWindow = 0
@@ -76,6 +100,8 @@ export class CoreLoop {
   /** 局毕定格:归零强制结算瞬间的本局得分(此后自由游玩不漂移,再来一局才重开) */
   private roundFrozenScore = 0
 
+  /** 世界碰撞来源(票 #34 注入缝):缺省单屏无阻挡;组合根启动时注入一次 */
+  private world: WorldCollisionSource = DEFAULT_WORLD
   private rng: Rng
   /** 本次抛竿的出鱼权重(蓄力时算出) */
   private pool: number[] = []
@@ -133,6 +159,11 @@ export class CoreLoop {
   /** 设置当前竿参数(组合根在启动恢复与解锁时注入);仅换参数来源,状态机逻辑不变 */
   setRodParams(params: BarParams): void {
     this.barParams = params
+  }
+
+  /** 注入世界碰撞来源(组合根启动时调用一次):仅换移动阻挡的参数来源,状态机逻辑不变 */
+  setWorldCollision(source: WorldCollisionSource): void {
+    this.world = source
   }
 
   /**
@@ -317,26 +348,21 @@ export class CoreLoop {
     }
   }
 
-  /** 移动并阻挡在岸上(池塘 AABB 外,推向最近的岸) */
+  /**
+   * 世界像素移动(票 #34 位置模型迁移,有意规格变更:归一化 0.5 屏高/秒 ≈ 135px/s
+   * → 70 px/s):速度来自 TUNE.move.speed,输入已斜向归一,合速度恒定;
+   * 先钳到地图边界(脚部盒内缩),再 X/Y 轴分离尝试——被挡的轴整步取消
+   * (try/cancel:停在墙沿一个步长 ≤ 70/60 ≈ 1.2px 之内,可沿墙滑行,
+   * 单帧步长远小于 tile 边长,无穿墙);碰撞查询走注入来源,核心不感知地图。
+   */
   private movePlayer(dt: number, moveX: number, moveY: number): void {
-    this.px += moveX * TUNE.move.speed * dt
-    this.py += moveY * TUNE.move.speed * dt
-    this.px = Math.max(0.03, Math.min(0.97, this.px))
-    this.py = Math.max(0.06, Math.min(0.95, this.py))
-
-    const P = TUNE.pond
-    const r = 0.018 // 角色半径(归一化)
-    if (this.px > P.x0 - r && this.px < P.x1 + r && this.py > P.y0 - r && this.py < P.y1 + r) {
-      const dl = this.px - (P.x0 - r)
-      const dr = P.x1 + r - this.px
-      const du = this.py - (P.y0 - r)
-      const dd = P.y1 + r - this.py
-      const m = Math.min(dl, dr, du, dd)
-      if (m === dl) this.px = P.x0 - r
-      else if (m === dr) this.px = P.x1 + r
-      else if (m === du) this.py = P.y0 - r
-      else this.py = P.y1 + r
-    }
+    const w = this.world
+    const nx = this.px + moveX * TUNE.move.speed * dt
+    const ny = this.py + moveY * TUNE.move.speed * dt
+    const cx = Math.max(PLAYER_HALF_W, Math.min(w.widthPx - PLAYER_HALF_W, nx))
+    const cy = Math.max(PLAYER_HALF_H, Math.min(w.heightPx - PLAYER_HALF_H, ny))
+    if (!w.blockedBox(cx, this.py, PLAYER_HALF_W, PLAYER_HALF_H)) this.px = cx
+    if (!w.blockedBox(this.px, cy, PLAYER_HALF_W, PLAYER_HALF_H)) this.py = cy
   }
 
   private cast(): void {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CoreLoop, type UpdateInput } from './coreLoop'
+import { CoreLoop, PLAYER_HALF_H, PLAYER_HALF_W, type UpdateInput } from './coreLoop'
 import { Rng } from './rng'
 import { TUNE, type BarParams } from '../config'
 
@@ -167,31 +167,38 @@ describe('核心循环状态机(接缝:CoreLoop)', () => {
     expect(caught!.phase).toBe('idle')
   })
 
-  it('移动:被池塘下沿、上沿与左岸依次阻挡(绕行半圈)', () => {
+  it('移动:70 px/s 世界像素速度,方向分量直加(票 #34 有意规格变更:135→70)', () => {
+    // 规格钉死:70 px/s ≈ 4.4 tile/s(spec §1.3);期望值用独立字面量
+    expect(TUNE.move.speed).toBe(70)
     const l = newLoop()
-    run(l, 0.8, RIGHT) // 走到池塘正下方 px≈0.5
-    run(l, 2, { holding: false, moveX: 0, moveY: -1 })
-    expect(l.py).toBeCloseTo(0.818, 5) // 0.8(池塘下沿) + 0.018(角色半径)
-    run(l, 0.8, { holding: false, moveX: -1, moveY: 0 }) // 沿底边向左绕出(px≈0.1,池外)
-    run(l, 2, { holding: false, moveX: 0, moveY: -1 })
-    expect(l.py).toBeCloseTo(0.06, 5) // 屏幕上缘钳制(px=0.1 在池塘 x 范围外)
-    run(l, 0.85, RIGHT) // 顶部右移到池塘正上方 px≈0.5
-    run(l, 2, { holding: false, moveX: 0, moveY: 1 })
-    expect(l.py).toBeCloseTo(0.122, 5) // 0.14(池塘上沿) - 0.018
-    run(l, 0.8, { holding: false, moveX: -1, moveY: 0 }) // 左移回池外 px≈0.1
-    run(l, 0.8, { holding: false, moveX: 0, moveY: 1 }) // 下到池腰 py≈0.522(池外)
-    run(l, 1, RIGHT) // 向右 → 挡在池塘左岸
-    expect(l.px).toBeCloseTo(0.142, 5) // 0.16(池塘左沿) - 0.018
+    l.px = 100
+    l.py = 100
+    run(l, 1, RIGHT)
+    expect(l.px).toBeCloseTo(170, 10)
+    expect(l.py).toBe(100)
   })
 
-  it('移动:向下走到屏幕下缘被钳制', () => {
+  it('移动:斜走速度均匀(输入已归一化,合速度仍 70 px/s)', () => {
     const l = newLoop()
-    run(l, 5, { holding: false, moveX: 0, moveY: 1 })
-    expect(l.py).toBeCloseTo(0.95, 5)
+    l.px = 100
+    l.py = 100
+    const diag = { holding: false, moveX: Math.SQRT1_2, moveY: Math.SQRT1_2 }
+    run(l, 1, diag)
+    expect(l.px).toBeCloseTo(100 + 70 * Math.SQRT1_2, 10)
+    expect(l.py).toBeCloseTo(100 + 70 * Math.SQRT1_2, 10)
+  })
+
+  it('移动:缺省世界(未注入)钳制在 480×270 单屏边界,脚部盒内缩', () => {
+    const l = newLoop()
+    run(l, 10, { holding: false, moveX: 1, moveY: 1 })
+    expect(l.px).toBeCloseTo(480 - PLAYER_HALF_W, 10)
+    expect(l.py).toBeCloseTo(270 - PLAYER_HALF_H, 10)
   })
 
   it('小游戏期间移动被冻结', () => {
     const l = newLoop()
+    l.px = 100
+    l.py = 100
     castFull(l)
     runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
     l.update(DT, HOLD)
@@ -319,5 +326,52 @@ describe('饵效果单缝注入(接缝:本竿饵效果 → 等待减半 × 浓�
     const plain = hardAtBite(false)
     const rich = hardAtBite(true)
     expect(rich).toBeGreaterThan(plain)
+  })
+})
+
+describe('世界碰撞注入(接缝:setWorldCollision,票 #34)', () => {
+  /**
+   * 竖墙替身:x ∈ [192, 208) 的 tile 列不可走(核心不感知地图,
+   * 只见「这个脚部盒是否被挡」的谓词输出)。
+   */
+  function walledLoop(): CoreLoop {
+    const l = newLoop()
+    l.setWorldCollision({
+      widthPx: 960,
+      heightPx: 416,
+      blockedBox: (cx, cy, hw, hh) => cx + hw > 192 && cx - hw < 208 && cy - hh < 416 && cy + hh > 0,
+    })
+    return l
+  }
+
+  it('水 tile/大件挡人:X 轴停在盒贴墙一步之内,且不再穿墙', () => {
+    const l = walledLoop()
+    l.px = 100
+    l.py = 200
+    run(l, 5, RIGHT)
+    // 一步 ≤ 70/60 ≈ 1.17px:被挡轴停在墙沿一个步长之内(try/cancel 语义)
+    expect(l.px).toBeGreaterThanOrEqual(187 - 70 / 60)
+    expect(l.px).toBeLessThanOrEqual(187)
+    const stopped = l.px
+    run(l, 2, RIGHT)
+    expect(l.px).toBe(stopped) // 抵墙后位置稳定(无抖动、不穿墙)
+  })
+
+  it('轴分离滑动:斜向撞墙,X 被挡 Y 照常走(可沿墙滑行)', () => {
+    const l = walledLoop()
+    l.px = 100
+    l.py = 100
+    run(l, 2, { holding: false, moveX: Math.SQRT1_2, moveY: Math.SQRT1_2 })
+    expect(l.px).toBeLessThanOrEqual(187)
+    expect(l.px).toBeGreaterThanOrEqual(187 - 70 / 60)
+    expect(l.py).toBeCloseTo(100 + 70 * Math.SQRT1_2 * 2, 10)
+  })
+
+  it('注入只换参数来源:未注入 = 缺省世界(单屏、无 tile 阻挡)', () => {
+    const l = newLoop()
+    l.px = 100
+    l.py = 100
+    run(l, 2, RIGHT)
+    expect(l.px).toBeCloseTo(100 + 2 * 70, 10) // 未注入:一路走到单屏钳制前
   })
 })
