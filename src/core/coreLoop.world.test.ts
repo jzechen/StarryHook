@@ -231,10 +231,14 @@ describe('天气(接缝:会话开始一次抽样,会话内恒定,?seed 可复现
 })
 
 describe('当前水域(接缝:setWater 仅待机可接受,cast 消费引擎输出)', () => {
-  it('池塘(默认)五种鱼都可能出现', () => {
+  it('池塘(默认)既有 5 种都可能出现(票 #53 改向:鱼池扩至 9 种,红线 = 既有 5 种一条不少)', () => {
     const seen = new Set<string>()
     for (let s = 1; s <= 150; s++) seen.add(fishAtBite(newWorldLoop(s, { weather: 'sunny' })))
-    expect(seen.size).toBe(5)
+    for (const id of ['xiaobaitiao', 'wenzhongji', 'qianzhuinian', 'qiqiuHetun', 'shandiansuo']) {
+      expect(seen.has(id), `${id} 未在固定种子批中出现`).toBe(true)
+    }
+    // 名册新鱼只做加法:白天晴天可见扩容后的构成(灯笼鲇夜晚硬门不出)
+    expect(seen.has('denglongNian')).toBe(false)
   })
 
   it('cast 消费当前水域:河流里气球河豚硬门归零,铅坠鲶/闪电梭为主', () => {
