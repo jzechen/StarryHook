@@ -151,6 +151,29 @@ describe('河谷 river.json(河流横带 + 深湾 + 商店摊位)', () => {
     const [tx, ty] = cellOfPoint(map, stalls[0]!.x, stalls[0]!.y)
     expect(isBlockedCell(map, tx, ty)).toBe(false)
   })
+
+  it('河谷东路牌立在路北草地 (54,11)(实机验收:原 (54,12) 压行车道北排)', () => {
+    // 路牌 tile(gid 84)字面量落位:路北侧草地,仍贴东出口(warp (912,208));
+    // 行车道 = 东行土路 12–13 两排,牌子带 collision 不得压占任一排
+    const SIGN_GID = 84
+    expect(map.deco[11 * map.width + 54]).toBe(SIGN_GID)
+    expect(map.deco[12 * map.width + 54]).not.toBe(SIGN_GID)
+    expect(isBlockedCell(map, 54, 11)).toBe(true) // 牌子带 collision(叙事物惯例)
+    expect(isBlockedCell(map, 54, 12)).toBe(false)
+    expect(isBlockedCell(map, 54, 13)).toBe(false)
+    // 新位不在东出口触发区、不在出口走廊内(走廊不变量之外的本位兜底)
+    const warp = warpsOf(map).find(w => w.target === 'lake')!
+    const px = 54 * map.tileWidth
+    const py = 11 * map.tileWidth
+    const inZone = px >= warp.x && px < warp.x + warp.width && py >= warp.y && py < warp.y + warp.height
+    const corridor = exitCorridorOf(map, warp)
+    expect(inZone).toBe(false)
+    expect(inCorridor(corridor, 54, 11, map)).toBe(false)
+    // 叙事物件锚在牌 tile 中心(与村舍/湖畔路牌同款约定),物件点随 tile 上移
+    const sign = parseInteractionSpots(map.objects, map.tileWidth).find(s => s.kind === 'sign' && s.name === '河谷东路牌')!
+    expect(sign.x).toBe(54 * map.tileWidth + map.tileWidth / 2)
+    expect(sign.y).toBe(11 * map.tileWidth + map.tileWidth / 2)
+  })
 })
 
 describe('湖畔 lake.json(不规则湖 + 湖心)', () => {
