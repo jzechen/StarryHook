@@ -13,18 +13,26 @@ function clockAt(month: number, hour: number): () => Date {
   return () => new Date(2026, month - 1, 15, hour, 0, 0)
 }
 
-/** 固定环境的核心循环:month/hour/weather 不传 = 夏/日/由种子派生;area 传入即在待机时切好 */
+/** 固定环境的核心循环:month/hour/weather 不传 = 夏/日/由种子派生;area 传入即在待机时切好;
+ * spotMul 传入即随交互点来源注入(票 #38 钓位微差) */
 function newWorldLoop(
   seed: number,
-  world: { month?: number; hour?: number; weather?: Weather; area?: 'pond' | 'river' | 'lake' } = {},
+  world: {
+    month?: number
+    hour?: number
+    weather?: Weather
+    area?: 'pond' | 'river' | 'lake'
+    spotMul?: Readonly<Record<string, number>>
+  } = {},
 ): CoreLoop {
   const loop = new CoreLoop(new Rng(seed), {
     clock: clockAt(world.month ?? 6, world.hour ?? 12),
     weather: world.weather,
   })
   if (world.area) expect(loop.setWater(world.area)).toBe(true)
-  // 票 #36:idle 抛竿须经交互点,助手注入恒定钓位来源(既有用例 = 范围内抛竿)
-  loop.setInteractionSource(() => ({ kind: 'spot' }))
+  // 票 #36:idle 抛竿须经交互点,助手注入恒定钓位来源(既有用例 = 范围内抛竿);
+  // 票 #38:来源携带钓位微差倍率表,抛竿按当前钓位读取
+  loop.setInteractionSource(() => (world.spotMul ? { kind: 'spot', spotMul: world.spotMul } : { kind: 'spot' }))
   return loop
 }
 
@@ -162,6 +170,32 @@ describe('环境状态源接线(接缝:时钟注入,可选形参)', () => {
       return catfish
     }
     expect(count(true)).toBe(count(false))
+  })
+})
+
+describe('钓位微差(接缝:交互来源 spotMul → 抛竿按当前钓位读取,票 #38)', () => {
+  it('修饰进入 cast:河流白昼晴天,同批种子下「深湾」式倍率(铅坠鲶 ×2)命中数高于无修饰钓位', () => {
+    const plain = countFish({ weather: 'sunny', area: 'river' }, 'qianzhuinian')
+    const deep = countFish({ weather: 'sunny', area: 'river', spotMul: { qianzhuinian: 2 } }, 'qianzhuinian')
+    expect(deep).toBeGreaterThan(plain)
+  })
+
+  it('不越硬门:河流钓位倍率表点名气球河豚(河流硬门),150 种子一条也钓不上来', () => {
+    let hetun = 0
+    for (let s = 1; s <= 150; s++) {
+      if (fishAtBite(newWorldLoop(s, { weather: 'sunny', area: 'river', spotMul: { qiqiuHetun: 5 } })) === 'qiqiuHetun') {
+        hetun++
+      }
+    }
+    expect(hetun).toBe(0)
+  })
+
+  it('缺省无修饰 = 现行权重逐位一致:同种子下,来源带空表与不带,连抛三竿上钩鱼逐位一致', () => {
+    const withEmpty = newWorldLoop(42, { weather: 'sunny', area: 'river', spotMul: {} })
+    const without = newWorldLoop(42, { weather: 'sunny', area: 'river' })
+    for (let i = 0; i < 3; i++) {
+      expect(fishAtBite(withEmpty)).toBe(fishAtBite(without))
+    }
   })
 })
 
