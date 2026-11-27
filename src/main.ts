@@ -12,11 +12,9 @@ import { Rng } from './core/rng'
 import { TimedBestStore } from './core/timedBest'
 import type { LoopPhase } from './core/types'
 import { WalletStore } from './core/wallet'
-import { WorldScene } from './render/worldScene'
+import { WorldDirector } from './render/worldDirector'
 import { loadSceneTextures } from './render/textures'
 import { applyViewportToCanvas } from './render/viewport'
-import { village } from './world/village'
-import { worldCollisionSource } from './world/worldMap'
 import { baitBadgeText } from './ui/baitBadgeText'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
@@ -80,18 +78,16 @@ async function main(): Promise<void> {
   const core = new CoreLoop(new Rng(seed))
   // 场景素材:图集加载 + 切片(素材文件 → 图集 → 精灵 管线入口)
   const textures = await loadSceneTextures()
-  // 世界(票 #34):村舍场景图 + 地图驱动碰撞注入 + 出生点落位。
-  // 碰撞来源 = 解析器产出的 blocked 网格谓词(水 tile/大件),核心不 import 地图/渲染;
-  // 位置模型为世界像素,出生点来自物件层(村舍图左上空地)。
-  const scene = new WorldScene(app, textures, village)
-  core.setWorldCollision(worldCollisionSource(village))
-  core.px = village.spawn.x
-  core.py = village.spawn.y
+  // 世界(票 #35):三图村舍↔河谷↔湖畔的编排层——开机按位置快照恢复
+  // (位置 + 朝向 + 图级水域推导;无/坏快照回村舍出生点)、地图驱动碰撞
+  // 注入、出口过场(淡黑 300ms,输入锁、不写存档)、仅 idle 落盘。
+  // 核心循环只消费注入的碰撞来源与 setWater,不感知过场与存档。
+  const storage = localStorageKv()
+  const director = new WorldDirector({ app, textures, core, storage })
   const seedEl = document.getElementById('seed')
   if (seedEl) seedEl.textContent = `seed ${seed}`
 
   // 收集册:捕获自动登记,跨会话持久(隐私模式下写入失败自动降级为内存收集)
-  const storage = localStorageKv()
   // 限时单局最高纪录(票 #23 纪录双轨):独立键跨会话持久,损坏按 0 降级。
   // 消费三处,写入只有一处——顶栏限时轨展示(顶栏「最高纪录」,票 #22 review)、
   // 归零结算的破纪录判定源(recordIfHigher,唯一写入点)与模式面板的纪录展示
@@ -218,7 +214,13 @@ async function main(): Promise<void> {
       dy = dy / len
     }
 
-    core.update(dt, { holding: mouseHold || keys.has('Space'), moveX: dx, moveY: dy })
+    // 过场中输入锁定(票 #35):组合根停止喂输入,核心停在 idle——
+    // 核心循环不感知过场;位置冻结,存档门禁同样跳过(worldDirector 内判)
+    if (!director.inputLocked) {
+      core.update(dt, { holding: mouseHold || keys.has('Space'), moveX: dx, moveY: dy })
+    }
+    // 世界推进:过场状态机、出口检测、换图落位、存档门禁、场景渲染
+    director.update(tk.lastTime / 1000, dt)
     // 结算捕获 → 登记进收集册与成长(两系统无耦合,核心循环自身不感知)。
     // 顺序不可换:先读捕获前快照 → 登记 → 再读快照 → 按纯函数决策弹提示
     if (core.phase === 'caught' && prevPhase !== 'caught' && core.fish) {
@@ -289,7 +291,6 @@ async function main(): Promise<void> {
       toasts.showText(roundSettlementText(score, recordBroken))
     }
     prevRoundActive = core.roundActive
-    scene.update(core, tk.lastTime / 1000, dt)
     hud.update(core)
     // 经济常驻展示(票 #17 故事 2/10,review 修复):金币余额与装备饵余量上顶栏,
     // 内容变化才重写 DOM(hud 既有守卫);垂钓进行中商店不可开,饵余量由此常驻可见,

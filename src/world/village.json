@@ -168,6 +168,33 @@
        "value": "pond"
       }
      ]
+    },
+    {
+     "point": true,
+     "name": "东 · 河谷",
+     "id": 4,
+     "rotation": 0,
+     "type": "warp",
+     "visible": true,
+     "x": 912,
+     "y": 208,
+     "properties": [
+      {
+       "name": "target",
+       "type": "string",
+       "value": "river"
+      },
+      {
+       "name": "tx",
+       "type": "float",
+       "value": 88
+      },
+      {
+       "name": "ty",
+       "type": "float",
+       "value": 208
+      }
+     ]
     }
    ],
    "opacity": 1,
@@ -178,7 +205,7 @@
   }
  ],
  "nextlayerid": 5,
- "nextobjectid": 4,
+ "nextobjectid": 5,
  "orientation": "orthogonal",
  "renderorder": "right-down",
  "tiledversion": "1.11.0",

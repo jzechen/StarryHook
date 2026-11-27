@@ -4,23 +4,26 @@ import { AREA_PALETTES } from './areaPalette'
 import { DEFAULT_AREA } from '../core/waterAreas'
 import type { CoreLoop } from '../core/coreLoop'
 import type { LoopPhase, WaterAreaId } from '../core/types'
-import { BASE_GROUND_GID, type WorldMapData } from '../world/worldMap'
-import type { Facing, SceneTextures, WaveEdge } from './textures'
+import { BASE_GROUND_GID, waterFillsBounds, type WorldMapData } from '../world/worldMap'
+import type { SceneTextures, WaveEdge } from './textures'
 import { FISH_FRAME_COUNT, PLAYER_FRAME_COUNT, TILE, WAVE_FRAME_COUNT, WATER_FRAME_COUNT } from './textures'
 
 /**
- * 世界场景(票 #34,spec §1.1–1.3):村舍地图的薄渲染器。
+ * 世界场景(票 #34 起步,票 #35 扩为三图通用):世界地图的薄渲染器。
  *
  * 架构(ADR-0002 精灵化;pondScene 的收编版):世界容器随相机平移
  * (整数像素,computeCamera),其上分层 = 草地基底(TilingSprite,整片)
- * → 地面叠加(路/石草等非基底 ground cell,逐 tile)→ 水体(矩形水面
- * TilingSprite + 池底/描边静态几何)→ 岸线泡沫(逐 tile,由水 cell 邻接
- * 现算,不入地图数据)→ 装饰(deco 层逐 tile Sprite + 视口剔除)→ 实体
+ * → 地面叠加(路/石草等非基底 ground cell,逐 tile)→ 水体(形态分岔:
+ * 填满 bbox 的矩形水沿用整片 TilingSprite + 池底/描边静态几何;湖畔 blob/
+ * 河谷带状走逐 cell 水精灵)→ 岸线泡沫(逐 tile,由水 cell 邻接现算,
+ * 不入地图数据)→ 装饰(deco 层逐 tile Sprite + 视口剔除)→ 实体
  * (角色/浮标/鱼线/蓄力条/咬钩「!」)→ 覆盖 UI(小游戏面板,屏空间,
  * 不随相机滚动)。
  *
  * 坐标系:核心循环输出世界像素(脚部点);画布固定 480×270 逻辑分辨率
  * (视口层信箱缩放),地图 60×26 tile = 960×416px,图内双向卷动。
+ * 场景可整体换图(票 #35 出口过场):WorldScene 每图一个实例,换图时
+ * 组合根 destroy 旧实例、建新实例(共享贴图归 SceneTextures,不销毁)。
  */
 
 /** 流水帧轮换周期(秒)——13 帧一轮约 2s,读作缓慢水流(沿 pondScene) */
@@ -79,10 +82,15 @@ export class WorldScene {
   /** 地面叠加容器(路/石草等非基底 cell;tint 随水域演出走) */
   private groundOverlay = new Container()
   private groundSprites: CulledSprite[] = []
-  /** 池底与描边(静态几何:构造期绘制一次;Pixi v8 指令只增不减,不逐帧重画) */
+  /** 水体层(矩形水 = 池底/整片 TilingSprite/描边;blob/带状 = 逐 cell 精灵) */
+  private waterLayer = new Container()
+  /** 池底与描边(静态几何:构造期绘制一次;Pixi v8 指令只增不减,不逐帧重画)。
+   * 仅「水填满 bbox」的矩形水域建;blob/带状水走逐 cell 精灵,无矩形描边。 */
   private pondFill = new Graphics()
-  private waterTiling: TilingSprite
+  private waterTiling: TilingSprite | null = null
   private pondStroke = new Graphics()
+  /** 逐 cell 水体(blob/带状;共享流水帧逐帧轮换 + 视口剔除) */
+  private waterCellSprites: CulledSprite[] = []
   private waveLayer = new Container()
   private foamTiles: FoamTile[] = []
   private decoLayer = new Container()
@@ -105,8 +113,7 @@ export class WorldScene {
   private biteT = 0
   /** 最近一次应用的水域色调(变化才重设 tint) */
   private renderedArea: WaterAreaId | null = null
-  // —— 角色动画状态(渲染侧自推导,不回写核心) ——
-  private facing: Facing = 'down'
+  // —— 角色动画状态(朝向由核心持有,票 #35;渲染侧只管行走计时) ——
   /** 行走动画计时;静止时归零回到待机帧 */
   private walkT = 0
   private prevPx = -1
@@ -133,12 +140,27 @@ export class WorldScene {
       }
     }
 
-    // 水体:矩形水面 TilingSprite(spec §1.2 渐进收编)+ 池底/描边静态几何
-    const wr = map.waterRectPx
-    this.waterTiling = new TilingSprite({ texture: textures.waterFrames[0]!, width: wr.width, height: wr.height })
-    this.waterTiling.position.set(wr.x, wr.y)
-    this.pondFill.rect(wr.x, wr.y, wr.width, wr.height).fill(0xffffff)
-    this.pondStroke.rect(wr.x, wr.y, wr.width, wr.height).stroke({ width: 4, color: 0xffffff })
+    // 水体:形态分岔(票 #35)——填满 bbox 的矩形水沿用整片 TilingSprite
+    // (spec §1.2 渐进收编)+ 池底/描边;blob/带状(河谷/湖畔)走逐 cell 精灵,
+    // 岸线由泡沫承担。动画两路都按帧轮换,相位无差异。
+    if (waterFillsBounds(map)) {
+      const wr = map.waterRectPx
+      this.waterTiling = new TilingSprite({ texture: textures.waterFrames[0]!, width: wr.width, height: wr.height })
+      this.waterTiling.position.set(wr.x, wr.y)
+      this.pondFill.rect(wr.x, wr.y, wr.width, wr.height).fill(0xffffff)
+      this.pondStroke.rect(wr.x, wr.y, wr.width, wr.height).stroke({ width: 4, color: 0xffffff })
+      this.waterLayer.addChild(this.pondFill, this.waterTiling, this.pondStroke)
+    } else {
+      for (let ty = 0; ty < map.height; ty++) {
+        for (let tx = 0; tx < map.width; tx++) {
+          if (map.water[ty * map.width + tx] === 0) continue
+          const sprite = new Sprite(textures.waterFrames[0]!)
+          sprite.position.set(tx * TILE, ty * TILE)
+          this.waterLayer.addChild(sprite)
+          this.waterCellSprites.push({ sprite, x: tx * TILE, y: ty * TILE })
+        }
+      }
+    }
 
     // 装饰:deco 层逐 tile 静态精灵(视口剔除在 update)
     for (let ty = 0; ty < map.height; ty++) {
@@ -183,9 +205,7 @@ export class WorldScene {
     this.world.addChild(
       this.groundTiling,
       this.groundOverlay,
-      this.pondFill,
-      this.waterTiling,
-      this.pondStroke,
+      this.waterLayer,
       this.waveLayer,
       this.decoLayer,
       this.ripples,
@@ -201,6 +221,12 @@ export class WorldScene {
     this.applyAreaPalette(DEFAULT_AREA)
   }
 
+  /** 场景切换(票 #35 出口过场):销毁自身容器;共享贴图归 SceneTextures,不在此销毁 */
+  destroy(): void {
+    this.world.destroy({ children: true })
+    this.ui.destroy({ children: true })
+  }
+
   /** 按水域 tint 背景/水面(票 #15 沿革);快照缺 area 按默认水域渲染,不因缺字段抛错 */
   private applyAreaPalette(area: WaterAreaId | undefined): void {
     const target = area ?? DEFAULT_AREA
@@ -209,9 +235,12 @@ export class WorldScene {
     const palette = AREA_PALETTES[target]
     this.groundTiling.tint = palette.bank
     this.groundOverlay.tint = palette.bank
-    this.waterTiling.tint = palette.water
-    this.pondFill.tint = palette.fill
-    this.pondStroke.tint = palette.stroke
+    if (this.waterTiling) {
+      this.waterTiling.tint = palette.water
+      this.pondFill.tint = palette.fill
+      this.pondStroke.tint = palette.stroke
+    }
+    for (const cell of this.waterCellSprites) cell.sprite.tint = palette.water
   }
 
   /** 建 tile 静态精灵(gid → townTiles 下标 = gid − firstGid,行优先) */
@@ -284,8 +313,13 @@ export class WorldScene {
     this.castT = Math.min(1, this.castT + dt / 0.22)
     this.biteT += dt
 
-    // 池水流动:13 帧按周期轮换
-    this.waterTiling.texture = this.textures.waterFrames[Math.floor(t / WATER_FRAME_PERIOD) % WATER_FRAME_COUNT]!
+    // 池水流动:13 帧按周期轮换(矩形水换 TilingSprite 贴图;逐 cell 换精灵贴图)
+    const waterFrame = Math.floor(t / WATER_FRAME_PERIOD) % WATER_FRAME_COUNT
+    if (this.waterTiling) this.waterTiling.texture = this.textures.waterFrames[waterFrame]!
+    else {
+      const texture = this.textures.waterFrames[waterFrame]!
+      for (const cell of this.waterCellSprites) cell.sprite.texture = texture
+    }
 
     // 水域演出:变化才重设 tint
     this.applyAreaPalette(core.area)
@@ -299,6 +333,7 @@ export class WorldScene {
     }
     cull(this.groundSprites)
     cull(this.decoSprites)
+    cull(this.waterCellSprites)
 
     // 岸线泡沫:帧沿岸边环流(逐 tile 相位偏移)
     const waveFrame = Math.floor(t / WAVE_FRAME_PERIOD)
@@ -306,21 +341,18 @@ export class WorldScene {
       tile.sprite.texture = this.textures.waveFrames[tile.edge][(waveFrame + tile.phase) % WAVE_FRAME_COUNT]!
     }
 
-    // 角色方向与行走:对比前后帧世界像素位移(渲染侧推导,核心零改动)
+    // 角色朝向与行走:朝向由核心持有(票 #35:过场保持行进方向 + 存档口径
+    // 同源,渲染侧不再自推导);渲染侧只按位移推进行走动画计时
     if (this.prevPx >= 0) {
       const dx = core.px - this.prevPx
       const dy = core.py - this.prevPy
-      if (Math.hypot(dx, dy) > MOVE_EPS) {
-        this.facing = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up'
-        this.walkT += dt
-      } else {
-        this.walkT = 0
-      }
+      if (Math.hypot(dx, dy) > MOVE_EPS) this.walkT += dt
+      else this.walkT = 0
     }
     this.prevPx = core.px
     this.prevPy = core.py
     this.playerSprite.texture =
-      this.textures.playerFrames[this.facing][Math.floor(this.walkT / WALK_FRAME_PERIOD) % PLAYER_FRAME_COUNT]!
+      this.textures.playerFrames[core.facing][Math.floor(this.walkT / WALK_FRAME_PERIOD) % PLAYER_FRAME_COUNT]!
     this.player.position.set(Math.round(core.px), Math.round(core.py))
 
     // 浮标落点:从抛竿点向水域中心,远近由蓄力决定(世界像素;钳在水域内)

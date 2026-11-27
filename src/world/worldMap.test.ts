@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import villageJson from './village.json'
-import { blockedBox, isBlockedCell, parseWorldMap, type WorldMapData } from './worldMap'
+import { blockedBox, isBlockedCell, parseWorldMap, waterFillsBounds, type WorldMapData } from './worldMap'
 
 /**
  * 村舍地图数据与解析器不变量(票 #34,spec §1.1/§1.2 红线):
@@ -108,6 +108,41 @@ describe('村舍地图 village.json(接缝:parseWorldMap 纯函数)', () => {
     const flower = cellOf(map.deco, map, 3)
     expect(flower).not.toBeNull()
     expect(isBlockedCell(map, flower![0], flower![1])).toBe(false)
+  })
+})
+
+describe('waterFillsBounds(票 #35:渲染形态分岔依据——矩形水填满 bbox,blob 不填满)', () => {
+  /** 12×12 合成图:水层按给定 cell 集合填 gid 1 */
+  function rawWater(cells: [number, number][]): WorldMapData {
+    const data = new Array(144).fill(0)
+    for (const [tx, ty] of cells) data[ty * 12 + tx] = 1
+    return parseWorldMap({
+      width: 12, height: 12, tilewidth: 16, tileheight: 16,
+      orientation: 'orthogonal', renderorder: 'right-down', type: 'map',
+      layers: [
+        { type: 'tilelayer', name: 'ground', data: new Array(144).fill(1) },
+        { type: 'tilelayer', name: 'water', data },
+        { type: 'tilelayer', name: 'deco', data: new Array(144).fill(0) },
+        { type: 'objectgroup', name: 'objects', objects: [{ name: 'spawn', type: 'spawn', x: 40, y: 40, point: true }] },
+      ],
+      tilesets: [{
+        name: 'tiny-town', image: 'tiny-town.png', imagewidth: 192, imageheight: 176,
+        tilewidth: 16, tileheight: 16, columns: 12, tilecount: 132, firstgid: 1,
+      }],
+    })
+  }
+
+  it('填满 bbox 的矩形水 → true(村舍池塘前提)', () => {
+    const cells: [number, number][] = []
+    for (let ty = 4; ty <= 6; ty++) for (let tx = 3; tx <= 8; tx++) cells.push([tx, ty])
+    expect(waterFillsBounds(rawWater(cells))).toBe(true)
+  })
+
+  it('L 形(同 bbox 有缺口)→ false(湖畔 blob 前提)', () => {
+    const cells: [number, number][] = []
+    for (let tx = 3; tx <= 8; tx++) cells.push([tx, 5])
+    for (let ty = 5; ty <= 7; ty++) cells.push([3, ty])
+    expect(waterFillsBounds(rawWater(cells))).toBe(false)
   })
 })
 

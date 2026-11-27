@@ -26,6 +26,15 @@ export interface FishDef {
 
 export type WaterAreaId = 'pond' | 'river' | 'lake'
 
+/**
+ * 场景 id(票 #35,spec §1.1:三张场景线性相连)。核心只把它当作不透明键
+ * (存档快照、位置→水域推导的入参);场景数据归 src/world 注册表。
+ */
+export type MapId = 'village' | 'river' | 'lake'
+
+/** 角色朝向(行走贴图行序:下/上/左/右;存档口径含朝向,票 #35) */
+export type Facing = 'down' | 'up' | 'left' | 'right'
+
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter'
 
 export type Daylight = 'day' | 'night'

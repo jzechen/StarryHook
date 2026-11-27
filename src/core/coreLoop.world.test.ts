@@ -49,6 +49,69 @@ function countFish(world: { month?: number; hour?: number; weather?: Weather; ar
   return count
 }
 
+describe('玩家朝向(票 #35:存档口径 = (mapId, x, y, 朝向);过场保持行进方向)', () => {
+  /** 走 n 帧指定方向 */
+  function walk(loop: CoreLoop, input: UpdateInput, frames = 12): void {
+    for (let i = 0; i < frames; i++) loop.update(DT, input)
+  }
+
+  const dir = (x: number, y: number): UpdateInput => ({ holding: false, moveX: x, moveY: y })
+
+  /** 缺省世界(480×270)中部起步:四向都有位移余量 */
+  function midloop(): CoreLoop {
+    const loop = newWorldLoop(42)
+    loop.px = 240
+    loop.py = 135
+    return loop
+  }
+
+  it('默认朝下;向右走 → 右,向上走 → 上,向左走 → 左,向下走 → 下', () => {
+    const loop = midloop()
+    expect(loop.facing).toBe('down')
+    walk(loop, dir(1, 0))
+    expect(loop.facing).toBe('right')
+    walk(loop, dir(0, -1))
+    expect(loop.facing).toBe('up')
+    walk(loop, dir(-1, 0))
+    expect(loop.facing).toBe('left')
+    walk(loop, dir(0, 1))
+    expect(loop.facing).toBe('down')
+  })
+
+  it('静止不翻转:松开方向键后朝向保持', () => {
+    const loop = midloop()
+    walk(loop, dir(1, 0))
+    expect(loop.facing).toBe('right')
+    walk(loop, dir(0, 0))
+    expect(loop.facing).toBe('right')
+  })
+
+  it('斜向取主轴(与渲染侧行走贴图推导同规则):横向分量 ≥ 纵向 → 横向', () => {
+    const loop = midloop()
+    walk(loop, dir(0.707, 0.707)) // 归一化斜向:两轴位移相等 → 横向优先
+    expect(loop.facing).toBe('right')
+    walk(loop, dir(-0.707, 0.707))
+    expect(loop.facing).toBe('left')
+  })
+
+  it('撞墙滑动时朝向跟随实际位移:被挡轴不计入(可沿墙转头)', () => {
+    // 缺省世界 480×270:贴右缘(横向被钳制)向右下走 → 只有纵向位移 → 朝下
+    const loop = new CoreLoop(new Rng(42))
+    loop.px = 480 - 5
+    loop.py = 135
+    walk(loop, dir(1, 1), 30)
+    expect(loop.facing).toBe('down')
+  })
+
+  it('朝向可外部直改(组合根恢复存档/过场落位用),随后的行走照常推导', () => {
+    const loop = midloop()
+    loop.facing = 'left'
+    expect(loop.facing).toBe('left')
+    walk(loop, dir(1, 0))
+    expect(loop.facing).toBe('right')
+  })
+})
+
 describe('环境状态源接线(接缝:时钟注入,可选形参)', () => {
   it('默认水域 = 池塘;默认时钟 = 真实时间(env 与构造时刻同季节同昼夜)', () => {
     const d = new Date()

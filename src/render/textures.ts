@@ -1,5 +1,5 @@
 import { Assets, Rectangle, Texture } from 'pixi.js'
-import type { FishDef } from '../core/types'
+import type { FishDef, Facing } from '../core/types'
 import { FISH_FRAME_COUNT, FISH_FRAME_SIZE, FISH_SHAPE_ROW } from './fishAtlas'
 
 /**
@@ -36,8 +36,8 @@ export const TOWN_TILE_COUNT = 132
 /** 鱼精灵每鱼帧数(fish-atlas.png,帧 0 = 常态 / 帧 1 = 游动) */
 export { FISH_FRAME_COUNT } from './fishAtlas'
 
-/** 角色朝向(character.png 行序:下/上/左/右) */
-export type Facing = 'down' | 'up' | 'left' | 'right'
+/** 角色朝向(核心状态,票 #35 迁至 core/types;此处沿用其行序契约:下/上/左/右) */
+export type { Facing }
 /** 岸线波纹贴边(shoreline-waves.png 行序:上/右/下/左,土侧朝外) */
 export type WaveEdge = 'top' | 'right' | 'bottom' | 'left'
 
