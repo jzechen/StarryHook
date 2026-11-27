@@ -146,6 +146,52 @@ describe('浓饵修正入参(票 #21:第 5 参 richBait,难鱼权重提升)', ()
   })
 })
 
+describe('钓位微差乘子入参(票 #38:第 6 参 spotMul,per-fish 倍率表)', () => {
+  it('指定鱼权重 ×2,其余鱼逐位不变(春·日·晴·池塘,现行基线 [3,0,0,4,4])', () => {
+    const w = computePoolWeights(SYNTH, SYNTH_POOL, env({ season: 'spring' }), 0, false, { sa: 2 })
+    expect(w).toEqual([6, 0, 0, 4, 4])
+  })
+
+  it('硬门交互:被季节/昼夜门挡住的鱼,倍率再大也不复活(不越硬门)', () => {
+    // 乙季节门(仅夏)、丙昼夜门(仅夜):春天·白天双双归零,倍率不改变判定
+    const w = computePoolWeights(SYNTH, SYNTH_POOL, env({ season: 'spring' }), 0, false, { sb: 3, sc: 2 })
+    expect(w).toEqual([3, 0, 0, 4, 4])
+    // 对照:门内(夏·夜·晴)倍率正常生效 —— 乙现行 6 ×2 = 12
+    const open = computePoolWeights(SYNTH, SYNTH_POOL, env({ season: 'summer', daylight: 'night' }), 0, false, { sb: 2 })
+    expect(open).toEqual([2, 12, 0.5, 6, 6])
+  })
+
+  it('不引新鱼种:不在基底鱼池的鱼,倍率再大也归零', () => {
+    const withoutSe = { ...SYNTH_POOL, se: 0 }
+    const w = computePoolWeights(SYNTH, withoutSe, env({ season: 'winter', daylight: 'night', weather: 'rain' }), 0, false, { se: 9 })
+    expect(w[4]).toBe(0)
+  })
+
+  it('与浓饵同形叠乘(乘法交换):冬·夜,丁 = 4×2(冬)×1.5(夜)×1.6(浓)×2(钓位)', () => {
+    const w = computePoolWeights(SYNTH, SYNTH_POOL, env({ season: 'winter', daylight: 'night' }), 0, true, { sd: 2 })
+    expect(w[3]).toBeCloseTo(38.4, 10)
+  })
+
+  it('缺省(不传第 6 参)/ 显式 undefined / 空表 —— 三者与现行权重逐位一致(零回归锁)', () => {
+    const envs = [
+      env({ season: 'spring' }),
+      env({ season: 'summer', daylight: 'night', weather: 'rain' }),
+      env({ season: 'winter', daylight: 'night' }),
+    ]
+    for (const e of envs) {
+      for (const power of [0, 1]) {
+        for (const rich of [false, true]) {
+          const plain = computePoolWeights(SYNTH, SYNTH_POOL, e, power, rich)
+          expect(computePoolWeights(SYNTH, SYNTH_POOL, e, power, rich, undefined)).toEqual(plain)
+          expect(computePoolWeights(SYNTH, SYNTH_POOL, e, power, rich, {})).toEqual(plain)
+          // 显式 ×1 = 恒等乘子:整表逐位一致(无键同 ×1)
+          expect(computePoolWeights(SYNTH, SYNTH_POOL, e, power, rich, { sa: 1 })).toEqual(plain)
+        }
+      }
+    }
+  })
+})
+
 describe('守护:真实数据环境穷举(4 季 × 2 昼夜 × 2 天气 × 3 水域 × 蓄力 0/1)', () => {
   const SEASONS = ['spring', 'summer', 'autumn', 'winter'] as const
   const DAYLIGHTS = ['day', 'night'] as const
