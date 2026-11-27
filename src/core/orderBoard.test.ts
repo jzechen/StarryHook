@@ -138,8 +138,9 @@ describe('订单池(接缝:ORDER_TEMPLATES,票 #55:6~8 模板表驱动轮转)', 
   })
 
   it('池表覆盖全部既有鱼种(交付链对每种鱼都可玩,票 #55 验收)', () => {
-    for (const fish of FISH) {
-      expect(ORDER_TEMPLATES.some(t => t.fishId === fish.id), `鱼种 ${fish.id} 有委托`).toBe(true)
+    // 字面量钉当前 5 鱼种(不随鱼目录自动扩——票 #53 扩鱼种时由该票决定池表怎么长)
+    for (const fishId of ['xiaobaitiao', 'wenzhongji', 'qianzhuinian', 'qiqiuHetun', 'shandiansuo']) {
+      expect(ORDER_TEMPLATES.some(t => t.fishId === fishId), `鱼种 ${fishId} 有委托`).toBe(true)
     }
   })
 })
