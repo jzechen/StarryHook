@@ -57,6 +57,7 @@ describe('装备链路全链(组合层集成:购买 → 装备 → 抛竿消耗 
   it('购买香饵 → 自动装备 → 抛竿消耗一支 → 等待时长减半生效', () => {
     const wallet = new WalletStore(memoryStorage())
     const core = new CoreLoop(new Rng(42))
+    core.setInteractionSource(() => ({ kind: 'spot' })) // 票 #36:抛竿须在钓位范围内
     core.setBaitEffectSource(baitEffectSource(wallet))
 
     wallet.earn(30)

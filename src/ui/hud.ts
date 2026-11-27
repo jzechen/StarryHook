@@ -75,7 +75,8 @@ export class Hud {
   /**
    * 环境徽章(票 #15):「春 · 日 · 晴」,文案由纯函数 envBadgeText 派生,
    * 与出鱼权重同源于 core.env。季节/昼夜按真实时间流转、天气会话常量,
-   * 内容不变不重写(与得分/等级同款守卫);水域不进徽章,换水域面板可见。
+   * 内容不变不重写(与得分/等级同款守卫);水域不进徽章(换水域面板已随票 #36 退役,
+ * 水域由钓位走近自动切换,「去哪钓」走图鉴出没条件)。
    */
   setEnv(env: EnvState): void {
     const text = envBadgeText(env)
@@ -145,7 +146,7 @@ export class Hud {
     let urgent = false
     switch (core.phase) {
       case 'idle':
-        hint = 'WASD/方向键移动 · 按住鼠标或空格蓄力,松开抛竿'
+        hint = 'WASD/方向键移动 · 走近钓位,按住 E/空格蓄力,松开抛竿'
         break
       case 'charging':
         hint = `蓄力 ${Math.round(core.power * 100)}%……松开抛竿!`

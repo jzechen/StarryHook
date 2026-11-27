@@ -5,6 +5,7 @@ import { DEFAULT_AREA } from '../core/waterAreas'
 import type { CoreLoop } from '../core/coreLoop'
 import type { LoopPhase, WaterAreaId } from '../core/types'
 import { BASE_GROUND_GID, type WorldMapData } from '../world/worldMap'
+import { InteractionPrompt } from './interactionPrompt'
 import type { Facing, SceneTextures, WaveEdge } from './textures'
 import { FISH_FRAME_COUNT, PLAYER_FRAME_COUNT, TILE, WAVE_FRAME_COUNT, WATER_FRAME_COUNT } from './textures'
 
@@ -67,6 +68,18 @@ interface CulledSprite {
   y: number
 }
 
+/**
+ * 交互浮签的渲染入参(票 #36):组合根按「idle ∧ 无面板 ∧ 范围内最近交互点」
+ * 供给;null/缺省 = 本帧无浮签。渲染层另兜底「非 idle 强制隐藏」双保险。
+ */
+export interface InteractionPromptState {
+  /** 交互点世界坐标 */
+  x: number
+  y: number
+  /** 动作短词(「抛竿」「商店」) */
+  label: string
+}
+
 export class WorldScene {
   private app: Application
   private textures: SceneTextures
@@ -87,6 +100,8 @@ export class WorldScene {
   private foamTiles: FoamTile[] = []
   private decoLayer = new Container()
   private decoSprites: CulledSprite[] = []
+  /** 静态农夫(票 #36 摊位场景件):立于摊板之后的摊主立绘 */
+  private farmer: Sprite
   private ripples = new Graphics()
   private line = new Graphics()
   private chargeBar = new Graphics()
@@ -94,6 +109,8 @@ export class WorldScene {
   private playerSprite: Sprite
   private bobberSprite = new Container()
   private bang: Text
+  /** 交互浮签(票 #36):画布内像素浮签,挂 world 层随相机滚动 */
+  private prompt = new InteractionPrompt()
   private track = new Graphics()
   private mgBar = new Graphics()
   private mgFishSprite: Sprite
@@ -149,6 +166,20 @@ export class WorldScene {
       }
     }
 
+    // 静态农夫(票 #36):摊位交互点后一格的摊主立绘,画在 deco 之上、角色之下
+    // (玩家从摊前走过时在前景)。素材库无 Kenney 农夫件(Tiny Farm 未入库,
+    // tiny-town 无角色 tile)——沿用角色待机帧 + 暖色调偏移与玩家区分,
+    // 贴图补齐后此处只换纹理。坐标随摊位物件走(数据驱动,不写死像素)。
+    this.farmer = new Sprite(textures.playerFrames.down[0]!)
+    this.farmer.anchor.set(0.5, 1)
+    this.farmer.tint = 0xc9a06a
+    this.farmer.visible = false
+    const stallObj = map.objects.find(o => o.type === 'stall')
+    if (stallObj) {
+      this.farmer.position.set(stallObj.x, stallObj.y - TILE)
+      this.farmer.visible = true
+    }
+
     // 岸线泡沫:逐水 cell 按邻接贴边(波峰绕水域质心环流)
     this.buildFoam()
 
@@ -188,12 +219,14 @@ export class WorldScene {
       this.pondStroke,
       this.waveLayer,
       this.decoLayer,
+      this.farmer,
       this.ripples,
       this.line,
       this.chargeBar,
       this.player,
       this.bobberSprite,
       this.bang,
+      this.prompt.container,
     )
     this.ui.addChild(this.track, this.mgBar, this.mgFishSprite, this.mgProgress)
 
@@ -267,7 +300,7 @@ export class WorldScene {
     })
   }
 
-  update(core: CoreLoop, t: number, dt: number): void {
+  update(core: CoreLoop, t: number, dt: number, prompt?: InteractionPromptState | null): void {
     const W = this.app.screen.width
     const H = this.app.screen.height
 
@@ -392,6 +425,15 @@ export class WorldScene {
       const s = 1.2 + 0.25 * Math.max(0, 1 - this.biteT / 0.1)
       this.bang.scale.set(s)
       this.bang.position.set(Math.round(bx), Math.round(by) - 26)
+    }
+
+    // 交互浮签(票 #36):跟随交互点世界坐标,随相机滚动(world 层),像素取整;
+    // 渲染层兜底:非 idle 强制隐藏(与组合根「面板打开/范围外不供给」双保险)
+    if (prompt && core.phase === 'idle') {
+      this.prompt.setWord(prompt.label)
+      this.prompt.showAt(prompt.x, prompt.y, t)
+    } else {
+      this.prompt.hide()
     }
 
     // 钓鱼小游戏面板(右侧;屏空间不随相机滚动;轨道/绿条/进度条几何绘制沿 pondScene)

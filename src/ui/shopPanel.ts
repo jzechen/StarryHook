@@ -24,25 +24,26 @@ interface ShopRow {
 }
 
 /**
- * 商店面板(票 #20,spec #17 经济系统):顶栏入口 + 面板,浏览并购买竿与鱼饵。
- * 只读消费 WalletStore(金币余额/饵库存/装备槽)与 ProgressionStore(竿可用性/当前竿);
- * 购买与装备动作经组合根注入的回调接线到 wallet/progression 的既有公开方法
- * (购竿跨钱袋+成长+绿条参数+顶栏刷新、购饵成功即自动装备、装备切换不清余量,
- * 协调归组合根;面板只管展示与反馈)。
+ * 商店面板(票 #20,spec #17 经济系统;票 #36 顶栏入口退役改世界交互):
+ * 浏览并购买竿与鱼饵。开面板的唯一入口 = 世界商店摊位交互点(走近按动作键,
+ * 组合根经 open() 打开);只读消费 WalletStore(金币余额/饵库存/装备槽)与
+ * ProgressionStore(竿可用性/当前竿);购买与装备动作经组合根注入的回调接线到
+ * wallet/progression 的既有公开方法(购竿跨钱袋+成长+绿条参数+顶栏刷新、
+ * 购饵成功即自动装备、装备切换不清余量,协调归组合根;面板只管展示与反馈)。
  * 开关策略见 shopPanelPolicy——仅待机可开,打开时核心循环照常推进;
- * 经 PanelExclusion 自注册,与图鉴/换水域面板互斥(第三面板即插即用)。
+ * 经 PanelExclusion 自注册,与图鉴/模式面板互斥。
+ * 关闭口径(spec §2.4):关闭钮 + ESC + 再按动作键(组合根按意图策略收起)。
  * 余额与饵余量常驻面板、购买后即时刷新(签名守卫,变化才写 DOM);
  * 不足/无意义购买给面板内行内提示(不用 alert);装备中的饵行尾注「装备中」。
  */
 export class ShopPanel {
-  private entryBtn: HTMLButtonElement
   private panelEl: HTMLElement
   private closeBtn: HTMLButtonElement
   private coinsEl: HTMLElement
   private feedbackEl: HTMLElement
   /** 竿三行(行序 = RODS 序)+ 饵两行(行序 = BAITS 序),建行一次、refresh 按状态刷新 */
   private rows: ShopRow[] = []
-  private open = false
+  private opened = false
   private allowed = true
   /** 最近一次渲染的内容签名(余额/库存/竿可用性/当前竿);变化才写 DOM,避免每帧刷新 */
   private renderedSignature = ''
@@ -56,11 +57,10 @@ export class ShopPanel {
     private onBuyBait: (baitId: string) => ShopBuyOutcome,
     // 装备回调:组合根接线 wallet.equip(装备槽一种,切换不清余量——既有语义)
     private onEquipBait: (baitId: string) => void,
-    // 面板互斥协调器:构造时自注册,打开时经它收起其余面板(图鉴/换水域)
+    // 面板互斥协调器:构造时自注册,打开时经它收起其余面板(图鉴/模式)
     private exclusion?: PanelExclusion,
   ) {
     this.exclusion?.register(this)
-    this.entryBtn = document.getElementById('shop-entry') as HTMLButtonElement
     this.panelEl = document.getElementById('shop-panel')!
     this.closeBtn = document.getElementById('shop-close') as HTMLButtonElement
     this.coinsEl = document.getElementById('shop-coins')!
@@ -106,23 +106,31 @@ export class ShopPanel {
     // 金币余额初始文本由脚本写入(HTML 不硬编码 0,老玩家上线即真实余额)
     this.coinsEl.textContent = `${this.wallet.coins()} 金币`
 
-    this.entryBtn.addEventListener('click', () => {
-      if (this.allowed) this.setOpen(!this.open)
-      // 移除按钮焦点,避免之后按空格误触开关(与图鉴入口同理由)
-      ;(document.activeElement as HTMLElement | null)?.blur()
-    })
     this.closeBtn.addEventListener('click', () => {
       this.setOpen(false)
       this.closeBtn.blur()
     })
   }
 
-  /** 每帧调用:同步入口可用性、离开待机自动收起、打开时刷新余额与各行(变化才写 DOM) */
+  /**
+   * 世界交互开面板(票 #36,摊位动作):组合根在动作键按下边沿、摊位为
+   * 最近交互点时调用。可用性策略与顶栏时代同一份(shopPanelAllowed,仅待机):
+   * 非待机时打开请求被忽略(垂钓中不开店),面板保持原状。
+   */
+  open(): void {
+    if (this.allowed) this.setOpen(true)
+  }
+
+  /** 是否打开(组合根动作键意图/ESC 关面板用;互斥协调器之外只读) */
+  isOpen(): boolean {
+    return this.opened
+  }
+
+  /** 每帧调用:同步可用性、离开待机自动收起、打开时刷新余额与各行(变化才写 DOM) */
   update(core: CoreLoop): void {
     this.allowed = shopPanelAllowed(core.phase)
-    this.entryBtn.disabled = !this.allowed
-    if (this.open && !this.allowed) this.setOpen(false)
-    if (this.open) this.refresh()
+    if (this.opened && !this.allowed) this.setOpen(false)
+    if (this.opened) this.refresh()
   }
 
   /** 供互斥协调器收起(其余面板打开时;对已收起面板幂等) */
@@ -192,7 +200,7 @@ export class ShopPanel {
   }
 
   private setOpen(open: boolean): void {
-    this.open = open
+    this.opened = open
     this.panelEl.hidden = !open
     // 收起即清反馈(下次打开不留旧提示);打开时通知协调器收起其余面板,收起不通知
     if (!open) this.hideFeedback()

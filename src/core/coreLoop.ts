@@ -41,6 +41,21 @@ const DEFAULT_WORLD: WorldCollisionSource = {
   blockedBox: () => false,
 }
 
+/**
+ * 交互点最小视图(票 #36 注入缝):核心只关心「范围内最近交互点的 kind」,
+ * 不感知坐标/半径/名称(结构化匹配 world/interactions 的解析产物)。
+ */
+export interface InteractionTargetView {
+  readonly kind: string
+}
+
+/**
+ * 交互点来源(票 #36 注入缝,组合根启动时注入一次):idle 按下时刻查询
+ * 「玩家范围内最近交互点」;null = 范围外。缺省恒 null —— 缺省世界无交互点,
+ * 「范围外无动作」(无效抛竿不存在,票 #36 有意规格变更)。
+ */
+export type InteractionSource = () => InteractionTargetView | null
+
 /** 模式层(票 #23):无限休闲(现状)或限时挑战(纯计时壳,倒计时归零强制结算) */
 export type GameMode = 'casual' | 'timed'
 
@@ -102,6 +117,8 @@ export class CoreLoop {
 
   /** 世界碰撞来源(票 #34 注入缝):缺省单屏无阻挡;组合根启动时注入一次 */
   private world: WorldCollisionSource = DEFAULT_WORLD
+  /** 交互点来源(票 #36 注入缝):缺省无交互点(idle 按下无动作);组合根启动时注入一次 */
+  private interact: InteractionSource = () => null
   private rng: Rng
   /** 本次抛竿的出鱼权重(蓄力时算出) */
   private pool: number[] = []
@@ -164,6 +181,15 @@ export class CoreLoop {
   /** 注入世界碰撞来源(组合根启动时调用一次):仅换移动阻挡的参数来源,状态机逻辑不变 */
   setWorldCollision(source: WorldCollisionSource): void {
     this.world = source
+  }
+
+  /**
+   * 注入交互点来源(票 #36,组合根启动时调用一次):仅换「idle 抛竿门禁」的
+   * 参数来源,状态机逻辑不变。来源在 idle 按下时刻被查询——kind = spot(钓位)
+   * 才进入蓄力;摊位/叙事物件的动作(开面板/查看)归组合根,核心不感知。
+   */
+  setInteractionSource(source: InteractionSource): void {
+    this.interact = source
   }
 
   /**
@@ -255,14 +281,17 @@ export class CoreLoop {
       }
     }
 
-    // 移动:仅限非对抗阶段
-    if (this.phase === 'idle' || this.phase === 'charging' || this.phase === 'waiting') {
+    // 移动:仅待机(票 #36 有意规格变更:垂钓全程锁移动——蓄力/等待可走收紧为
+    // 仅 idle 可走,抛竿起站定,结算后恢复;「原地任意处抛竿」同步改为钓位范围内才可抛)
+    if (this.phase === 'idle') {
       this.movePlayer(dt, input.moveX, input.moveY)
     }
 
     switch (this.phase) {
       case 'idle':
-        if (pressed) {
+        // 抛竿门禁(票 #36):按下时刻须在钓位范围内(来源 kind = spot);
+        // 范围外/摊位前按下无动作——无效抛竿不存在。摊位动作归组合根。
+        if (pressed && this.interact()?.kind === 'spot') {
           this.power = 0
           this.phase = 'charging'
         }

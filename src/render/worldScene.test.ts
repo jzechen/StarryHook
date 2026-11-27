@@ -140,3 +140,62 @@ describe('世界场景 Graphics 指令泄漏守护(接缝:WorldScene 场景图)'
     }
   })
 })
+
+describe('交互浮签(接缝:WorldScene.update 第 4 参,票 #36 spec §2.1)', () => {
+  /** 按容器标签找浮签(公开场景树,不触私有字段) */
+  function findPrompt(root: Container): Container {
+    let found: Container | undefined
+    const walk = (node: Container): void => {
+      if (node.label === 'interaction-prompt') found = node
+      for (const child of node.children) walk(child)
+    }
+    walk(root)
+    if (!found) throw new Error('场景树里没有浮签容器')
+    return found
+  }
+
+  it('idle 且有交互点在前:浮签显示,位置为整数像素(跟随交互点世界坐标)', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const core = fakeCore('idle')
+    scene.update(core, 0.35, 0.016, { x: 136.4, y: 112.7, label: '抛竿' })
+    const prompt = findPrompt(world())
+    expect(prompt.visible).toBe(true)
+    expect(Number.isInteger(prompt.position.x)).toBe(true)
+    expect(Number.isInteger(prompt.position.y)).toBe(true)
+  })
+
+  it('未传交互点(范围外/面板打开,组合根侧已判空):浮签隐藏', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    scene.update(fakeCore('idle'), 0, 0.016)
+    expect(findPrompt(world()).visible).toBe(false)
+  })
+
+  it('垂钓循环中(非 idle)浮签强制隐藏:渲染层兜底,与组合根双保险', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    for (const phase of ['charging', 'waiting', 'bite', 'minigame', 'caught', 'escaped'] as const) {
+      scene.update(fakeCore(phase), 0, 0.016, { x: 136, y: 112, label: '抛竿' })
+      expect(findPrompt(world()).visible).toBe(false)
+    }
+  })
+
+  it('浮签显示/隐藏与短词切换不累积 Graphics 指令(clear → 重画稳态)', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const core = fakeCore('idle')
+    const total = () =>
+      graphicsNodes(sceneRoot).reduce((sum, g) => sum + g.context.instructions.length, 0)
+    const words = ['抛竿', '商店'] as const
+    for (let f = 0; f < 6; f++) {
+      scene.update(core, f * 0.016, 0.016, { x: 136, y: 112, label: words[f % 2]! })
+    }
+    const baseline = total()
+    for (let f = 6; f < 60; f++) {
+      scene.update(core, f * 0.016, 0.016, f % 2 === 0 ? { x: 136, y: 112, label: words[0] } : undefined)
+    }
+    expect(total()).toBe(baseline)
+  })
+})

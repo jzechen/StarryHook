@@ -9,7 +9,12 @@ const IDLE: UpdateInput = { holding: false, moveX: 0, moveY: 0 }
 const RIGHT: UpdateInput = { holding: false, moveX: 1, moveY: 0 }
 
 function newLoop(seed = 42): CoreLoop {
-  return new CoreLoop(new Rng(seed))
+  // 票 #36 有意规格变更:idle 抛竿须经交互点(钓位范围内才可抛)。
+  // 既有用例的抛竿都发生在「钓位范围内」,助手统一注入恒定钓位来源;
+  // 门禁本身的行为见「交互点门禁」一组(显式覆盖来源)。
+  const l = new CoreLoop(new Rng(seed))
+  l.setInteractionSource(() => ({ kind: 'spot' }))
+  return l
 }
 
 function run(loop: CoreLoop, seconds: number, input: UpdateInput = IDLE): void {
@@ -316,6 +321,7 @@ describe('饵效果单缝注入(接缝:本竿饵效果 → 等待减半 × 浓�
       let hard = 0
       for (let seed = 1; seed <= 120; seed++) {
         const l = new CoreLoop(new Rng(seed), world)
+        l.setInteractionSource(() => ({ kind: 'spot' })) // 票 #36:抛竿须在钓位范围内
         if (rich) l.setBaitEffectSource(() => ({ waitScale: 1, richBait: true }))
         castFull(l)
         runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
@@ -326,6 +332,84 @@ describe('饵效果单缝注入(接缝:本竿饵效果 → 等待减半 × 浓�
     const plain = hardAtBite(false)
     const rich = hardAtBite(true)
     expect(rich).toBeGreaterThan(plain)
+  })
+})
+
+describe('交互点门禁(接缝:setInteractionSource,票 #36 有意规格变更:「原地任意处抛竿」→「钓位范围内才可抛」)', () => {
+  it('未注入交互来源:idle 按下不蓄力(缺省世界无交互点,范围外无动作)', () => {
+    const l = newLoop()
+    l.setInteractionSource(() => null)
+    l.update(DT, HOLD)
+    expect(l.phase).toBe('idle')
+    expect(l.power).toBe(0)
+  })
+
+  it('范围内最近是摊位(stall):按下不开竿(摊位动作 = 开商店,归组合根)', () => {
+    const l = newLoop()
+    l.setInteractionSource(() => ({ kind: 'stall' }))
+    l.update(DT, HOLD)
+    expect(l.phase).toBe('idle')
+  })
+
+  it('范围内是钓位(spot):按下蓄力、松开抛竿,手感与现行逐位一致', () => {
+    const a = newLoop() // 助手已注入恒定钓位来源
+    const b = newLoop()
+    b.setInteractionSource(() => ({ kind: 'spot' }))
+    castFull(a)
+    castFull(b)
+    expect(b.phase).toBe('waiting')
+    expect(b.waitTime).toBe(a.waitTime) // 同种子同输入:门禁不改抽取序列
+  })
+
+  it('按下瞬间不在范围:这一按不作数(按住走进范围也不补蓄,松开再按才触发)', () => {
+    let inRange = false
+    const l = newLoop()
+    l.setInteractionSource(() => (inRange ? { kind: 'spot' } : null))
+    l.update(DT, HOLD) // 范围外按下
+    expect(l.phase).toBe('idle')
+    inRange = true
+    run(l, 0.5, HOLD) // 按住走进范围:无按下边沿,不蓄力
+    expect(l.phase).toBe('idle')
+    l.update(DT, IDLE)
+    l.update(DT, HOLD) // 重新按下
+    expect(l.phase).toBe('charging')
+  })
+})
+
+describe('垂钓全程锁移动(接缝:update 移动窗口,票 #36 有意规格变更:charging/waiting 可走 → 收紧为仅 idle)', () => {
+  function stationAt(): CoreLoop {
+    const l = newLoop()
+    l.px = 100
+    l.py = 100
+    return l
+  }
+
+  it('蓄力中移动锁死:按住蓄力同时推方向,位置不动(抛竿起站定)', () => {
+    const l = stationAt()
+    l.update(DT, HOLD)
+    expect(l.phase).toBe('charging')
+    run(l, 0.5, { holding: true, moveX: 1, moveY: 1 })
+    expect(l.px).toBe(100)
+    expect(l.py).toBe(100)
+  })
+
+  it('等待中移动锁死:等待照走、收竿照常,但位置不动', () => {
+    const l = stationAt()
+    castFull(l)
+    expect(l.phase).toBe('waiting')
+    run(l, 0.5, { holding: false, moveX: 1, moveY: 1 })
+    expect(l.px).toBe(100)
+    expect(l.py).toBe(100)
+  })
+
+  it('回到 idle 恢复移动(结算停留后站走自如)', () => {
+    const l = stationAt()
+    castFull(l)
+    runUntil(l, 10, IDLE, x => x.phase !== 'waiting')
+    run(l, 2, IDLE) // 咬钩窗口耗尽 + 结算停留走完
+    expect(l.phase).toBe('idle')
+    run(l, 1, { holding: false, moveX: 1, moveY: 0 })
+    expect(l.px).toBeCloseTo(100 + TUNE.move.speed, 10)
   })
 })
 

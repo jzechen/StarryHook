@@ -9,7 +9,10 @@ const HOLD: UpdateInput = { holding: true, moveX: 0, moveY: 0 }
 const IDLE: UpdateInput = { holding: false, moveX: 0, moveY: 0 }
 
 function newLoop(seed = 42): CoreLoop {
-  return new CoreLoop(new Rng(seed))
+  // 票 #36:idle 抛竿须经交互点,助手注入恒定钓位来源(既有用例 = 范围内抛竿)
+  const l = new CoreLoop(new Rng(seed))
+  l.setInteractionSource(() => ({ kind: 'spot' }))
+  return l
 }
 
 function run(loop: CoreLoop, seconds: number, input: UpdateInput = IDLE): void {

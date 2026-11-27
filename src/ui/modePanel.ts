@@ -24,7 +24,7 @@ const MODE_OPTIONS: readonly { mode: GameMode; label: string; hint: string }[] =
  * 打开时核心循环照常推进(限时是纯计时壳,面板不暂停倒计时)。
  * 局毕自动回面板:roundActive true→false 边沿 = 归零强制结算完成(触发源判定见
  * update 注释),回待机帧自动弹出——回到模式选择,可再来一局或切回休闲。
- * 经 PanelExclusion 自注册,与图鉴/换水域/商店面板互斥(第四面板即插即用)。
+ * 经 PanelExclusion 自注册,与图鉴/商店面板互斥(第四面板即插即用)。
  */
 export class ModePanel {
   private entryBtn: HTMLButtonElement
@@ -100,6 +100,11 @@ export class ModePanel {
       this.setOpen(false)
       this.closeBtn.blur()
     })
+  }
+
+  /** 是否打开(组合根动作键意图/ESC 关面板用,票 #36) */
+  isOpen(): boolean {
+    return this.open
   }
 
   /** 供互斥协调器收起(其余面板打开时;对已收起面板幂等) */

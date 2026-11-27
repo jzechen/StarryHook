@@ -23,6 +23,8 @@ function newWorldLoop(
     weather: world.weather,
   })
   if (world.area) expect(loop.setWater(world.area)).toBe(true)
+  // 票 #36:idle 抛竿须经交互点,助手注入恒定钓位来源(既有用例 = 范围内抛竿)
+  loop.setInteractionSource(() => ({ kind: 'spot' }))
   return loop
 }
 
@@ -87,6 +89,7 @@ describe('环境状态源接线(接缝:时钟注入,可选形参)', () => {
       for (let s = 1; s <= 150; s++) {
         const now = { d: new Date(2026, 5, 15, 12) } // 夏·日
         const loop = new CoreLoop(new Rng(s), { clock: () => now.d, weather: 'sunny' })
+        loop.setInteractionSource(() => ({ kind: 'spot' })) // 票 #36:抛竿须在钓位范围内
         loop.update(DT, HOLD)
         loop.update(DT, IDLE) // 轻抛:cast 读到白天
         if (switchAfterCast) now.d = new Date(2026, 5, 15, 23) // 咬钩前改夜
