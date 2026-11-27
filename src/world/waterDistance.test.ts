@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { WORLD_MAPS } from './maps'
-import { waterDistancePx } from './waterDistance'
+import { waterAimPoint, waterDistancePx } from './waterDistance'
 import type { WorldMapData } from './worldMap'
 
 /** 合成小图(2×2 tile,右下格为水):纯函数距离几何的期望值全部独立手算 */
@@ -72,5 +72,54 @@ describe('waterDistancePx(接缝:到最近水域的距离)', () => {
     expect(waterDistancePx(village, wr.x + wr.width / 2, wr.y + wr.height / 2)).toBe(0)
     const far = waterDistancePx(village, 8, village.heightPx - 8)
     expect(far).toBeGreaterThan(32)
+  })
+})
+
+/**
+ * 接缝:最近水 cell 的瞄准点(纯函数,票 #49)——持竿「朝水」朝向的
+ * 世界层参考点。与 waterDistancePx 同一「点到 cell 矩形」几何,返回该
+ * 最近矩形的**钳制点**(点在矩形内即自身);无水返回 null。
+ */
+describe('waterAimPoint(接缝:最近水 cell 瞄准点)', () => {
+  it('点在水 cell 内:瞄准点即自身(钳制在矩形内)', () => {
+    const map = mapWithWater([[1, 1]])
+    expect(waterAimPoint(map, 24, 24)).toEqual({ x: 24, y: 24 })
+    expect(waterAimPoint(map, 16, 16)).toEqual({ x: 16, y: 16 })
+  })
+
+  it('水外一点钳到最近 cell 矩形边上(手算:点 (24,20) 在 cell (1,0) 上方 4px → (24,16))', () => {
+    const map = mapWithWater([
+      [0, 0],
+      [1, 0],
+    ])
+    expect(waterAimPoint(map, 24, 20)).toEqual({ x: 24, y: 16 })
+  })
+
+  it('斜对角点钳到矩形角(点 (24,24) 对 cell (0,0) → (16,16))', () => {
+    const map = mapWithWater([[0, 0]])
+    expect(waterAimPoint(map, 24, 24)).toEqual({ x: 16, y: 16 })
+  })
+
+  it('多水域取最近 cell(近 cell 的钳制点压过远 cell)', () => {
+    const map = mapWithWater([
+      [0, 0],
+      [1, 1],
+    ])
+    // 点 (8, 20):cell (0,0) 下方 4px(钳到 (8,16));cell (1,1) 左方 8px —— 取前者
+    expect(waterAimPoint(map, 8, 20)).toEqual({ x: 8, y: 16 })
+  })
+
+  it('无水域返回 null(持竿朝向回退由调用方兜底)', () => {
+    expect(waterAimPoint(mapWithWater([]), 8, 8)).toBeNull()
+  })
+
+  it('真实村舍图:池心即自身,岸上点钳到池边', () => {
+    const village = WORLD_MAPS.village
+    const wr = village.waterRectPx
+    const cx = wr.x + wr.width / 2
+    const cy = wr.y + wr.height / 2
+    expect(waterAimPoint(village, cx, cy)).toEqual({ x: cx, y: cy })
+    const aim = waterAimPoint(village, cx, wr.y - 10)
+    expect(aim).toEqual({ x: cx, y: wr.y })
   })
 })
