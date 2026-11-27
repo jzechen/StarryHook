@@ -25,7 +25,7 @@ pnpm build    # 类型检查 + 生产构建
 | --- | --- | --- | --- |
 | 字体 | Fusion Pixel 12px Proportional SC(npm 自托管,全部 DOM 文本,字号取 12 的整数倍) | TakWolf,<https://github.com/TakWolf/fusion-pixel-font> | OFL-1.1(`public/licenses/Fusion-Pixel-12px-OFL.txt`) |
 | 音效 | 6 个事件音效:`public/sfx/`(咬钩/抛竿入水/捕获/脱钩/升级/新收录) | Kenney「Interface Sounds」「Music Jingles」;OGA「Fisheefects」(You're Perfect Studio) | CC0 1.0 |
-| 场景 | 流水/岸线波纹/草地/行走角色:`public/sprites/`(16x16 基线) | OGA:InThePixel / Zabin / Syrsly / Flixberry Entertainment(逐项链接见 NOTICES) | CC0 1.0 |
+| 场景 | 流水/岸线波纹/草地/行走角色/摊位农夫:`public/sprites/`(16x16 基线) | OGA:InThePixel / Zabin / Syrsly / Flixberry Entertainment;Kenney:Tiny Town / Tiny Dungeon / Tiny Farm(逐项链接见 NOTICES) | CC0 1.0 |
 
 - 派生规则与素材管线:`public/sprites/README.md`(场景)、`public/sfx/README.md`(音效甄别留痕)
 - 场景切片唯一入口:`src/render/textures.ts`;音效映射:`src/ui/sfxMapping.ts`

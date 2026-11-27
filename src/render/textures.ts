@@ -16,6 +16,9 @@ import { FISH_FRAME_COUNT, FISH_FRAME_SIZE, FISH_SHAPE_ROW } from './fishAtlas'
  *                       行优先编号 tile_N = packed (N÷12, N%12)(调研留痕:票 #26)
  * - tiny-dungeon.png    Kenney「Tiny Dungeon」packed 表(原样,票 #41):同 12 列 × 11 行
  *                       行优先编号;本票只取宝箱两态帧(89 = 闭箱 / 90 = 开箱,见下)
+ * - farmer.png          派生自 Kenney「Tiny Farm」packed 表 tile 0109(票 #49):
+ *                       摊位农夫立绘,实底键出 + 剪影描边(规则见 public/sprites/README.md,
+ *                       生成器 scripts/generate-farmer-sprite.mjs)
  * - scene-atlas.png     自绘浮标图集(scripts/generate-bobber-atlas.mjs 生成,无第三方版权)
  * - fish-atlas.png      自绘鱼精灵图集(scripts/generate-fish-atlas.mjs 生成,无第三方版权)
  *
@@ -64,6 +67,8 @@ export interface SceneTextures {
   townTiles: Texture[]
   /** 宝箱两态帧(票 #41,spec §4.5):闭箱 / 开箱(空箱外观),由已开态切换 */
   chestFrames: { closed: Texture; open: Texture }
+  /** 摊位农夫立绘(票 #49):Tiny Farm tile 0109 派生件,16×16 透明底,朝下 */
+  farmerStand: Texture
   /** 浮标:单个精灵贴图 */
   bobber: Texture
   /** 鱼精灵:每种鱼 2 帧游动动画(帧 0 = 常态),按鱼形取用 */
@@ -102,13 +107,14 @@ function chestFrame(tileId: number): Rectangle {
 
 /** 加载并切片全部场景素材;main 启动时 await 一次,把结果注入场景(WorldScene) */
 export async function loadSceneTextures(): Promise<SceneTextures> {
-  const [flow, waveSheet, grass, chars, town, dungeon, props, fishAtlas] = await Promise.all([
+  const [flow, waveSheet, grass, chars, town, dungeon, farmer, props, fishAtlas] = await Promise.all([
     Assets.load<Texture>('/sprites/water-flow.png'),
     Assets.load<Texture>('/sprites/shoreline-waves.png'),
     Assets.load<Texture>('/sprites/grass.png'),
     Assets.load<Texture>('/sprites/character.png'),
     Assets.load<Texture>('/sprites/tiny-town.png'),
     Assets.load<Texture>('/sprites/tiny-dungeon.png'),
+    Assets.load<Texture>('/sprites/farmer.png'),
     Assets.load<Texture>('/sprites/scene-atlas.png'),
     Assets.load<Texture>('/sprites/fish-atlas.png'),
   ])
@@ -138,6 +144,8 @@ export async function loadSceneTextures(): Promise<SceneTextures> {
       closed: slice(dungeon.source, chestFrame(CHEST_TILE_CLOSED)),
       open: slice(dungeon.source, chestFrame(CHEST_TILE_OPEN)),
     },
+    // 摊位农夫立绘(票 #49):Tiny Farm tile 0109 派生件(生成器产物,整贴即帧)
+    farmerStand: slice(farmer.source, new Rectangle(0, 0, TILE, TILE)),
     bobber: slice(props.source, new Rectangle(0, 0, TILE, TILE)),
     fishFrames,
   }

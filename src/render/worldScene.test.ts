@@ -39,6 +39,7 @@ function fakeTextures(): SceneTextures {
     playerFrames: { down: n(4), up: n(4), left: n(4), right: n(4) },
     townTiles: n(132),
     chestFrames: { closed: tex(), open: tex() },
+    farmerStand: tex(),
     bobber: tex(),
     fishFrames: { slim: n(2), round: n(2), heavy: n(2), puff: n(2), bolt: n(2) },
   }
@@ -532,5 +533,25 @@ describe('脚下影子(票 #49:椭圆半透明,贴地随 bob 微缩淡,接缝 = 
       scene.update(core, f * 0.016, 0.016)
     }
     expect(shadow.context.instructions.length).toBe(restInstructions)
+  })
+})
+
+describe('摊位农夫真件(票 #49:#36 替身退役,接缝 = worldScene farmer 精灵)', () => {
+  it('农夫立绘用 Tiny Farm 真件纹理(非角色帧替身),无暖色 tint', () => {
+    const { app, world } = fakeApp()
+    const tex = fakeTextures()
+    new WorldScene(app, tex, village)
+    const sceneRoot = world()
+    // 村舍图有摊位物件(136,112):农夫立于摊板后一格
+    let farmer: Sprite | undefined
+    const walk = (node: Container): void => {
+      if (!farmer && node instanceof Sprite && node.texture === tex.farmerStand) farmer = node
+      for (const child of node.children) walk(child)
+    }
+    walk(sceneRoot)
+    expect(farmer).toBeDefined()
+    expect(farmer!.tint).toBe(0xffffff)
+    expect(farmer!.position.x).toBe(136)
+    expect(farmer!.position.y).toBe(112 - 16)
   })
 })

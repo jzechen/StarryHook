@@ -51,11 +51,12 @@
 | `public/sprites/water-flow.png` | 原样入库 | OGA「Animated flowing water 2d 16x16」,InThePixel,<https://opengameart.org/content/animated-flowing-water-2d-16x16> | **CC0 1.0** | 未改动 |
 | `public/sprites/tiny-town.png` | `Tilemap/tilemap_packed.png`(Kenney「Tiny Town」整包,kenney.nl/assets/tiny-town) | Kenney「Tiny Town」,Kenney Vleugels(Kenney.nl),<https://kenney.nl/assets/tiny-town> | **CC0 1.0**(随包 License.txt 声明) | 原样入库,零改动;16×16、12 列 packed 表,地图 JSON 以单 tileset 引用(切片经 textures.ts) |
 | `public/sprites/tiny-dungeon.png` | `Tilemap/tilemap_packed.png`(Kenney「Tiny Dungeon」整包,kenney.nl/assets/tiny-dungeon) | Kenney「Tiny Dungeon」,Kenney Vleugels(Kenney.nl),<https://kenney.nl/assets/tiny-dungeon> | **CC0 1.0**(随包 License.txt 声明) | 原样入库,零改动;16×16、12 列 packed 表,宝箱两态帧(tile 89 闭箱 / 90 开箱)经 textures.ts 切片(票 #41) |
+| `public/sprites/farmer.png` | `oga-src/tiny-farm-tilemap_packed.png` 中 tile 0109(Kenney「Tiny Farm」整包,kenney.nl/assets/tiny-farm) | Kenney「Tiny Farm」,Kenney Vleugels(Kenney.nl),<https://kenney.nl/assets/tiny-farm> | **CC0 1.0**(随包 License.txt 声明) | 派生:tile 0109(草帽农夫,朝下)实底键出 + 剪影 1px 描边(规则见 sprites README,生成器 scripts/generate-farmer-sprite.mjs;票 #49) | |
 | `public/sprites/shoreline-waves.png` | `oga-src/cc0waveanimtiles16x16.png` | OGA「16x16 Shoreline Wave Animation Tiles」,Zabin,<https://opengameart.org/content/16x16-shoreline-wave-animation-tiles> | **CC0 1.0** | 派生:抠透明 + 旋转四边(规则见 sprites README) |
 | `public/sprites/grass.png` | `oga-src/voda_pesok_trava_revision_2.png` | OGA「16x16 tileset: water, grass and sand」,Syrsly,<https://opengameart.org/content/16x16-tileset-water-grass-and-sand> | **CC0 1.0** | 派生:取纯草块并压暗(RGB × 0.78) |
 | `public/sprites/character.png` | `oga-src/ch003.png` | OGA「Character sprite + walk animation」,Flixberry Entertainment,<https://opengameart.org/content/character-sprite-walk-animation> | **CC0 1.0** | 派生:32×32 → 16×16 众数降采样 |
 | `public/sprites/scene-atlas.png` | —(自绘) | `scripts/generate-bobber-atlas.mjs` 生成 | 无第三方版权(等效 CC0) | 脚本生成 |
-| `public/sprites/oga-src/` | — | 上列 OGA 素材的原始下载件 | **CC0 1.0** | 原样保存,作派生来源与溯源凭据 |
+| `public/sprites/oga-src/` | — | 上列 OGA 素材的原始下载件 + Kenney「Tiny Farm」packed 表(派生来源与溯源凭据) | **CC0 1.0** | 原样保存 |
 
 ## 代码依赖
 

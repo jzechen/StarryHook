@@ -35,6 +35,7 @@ function fakeTextures(): SceneTextures {
     playerFrames: { down: n(4), up: n(4), left: n(4), right: n(4) },
     townTiles: n(132),
     chestFrames: { closed: tex(), open: tex() },
+    farmerStand: tex(),
     bobber: tex(),
     fishFrames: { slim: n(2), round: n(2), heavy: n(2), puff: n(2), bolt: n(2) },
   }

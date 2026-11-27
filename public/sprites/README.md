@@ -14,12 +14,13 @@
 | `water-flow.png` | OGA「Animated flowing water 2d 16x16」,作者 InThePixel,<https://opengameart.org/content/animated-flowing-water-2d-16x16> | CC0 | 13 帧流水条,原样入库未改动 |
 | `tiny-town.png` | Kenney「Tiny Town」v1.0 的 `Tilemap/tilemap_packed.png`,<https://kenney.nl/assets/tiny-town> | CC0 | 世界地图 packed 表(192×176,12 列 × 11 行,无间隔),原样入库未改动;tile 编号行优先 `tile_N = packed (N÷12, N%12)`(调研留痕:票 #26),地图 JSON(src/world/village.json)以单 tileset 引用,切片经 textures.ts |
 | `tiny-dungeon.png` | Kenney「Tiny Dungeon」v1.0 的 `Tilemap/tilemap_packed.png`,<https://kenney.nl/assets/tiny-dungeon> | CC0 | 宝箱素材(票 #41):同规格 packed 表(192×176,12 列 × 11 行)原样入库未改动,与 tiny-town 同一行优先编号;本票只取宝箱两态帧(tile 89 闭箱 / tile 90 开箱,盖板掀起 = 空箱外观),切片经 textures.ts(`CHEST_TILE_CLOSED/OPEN`) |
+| `farmer.png` | 派生自 Kenney「Tiny Farm」v1.0 的 `Tilemap/tilemap_packed.png` tile 0109(原件存 `oga-src/tiny-farm-tilemap_packed.png`),<https://kenney.nl/assets/tiny-farm> | CC0 | 摊位农夫立绘(票 #49,#36 暖色 tint 替身退役):见下方派生规则;生成器 `scripts/generate-farmer-sprite.mjs` 留档可复现 |
 | `shoreline-waves.png` | 派生自 OGA「16x16 Shoreline Wave Animation Tiles」,作者 Zabin,<https://opengameart.org/content/16x16-shoreline-wave-animation-tiles> | CC0 | 见下方派生规则 |
 | `grass.png` | 派生自 OGA「16x16 tileset: water, grass and sand」,作者 Syrsly,<https://opengameart.org/content/16x16-tileset-water-grass-and-sand> | CC0 | 见下方派生规则 |
 | `character.png` | 派生自 OGA「Character sprite + walk animation」,作者 Flixberry Entertainment,<https://opengameart.org/content/character-sprite-walk-animation> | CC0 | 见下方派生规则 |
 | `scene-atlas.png` | 自绘浮标图集 | 无第三方版权(等效 CC0) | 由 `scripts/generate-bobber-atlas.mjs` 生成 |
 | `fish-atlas.png` | 自绘鱼精灵图集(5 种鱼 × 2 帧,32×80) | 无第三方版权(等效 CC0) | 由 `scripts/generate-fish-atlas.mjs` 手绘像素矩阵生成;行序契约见 `src/render/fishAtlas.ts` |
-| `oga-src/` | 上列 OGA 素材的原始下载件 | CC0 | 原样保存,作派生来源与溯源凭据 |
+| `oga-src/` | 上列 OGA 素材的原始下载件 + Kenney「Tiny Farm」packed 表(2026-11-27 经会话 cookie 下载法取包,管线留痕见 `public/sfx/README.md` 下载过程节) | CC0 | 原样保存,作派生来源与溯源凭据 |
 
 ## 派生规则(CC0 允许修改;派生件同样按 CC0 分发)
 
@@ -32,6 +33,12 @@
 - **character.png**(64×64 = 4 向 × 4 帧,行序 下/上/左/右)
   原件 ch003.png 每帧 32×32,按 2×2 众数(出现最多的像素色,全透明块才判透明)
   降采样为 16×16,保留描边与五官的主要色块;帧序与行序沿用原件。
+- **farmer.png**(16×16,票 #49)取 Tiny Farm packed 表 tile 0109(草帽农夫,朝下)。
+  Kenney 角色件在 packed 表内以深梅色实底(rgb 63,38,49)承托、表级透明索引 0 只出现在
+  tile 四角——直接切片会带矩形底。派生两步:①实底色与透明索引全部键出,得角色剪影
+  (腿间空隙与底色连通,同样键出);②剪影 8 邻接外扩 1px 回填实底色作描边,还原
+  Kenney 角色件的描边观感。生成器 `scripts/generate-farmer-sprite.mjs`(调色板 PNG
+  手写解码 + png-encode 编码,同像素输入 → 同字节输出)。
 
 ## 备选与取舍
 
@@ -45,3 +52,10 @@
   下载走 Kenney 签名直链(管线留痕见 `public/sfx/README.md` 下载过程节,
   2026-11-27 取包,随包 License.txt 声明 CC0);整表入库备用,#42/#43 需要 dungeon
   系贴图时按同一切片契约扩展 textures.ts 即可。
+- 农夫件(票 #49)选 Kenney「Tiny Farm」:表内角色件两枚(tile 0108 长发 /
+  0109 草帽,均朝下静立),取 **0109**——草帽读作「农夫」的辨识度更高,且与
+  玩家(深色短发)同框可辨;0108 留在原表,后续需要第二 NPC 时按同规则派生。
+  Tiny Farm 未整包入库(仅 oga-src 留原件作溯源):整表 132 tile 本票只用一件,
+  派生件 farmer.png 单独入库即可,避免发布一份只用一格的 packed 表。
+  下载走会话 cookie 法(2026-11-27,管线留痕见 `public/sfx/README.md` 下载过程节),
+  随包 License.txt 声明 CC0。

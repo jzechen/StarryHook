@@ -230,13 +230,12 @@ export class WorldScene {
       this.chestSprites.push({ chestId, sprite })
     }
 
-    // 静态农夫(票 #36):摊位交互点后一格的摊主立绘,画在 deco 之上、角色之下
-    // (玩家从摊前走过时在前景)。素材库无 Kenney 农夫件(Tiny Farm 未入库,
-    // tiny-town 无角色 tile)——沿用角色待机帧 + 暖色调偏移与玩家区分,
-    // 贴图补齐后此处只换纹理。坐标随摊位物件走(数据驱动,不写死像素)。
-    this.farmer = new Sprite(textures.playerFrames.down[0]!)
+    // 静态农夫(票 #36 立项,票 #49 换真件):摊位交互点后一格的摊主立绘,
+    // 画在 deco 之上、角色之下(玩家从摊前走过时在前景)。素材 = Tiny Farm
+    // tile 0109 派生立绘(textures.farmerStand,#36 的暖色 tint 替身就此退役),
+    // 坐标随摊位物件走(数据驱动,不写死像素)。
+    this.farmer = new Sprite(textures.farmerStand)
     this.farmer.anchor.set(0.5, 1)
-    this.farmer.tint = 0xc9a06a
     this.farmer.visible = false
     const stallObj = map.objects.find(o => o.type === 'stall')
     if (stallObj) {
