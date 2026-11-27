@@ -1,3 +1,5 @@
+import type { MapId } from '../core/types'
+
 /**
  * 音效事件 → 音效文件标识的映射(纯函数,表驱动)。
  *
@@ -50,4 +52,24 @@ const SFX_TABLE: Partial<Record<SfxEvent, SfxId>> = {
 /** 查事件对应的音效文件标识;null = 未配音效,播放器对 null 空操作 */
 export function sfxForEvent(event: SfxEvent): SfxId | null {
   return SFX_TABLE[event] ?? null
+}
+
+/**
+ * 场景 → BGM 轨映射(票 #54,纯函数,表驱动):每场景一轨循环配乐,
+ * 场景身份由轨区分(村舍/河谷/湖畔各一轨,三轨互不相同)。
+ * BGM 是独立于事件音与环境声的第三条通道(bgm 通道,`src/ui/sfx.ts` 的
+ * BgmPlayer),切轨由组合根挂世界导演的入图沿(与场景横幅同点)。
+ *
+ * 表为全函数形态:新增场景而不配轨会在 typecheck 期暴露(与 SCENE_NAMES
+ * 同款纪律);文件标识同时是 public/sfx/ 下的文件名(<标识>.ogg)。
+ */
+const BGM_TABLE: Record<MapId, SfxId> = {
+  village: 'bgm-village',
+  river: 'bgm-river',
+  lake: 'bgm-lake',
+}
+
+/** 查场景对应的 BGM 轨文件标识 */
+export function bgmForScene(mapId: MapId): SfxId {
+  return BGM_TABLE[mapId]
 }

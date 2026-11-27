@@ -27,6 +27,7 @@ import { WORLD_MAPS } from './world/maps'
 import type { MapId } from './core/types'
 import { baitBadgeText } from './ui/baitBadgeText'
 import { ambientWaterLevel } from './ui/ambientWater'
+import { BgmChannel } from './ui/bgm'
 import { countdownTick } from './ui/countdownTick'
 import { advanceStepClock } from './ui/footstepClock'
 import { CollectionPanel } from './ui/collectionPanel'
@@ -42,7 +43,7 @@ import { progressionToastText } from './ui/progressionToastPolicy'
 import { roundJustEnded } from './ui/roundEdgePolicy'
 import { roundSettlementText } from './ui/roundSettlementText'
 import { AudioSfxPlayer, MuteAwareSfxPlayer } from './ui/sfx'
-import { sfxForEvent } from './ui/sfxMapping'
+import { bgmForScene, sfxForEvent } from './ui/sfxMapping'
 import { ShopPanel, type ShopBuyOutcome } from './ui/shopPanel'
 import { StoragePanel } from './ui/storagePanel'
 import { transferBetween } from './ui/storageWiring'
@@ -102,7 +103,18 @@ async function main(): Promise<void> {
   // 宝箱已开态(票 #41,spec §4.5/§4.6):一次性开启的 kv 集合键,损坏按全未开降级;
   // 供两处消费——世界场景两态外观(空箱跟随已开态)与动作键开箱的一次性判定
   const chests = new ChestOpenedStore(storage)
-  const director = new WorldDirector({ app, textures, core, storage, chestIsOpen: id => chests.isOpen(id) })
+  // 场景配乐 BGM 通道(票 #54,spec 术语「场景配乐」):每场景一轨循环,
+  // 切轨挂世界导演入图沿(过场淡入完成沿 = 场景横幅同点),交叉淡入淡出约 1s;
+  // 通道只管状态机,每帧供给经静音门(sfx.setBgm)透传给播放器——静音全覆盖
+  const bgm = new BgmChannel()
+  const director = new WorldDirector({
+    app,
+    textures,
+    core,
+    storage,
+    chestIsOpen: id => chests.isOpen(id),
+    onSceneEntered: mapId => bgm.setTarget(bgmForScene(mapId)),
+  })
   const seedEl = document.getElementById('seed')
   if (seedEl) seedEl.textContent = `seed ${seed}`
 
@@ -399,6 +411,11 @@ async function main(): Promise<void> {
     // (交互浮签随场景渲染一并供给,放最后——过场完成/换图在本帧内生效;
     // 入图场景名横幅由导演在淡入完成沿起演,组合根不经手)
     director.update(tk.lastTime / 1000, dt, promptState, warpHint)
+    // 场景配乐(票 #54):入图沿(本帧 director.update 内)切轨后,交叉淡入淡出
+    // 的双轨供给每帧透传给播放器(outgoing = 淡出旧轨,incoming = 当前轨);
+    // 静音覆盖 = MuteAwareSfxPlayer.setBgm(静音即对整条通道显式停)
+    const bgmMix = bgm.update(dt)
+    sfx.setBgm(bgmMix.outgoing, bgmMix.incoming)
     // 近水水声(票 #44):距离 = 世界层纯函数(到最近水 cell 的矩形距离,
     // 单一来源),音量随距离淡入淡出;常驻循环走 setAmbient 通道,
     // 静音覆盖 = MuteAwareSfxPlayer.setAmbient(静音即显式停循环)

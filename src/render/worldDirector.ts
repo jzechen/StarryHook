@@ -35,6 +35,12 @@ export interface WorldDirectorDeps {
   storage: KvStorage
   /** 宝箱已开态查询(票 #41,组合根注入;场景按 id 切换闭箱/空箱外观) */
   chestIsOpen?: (chestId: string) => boolean
+  /**
+   * 入图沿(票 #54,组合根注入):进入场景时以场景 id 通知恰好一次——
+   * 开机入图(位置快照恢复亦算)与过场淡入完成沿各一次,与场景横幅同点;
+   * 过场进行中不通知。BGM 切轨消费此沿(与场景横幅同点起播对应轨)。
+   */
+  onSceneEntered?: (mapId: MapId) => void
 }
 
 /** 空闲存档节流(秒):位置/朝向变化后至多延迟这么久落盘 */
@@ -48,6 +54,7 @@ export class WorldDirector {
   private readonly textures: SceneTextures
   private readonly app: Application
   private readonly chestIsOpen: (chestId: string) => boolean
+  private readonly onSceneEntered: (mapId: MapId) => void
   private readonly positions: PlayerPositionStore
   private readonly transition = new SceneTransition()
   private readonly overlay: Graphics
@@ -65,6 +72,7 @@ export class WorldDirector {
     this.core = deps.core
     this.textures = deps.textures
     this.chestIsOpen = deps.chestIsOpen ?? (() => false)
+    this.onSceneEntered = deps.onSceneEntered ?? (() => {})
     this.positions = new PlayerPositionStore(deps.storage)
 
     // —— 开机恢复(位置是唯一持久的世界状态;spec §1.5)——
@@ -107,6 +115,8 @@ export class WorldDirector {
     this.app.stage.addChild(this.sceneBanner.container)
     this.pinned.push(this.sceneBanner.container)
     this.sceneBanner.begin(SCENE_NAMES[startMapId])
+    // 开机即入图(票 #54):与横幅同点通知组合根(BGM 据此起播对应轨)
+    this.onSceneEntered(startMapId)
   }
 
   /** 当前场景 id(组合根/hud 消费;换图在过场 'switch' 时刻生效) */
@@ -125,7 +135,11 @@ export class WorldDirector {
     if (action === 'switch' && this.transition.warp) this.applyWarp(this.transition.warp)
     // 入图横幅(票 #46):淡入完成沿('arrived')起演新场景名——「过场淡入
     // 完成后底部显示」,确认切换已发生;演出推进每帧走(未开演为空操作)
-    if (action === 'arrived') this.sceneBanner.begin(SCENE_NAMES[this.mapIdValue])
+    // 入图沿(票 #54):同一沿通知组合根(BGM 切轨与横幅同点,恰好一次)
+    if (action === 'arrived') {
+      this.sceneBanner.begin(SCENE_NAMES[this.mapIdValue])
+      this.onSceneEntered(this.mapIdValue)
+    }
     this.sceneBanner.update(dt)
 
     this.overlay.alpha = this.transition.alpha

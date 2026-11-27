@@ -36,11 +36,15 @@
 | `public/sfx/countdown.ogg`(倒计时) | `Audio/tick_001.ogg` | Kenney「Interface Sounds」,Kenney Vleugels(Kenney.nl),<https://kenney.nl/assets/interface-sounds> | **CC0 1.0** | 原样入库,零改动(票 #44) |
 | `public/sfx/footstep.ogg`(脚步) | `Audio/footstep09.ogg` | Kenney「RPG Audio」,Kenney Vleugels(Kenney.nl),<https://kenney.nl/assets/rpg-audio> | **CC0 1.0** | 原样入库,零改动(票 #44) |
 | `public/sfx/ambient-water.ogg`(近水水声) | `water_flowing.ogg` | OGA「30 CC0 SFX loops」,rubberduck,<https://opengameart.org/content/30-cc0-sfx-loops> | **CC0 1.0** | ffmpeg `volume=10dB` 增益后 libvorbis q5 重编码(仅响度,内容零改动;票 #44) |
+| `public/sfx/bgm-village.ogg`(村舍 BGM) | `apple_cider_loop.wav` | OGA「Apple Cider」,Zane Little Music,<https://opengameart.org/content/apple-cider> | **CC0 1.0** | ffmpeg 响度归一(-13.8 dB)后 libvorbis q5 重编码(仅响度,内容零改动;票 #54) |
+| `public/sfx/bgm-river.ogg`(河谷 BGM) | `flowerbed_fields.ogg` | OGA「Flowerbed Fields [Loop]」,Zane Little Music,<https://opengameart.org/content/flowerbed-fields-loop> | **CC0 1.0** | ffmpeg 响度归一(-8.7 dB)后 libvorbis q5 重编码(仅响度,内容零改动;票 #54) |
+| `public/sfx/bgm-lake.ogg`(湖畔 BGM) | `harmony_in_the_mists_loop.flac` | OGA「Harmony in the Mists」,Tsorthan Grove,<https://opengameart.org/content/harmony-in-the-mists> | **CC0 1.0** | ffmpeg 响度归一(-10.9 dB)后 libvorbis q5 重编码(仅响度,内容零改动;票 #54) |
 
 - 甄别与下载过程留痕:`public/sfx/README.md`
 - Kenney 三个包(Music Jingles / Interface Sounds / RPG Audio)随包 `License.txt` 均声明 CC0
   (署名非强制,此处按项目惯例仍予署名)
 - OGA「30 CC0 SFX loops」页面整体标注 CC0(2018-07 上传)
+- BGM 三轨(票 #54)来源页均整体标注 CC0:Zane Little Music(2023)、Tsorthan Grove(2025)
 
 ## 场景精灵(自 #10 归并)
 
