@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>StarryHook · 联机手感冒烟 [PROTOTYPE]</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: #1a2318; overflow: hidden; }
+      /* 画布信箱 + 像素放大,与 index.html 同口径 */
+      #game { display: flex; align-items: center; justify-content: center; height: 100%; }
+      #game canvas { image-rendering: pixelated; }
+    </style>
+  </head>
+  <body>
+    <div id="game"></div>
+    <script type="module" src="/src/prototype/net-smoke/main.ts"></script>
+  </body>
+</html>
