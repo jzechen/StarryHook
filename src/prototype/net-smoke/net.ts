@@ -117,6 +117,11 @@ export class RemoteAvatar {
     return this.snaps.length
   }
 
+  /** 最新快照距今 ms(无快照 = Infinity)——停滞检测用 */
+  lastAge(now: number): number {
+    return this.snaps.length ? now - this.snaps[this.snaps.length - 1]!.t : Infinity
+  }
+
   sample(now: number): { x: number; y: number; facing: string; moving: boolean; ok: boolean } {
     if (this.snaps.length === 0) return { x: 0, y: 0, facing: 'down', moving: false, ok: false }
     const renderT = now - this.bufferMs

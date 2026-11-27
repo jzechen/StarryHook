@@ -84,6 +84,12 @@ const verdictEl = el(
     "color:#e8d9a0;padding:6px 12px;border-radius:8px;font:12px/1.5 'Fusion Pixel 12px Proportional SC',monospace",
   document.body,
 )
+const bannerEl = el(
+  'div',
+  'position:fixed;top:44px;left:50%;transform:translateX(-50%);z-index:40;max-width:560px;text-align:center;' +
+    "padding:6px 12px;border-radius:8px;font:13px/1.5 'Fusion Pixel 12px Proportional SC',monospace;display:none",
+  document.body,
+)
 
 function slider(label: string, min: number, max: number, value: number, onInput: (v: number) => void): HTMLElement {
   const row = el('div', 'margin:2px 0', tuneEl)
@@ -108,13 +114,20 @@ function slider(label: string, min: number, max: number, value: number, onInput:
 
 // —— 角色渲染(真贴图 + 真 characterMotion 姿态;结构沿 worldScene:容器原点 = 脚部) ——
 
-function makeCharacter(tex: SceneTextures) {
+function makeCharacter(tex: SceneTextures, nameTag: string) {
   const c = new Container()
   const shadow = new Graphics()
   shadow.ellipse(0, 1, 5, 2).fill({ color: 0x000000, alpha: 0.3 })
   const body = new Sprite(tex.playerFrames.down[0]!)
   body.anchor.set(0.5, 1)
-  c.addChild(shadow, body)
+  // 名签:互相辨认用(对方到底来没来,一眼可判)
+  const tag = new Text({
+    text: nameTag,
+    style: { fontSize: 9, fill: 0xffe08a, stroke: { color: 0x000000, width: 3 } },
+  })
+  tag.anchor.set(0.5, 1)
+  tag.position.set(0, -22)
+  c.addChild(shadow, body, tag)
   let phase = 0
   return {
     container: c,
@@ -371,8 +384,8 @@ async function boot(): Promise<void> {
       latestPos: () => latestPos,
     }
 
-    const hostChar = makeCharacter(tex)
-    const guestChar = makeCharacter(tex)
+    const hostChar = makeCharacter(tex, '房主')
+    const guestChar = makeCharacter(tex, '客人')
     app.stage.addChild(guestChar.container, hostChar.container)
     const hostFx = makeRodFx(tex, app.stage)
     const guestFx = makeRodFx(tex, app.stage)
@@ -393,13 +406,22 @@ async function boot(): Promise<void> {
     let frameHz = 20
     let prevGuestPhase: LoopPhase = guestLoop.phase
     let hostSettledToasted = false
+    // 对端存在性(自诊断):两窗互发 hi,连接不上/角色配错一眼可见
+    let peer: { role: string; origin: string; ts: number } | null = null
+    let granted = false
 
     transport.onMessage = m => {
       if (m.type === 'hello') {
-        // 至多一位客人(#64 房间语义);客人刷新重连 = 新 hello 顶替旧会话
+        // 至多一位客人(#64 房间语义);客人刷新重连 = 新 hello 顶替旧会话;
+        // 房主刷新后客人会再 hello(客人侧无条件重发),此处理应重接
         guestPresent = true
-        guestFish = 3 // 见面礼:给客人可卖之鱼
+        if (!granted) {
+          granted = true
+          guestFish = 3 // 见面礼只发一次
+        }
         transport.send('welcome', { coins, guestFish })
+      } else if (m.type === 'hi') {
+        peer = { ...(m.payload as { role: string; origin: string }), ts: m.ts }
       } else if (m.type === 'pos') {
         const p = m.payload as { x: number; y: number; facing: Facing }
         latestPos = { ...p, ts: m.ts }
@@ -429,6 +451,8 @@ async function boot(): Promise<void> {
     let metricAcc = 0
     let posRate = 0
     let inputRate = 0
+    let hiAcc = 0
+    const bootAt = Date.now()
 
     app.ticker.add(tk => {
       const dt = Math.min(tk.deltaMS / 1000, 0.05)
@@ -512,9 +536,19 @@ async function boot(): Promise<void> {
       const s = guestView.sample(Date.now())
       guestChar.container.visible = s.ok && guestPresent
       if (s.ok) guestChar.step(s.x, s.y, s.facing as Facing, s.moving, dt)
+      // 对方画面停滞 → 半透明幽灵 + HUD 提示(不隐藏:冻结也该被看见)
+      const stale = s.ok && guestView.lastAge(Date.now()) > 1500
+      guestChar.container.alpha = stale ? 0.4 : 1
       const rod = guestLoop
       guestFx.update(rodBobber(rod), rod.phase === 'bite', rod.biteWindow)
       guestCharge.show(rod.phase === 'charging' ? rod.power : 0)
+
+      // 存在性广播(2s)
+      hiAcc += dt
+      if (hiAcc >= 2) {
+        hiAcc = 0
+        transport.send('hi', { role: 'host', origin: location.origin })
+      }
 
       // 指标(4Hz 刷新 DOM)
       metricAcc += dt
@@ -525,17 +559,51 @@ async function boot(): Promise<void> {
         metricAcc = 0
         guestView.resetCounters()
         const r = Math.round
+        const guestStale = guestView.depth > 0 && guestView.lastAge(Date.now()) > 1500
         metricsEl.textContent =
-          `房主 · [PROTOTYPE #66]\n` +
+          `房主 · [PROTOTYPE #66]   本页 ${location.host}\n` +
+          `对端:${peer ? `${peer.role}@${new URL(peer.origin).host}(${r((Date.now() - peer.ts) / 100) / 10}s前)` : '无'}\n` +
           `房主得分 ${hostLoop.score}   客人得分 ${guestLoop.score}\n` +
           `金币 ${coins}   客人包 ${guestFish} 条\n` +
           `下行:帧 ${frameHz}Hz(设定)   上行:pos ${r(posRate)}/s  input ${r(inputRate)}/s\n` +
           `本窗出站延迟 ${transport.outboundDelayMs}ms(= 客人看到的下行)\n` +
           `客人 pos 延迟龄 ${r(Math.max(0, Date.now() - latestPos.ts))}ms\n` +
           `客人插值:深度 ${guestView.depth}  饥饿 ${guestView.starved}/0.25s  吸附 ${guestView.snapped}\n` +
+          `客人画面:${guestView.depth === 0 ? '从未收到' : guestStale ? `停滞 ${r(guestView.lastAge(Date.now())) / 1000}s(客人窗在后台?)` : '正常'}\n` +
           `客人在线 ${guestPresent ? '√' : '×'}(等待 hello)`
+        banner(peer, 'host', guestPresent, posRate > 0)
       }
     })
+
+    function banner(p: typeof peer, myRole: string, linked: boolean, dataFlowing: boolean): void {
+      const style = (bg: string, fg: string, show: boolean): void => {
+        bannerEl.style.display = show ? 'block' : 'none'
+        bannerEl.style.background = bg
+        bannerEl.style.color = fg
+      }
+      if (Date.now() - bootAt < 2500) {
+        style('rgba(8,14,10,.9)', '#cfe8c8', true)
+        bannerEl.textContent = '等待另一窗接入…'
+        return
+      }
+      if (!p) {
+        style('rgba(120,20,20,.92)', '#ffd9d0', true)
+        bannerEl.textContent =
+          '未发现对端 — 检查:① 两窗同一浏览器(别混无痕) ② 地址完全一致(localhost 与 127.0.0.1 是不同 origin,广播不通) ③ 另一窗地址带 ?role=guest'
+        return
+      }
+      if (p.role === myRole) {
+        style('rgba(120,20,20,.92)', '#ffd9d0', true)
+        bannerEl.textContent = `两个窗口都是${myRole === 'host' ? '房主' : '客人'}!另一个窗口要用 ?role=${myRole === 'host' ? 'guest' : 'host'} 重开`
+        return
+      }
+      if (linked && !dataFlowing) {
+        style('rgba(140,100,10,.92)', '#ffe9b0', true)
+        bannerEl.textContent = '对端在但无数据流 — 对方窗口可能在后台/被遮挡:两窗并排都露在屏幕上'
+        return
+      }
+      style('rgba(20,80,30,.85)', '#bde58a', false)
+    }
     tunePanel({ transport, avatar: guestView, onRates: f => (frameHz = f) })
     toast('房主就绪:WASD 移动,钓位处按住 E 蓄力钓鱼', true)
     return
@@ -555,8 +623,8 @@ async function boot(): Promise<void> {
     rodPhase: () => latestFrame?.guestRod.phase ?? 'idle',
   }
 
-  const ownChar = makeCharacter(tex)
-  const hostChar = makeCharacter(tex)
+  const ownChar = makeCharacter(tex, '客人')
+  const hostChar = makeCharacter(tex, '房主')
   app.stage.addChild(hostChar.container, ownChar.container)
   const hostFx = makeRodFx(tex, app.stage)
   const ownFx = makeRodFx(tex, app.stage)
@@ -566,6 +634,7 @@ async function boot(): Promise<void> {
   // (transport 沿用上文:两角色分支互斥,各自实例化后仅一方存活)
   const hostView = new RemoteAvatar() // 客人渲染房主角色(20Hz frame 流插值)
   const guestId = `g${Math.floor(Math.random() * 1e6)}`
+  const bootAt = Date.now()
   let welcomed = false
   let world: WorldState = { coins: 0, guestFish: 0 }
   let latestFrame: FrameState | null = null
@@ -576,11 +645,14 @@ async function boot(): Promise<void> {
   const receiptHistory: number[] = []
   let frameCount = 0
   let frameRate = 0
+  let peer: { role: string; origin: string; ts: number } | null = null
 
   transport.onMessage = m => {
     if (m.type === 'welcome') {
       welcomed = true
       world = m.payload as WorldState
+    } else if (m.type === 'hi') {
+      peer = { ...(m.payload as { role: string; origin: string }), ts: m.ts }
     } else if (m.type === 'world') {
       world = m.payload as WorldState
     } else if (m.type === 'frame') {
@@ -604,9 +676,11 @@ async function boot(): Promise<void> {
 
   const hello = (): void => transport.send('hello', { guestId, appearance: 0 })
   hello()
+  // 房主刷新后会丢失接入态:无条件每 2s 重发 hello(hi 同拍,自诊断用)
   const helloTimer = window.setInterval(() => {
-    if (!welcomed) hello()
-  }, 800)
+    hello()
+    transport.send('hi', { role: 'guest', origin: location.origin })
+  }, 2000)
 
   sellFn = () => {
     if (!welcomed) return
@@ -652,6 +726,9 @@ async function boot(): Promise<void> {
     const s = hostView.sample(now)
     hostChar.container.visible = s.ok && welcomed
     if (s.ok) hostChar.step(s.x, s.y, s.facing as Facing, s.moving, dt)
+    // 对方画面停滞 → 幽灵化(不隐藏)
+    const stale = s.ok && hostView.lastAge(now) > 1500
+    hostChar.container.alpha = stale ? 0.4 : 1
     hostFx.update(latestFrame?.hostBobber ?? null, false, 0)
     const rod = latestFrame?.guestRod ?? null
     ownFx.update(rod?.bobber ?? null, rod?.bang ?? false, rod?.biteLeft ?? 0)
@@ -671,18 +748,56 @@ async function boot(): Promise<void> {
       const r = Math.round
       const loopLatency = rtt + 1000 / frameHz // 实测:RTT≈上下行单向和 + 信道,加一帧间隔 = 客人手感回路
       const frameAge = latestFrame ? r(Math.max(0, now - latestFrame.ts)) : '—'
+      const hostStale = hostView.depth > 0 && hostView.lastAge(now) > 1500
       metricsEl.textContent =
-        `客人 · [PROTOTYPE #66]\n` +
+        `客人 · [PROTOTYPE #66]   本页 ${location.host}\n` +
+        `对端:${peer ? `${peer.role}@${new URL(peer.origin).host}(${r((now - peer.ts) / 100) / 10}s前)` : '无'}\n` +
         `我的得分 ${latestFrame?.guestScore ?? 0}   金币 ${world.coins}   包 ${world.guestFish} 条\n` +
         `RTT ${r(rtt)}ms(≈2×单向)   操控回路≈上+下+帧=${r(loopLatency)}ms\n` +
         `本窗出站(上行)延迟 ${transport.outboundDelayMs}ms   缓冲 ${hostView.bufferMs}ms\n` +
         `下行帧 ${r(frameRate)}/s(设定 ${frameHz}Hz)   帧龄 ${frameAge}ms\n` +
         `房主插值:深度 ${hostView.depth}  饥饿 ${hostView.starved}/0.25s  吸附 ${hostView.snapped}\n` +
+        `房主画面:${hostView.depth === 0 ? '从未收到' : hostStale ? `停滞 ${r(hostView.lastAge(now)) / 1000}s(房主窗在后台?)` : '正常'}\n` +
         `回执 RTT ${r(receiptRtt)}ms   近5次 ${receiptHistory.map(r).join('/') || '—'}\n` +
         (welcomed ? '已接入房间' : '等待房主…(房主开着吗?)')
+      banner(peer, 'guest', welcomed && frameRate > 0, frameRate > 0)
     }
   })
 
+    function banner(
+      p: typeof peer,
+      myRole: string,
+      linked: boolean,
+      dataFlowing: boolean,
+    ): void {
+      const style = (bg: string, fg: string, show: boolean): void => {
+        bannerEl.style.display = show ? 'block' : 'none'
+        bannerEl.style.background = bg
+        bannerEl.style.color = fg
+      }
+      if (Date.now() - bootAt < 2500) {
+        style('rgba(8,14,10,.9)', '#cfe8c8', true)
+        bannerEl.textContent = '等待另一窗接入…'
+        return
+      }
+      if (!p) {
+        style('rgba(120,20,20,.92)', '#ffd9d0', true)
+        bannerEl.textContent =
+          '未发现对端 — 检查:① 两窗同一浏览器(别混无痕) ② 地址完全一致(localhost 与 127.0.0.1 是不同 origin,广播不通) ③ 本窗地址带 ?role=guest、另一窗带 ?role=host'
+        return
+      }
+      if (p.role === myRole) {
+        style('rgba(120,20,20,.92)', '#ffd9d0', true)
+        bannerEl.textContent = `两个窗口都是${myRole === 'host' ? '房主' : '客人'}!本窗要用 ?role=guest 重开,另一窗用 ?role=host`
+        return
+      }
+      if (linked && !dataFlowing) {
+        style('rgba(140,100,10,.92)', '#ffe9b0', true)
+        bannerEl.textContent = '房主在但无数据流 — 房主窗口可能在后台/被遮挡:两窗并排都露在屏幕上'
+        return
+      }
+      style('rgba(20,80,30,.85)', '#bde58a', false)
+    }
   window.addEventListener('beforeunload', () => {
     window.clearInterval(helloTimer)
     transport.close()
