@@ -3925,7 +3925,7 @@
     0,
     0,
     0,
-    0,
+    84,
     0,
     0,
     0,
@@ -3995,7 +3995,7 @@
     48,
     0,
     0,
-    0,
+    84,
     0,
     0,
     0,
@@ -4851,6 +4851,40 @@
        "value": 208
       }
      ]
+    },
+    {
+     "point": true,
+     "name": "河谷西路牌",
+     "id": 8,
+     "rotation": 0,
+     "type": "sign",
+     "visible": true,
+     "x": 72,
+     "y": 232,
+     "properties": [
+      {
+       "name": "text",
+       "type": "string",
+       "value": "西 · 村舍池塘"
+      }
+     ]
+    },
+    {
+     "point": true,
+     "name": "河谷东路牌",
+     "id": 9,
+     "rotation": 0,
+     "type": "sign",
+     "visible": true,
+     "x": 872,
+     "y": 200,
+     "properties": [
+      {
+       "name": "text",
+       "type": "string",
+       "value": "东 · 湖畔"
+      }
+     ]
     }
    ],
    "opacity": 1,
@@ -4861,7 +4895,7 @@
   }
  ],
  "nextlayerid": 5,
- "nextobjectid": 8,
+ "nextobjectid": 10,
  "orientation": "orthogonal",
  "renderorder": "right-down",
  "tiledversion": "1.11.0",
@@ -5323,6 +5357,16 @@
     },
     {
      "id": 82,
+     "properties": [
+      {
+       "name": "collision",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 83,
      "properties": [
       {
        "name": "collision",

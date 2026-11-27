@@ -110,12 +110,13 @@ describe('村舍地图 village.json(接缝:parseWorldMap 纯函数)', () => {
     expect(isBlockedCell(map, flower![0], flower![1])).toBe(false)
   })
 
-  it('叙事物(票 #37):路牌 tile(gid 84)立在东路北侧且挡路外行人;东路上不新增阻挡', () => {
+  it('叙事物(票 #37):路牌 tile(gid 84)在图东侧出口走廊旁且挡碰撞;东行土路(行 20)畅通', () => {
     const sign = cellOf(map.deco, map, 84)
     expect(sign).not.toBeNull()
     expect(isBlockedCell(map, sign![0], sign![1])).toBe(true)
-    // 路牌在地图东半(村舍出口方向),且不压在东行土路(行 20)上
+    // 路牌在地图东半(村舍东出口 #35 warp (912,208) 一带),且不压在东行土路(行 20)上
     expect(sign![0]).toBeGreaterThan(map.width / 2)
+    expect(sign![1]).toBeLessThanOrEqual(14)
     expect(isBlockedCell(map, sign![0]!, 20)).toBe(false)
   })
 
