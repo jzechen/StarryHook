@@ -3,11 +3,13 @@ import { PLAYER_HALF_H, PLAYER_HALF_W, type CoreLoop } from '../core/coreLoop'
 import type { KvStorage } from '../core/kvSnapshot'
 import { PlayerPositionStore, type PlayerPositionSnapshot } from '../core/playerPosition'
 import type { MapId } from '../core/types'
-import { deriveWaterArea, isKnownMapId, WORLD_MAPS } from '../world/maps'
+import { deriveWaterArea, isKnownMapId, SCENE_NAMES, WORLD_MAPS } from '../world/maps'
 import { warpAt, type WarpZone } from '../world/warps'
 import { blockedBox, worldCollisionSource } from '../world/worldMap'
+import type { WarpHint } from '../world/warpHint'
 import type { InteractionPromptState } from './worldScene'
 import type { SceneTextures } from './textures'
+import { SceneBanner } from './sceneBanner'
 import { SceneTransition } from './sceneTransition'
 import { WorldScene } from './worldScene'
 
@@ -49,6 +51,8 @@ export class WorldDirector {
   private readonly positions: PlayerPositionStore
   private readonly transition = new SceneTransition()
   private readonly overlay: Graphics
+  /** 入图场景名横幅(票 #46):屏空间,挂在遮罩之上,换图不重建 */
+  readonly sceneBanner = new SceneBanner()
   private scene: WorldScene
   private mapIdValue: MapId
   private saveTimer = 0
@@ -96,6 +100,13 @@ export class WorldDirector {
     this.overlay.alpha = 0
     this.overlay.visible = false
     this.app.stage.addChild(this.overlay)
+
+    // 入图场景名横幅(票 #46,spec 术语「场景横幅」):开机即入图——
+    // 位置快照恢复亦然(恢复 = 进入该场景)。屏空间挂遮罩之上,并登记常驻
+    // 顶层(applyWarp 重建场景后重新置顶,与大满贯演出层同一缝)。
+    this.app.stage.addChild(this.sceneBanner.container)
+    this.pinned.push(this.sceneBanner.container)
+    this.sceneBanner.begin(SCENE_NAMES[startMapId])
   }
 
   /** 当前场景 id(组合根/hud 消费;换图在过场 'switch' 时刻生效) */
@@ -109,9 +120,13 @@ export class WorldDirector {
   }
 
   /** 每帧推进:过场状态机 → 换图落位 → 出口检测 → 存档门禁 → 场景渲染 */
-  update(t: number, dt: number, promptState?: InteractionPromptState | null): void {
+  update(t: number, dt: number, promptState?: InteractionPromptState | null, warpPrompt?: WarpHint | null): void {
     const action = this.transition.update(dt)
     if (action === 'switch' && this.transition.warp) this.applyWarp(this.transition.warp)
+    // 入图横幅(票 #46):淡入完成沿('arrived')起演新场景名——「过场淡入
+    // 完成后底部显示」,确认切换已发生;演出推进每帧走(未开演为空操作)
+    if (action === 'arrived') this.sceneBanner.begin(SCENE_NAMES[this.mapIdValue])
+    this.sceneBanner.update(dt)
 
     this.overlay.alpha = this.transition.alpha
     this.overlay.visible = this.transition.alpha > 0
@@ -124,7 +139,9 @@ export class WorldDirector {
     }
 
     this.trySave(dt)
-    this.scene.update(this.core, t, dt, promptState)
+    // 出口接近浮签(票 #46):过场中强制隐藏(组合根 gating 之外的导演侧
+    // 双保险——过场是本层的职责,门禁在本层收口)
+    this.scene.update(this.core, t, dt, promptState, this.transition.locked ? null : warpPrompt)
   }
 
   /**

@@ -109,17 +109,18 @@ describe('WorldDirector:开机恢复(位置是唯一持久的世界状态)', () 
   })
 })
 
-describe('WorldDirector:出口过场(走到触发 → 淡黑 → 对侧入口,朝向保持)', () => {
-  function walkInVillageEast(): { director: WorldDirector; core: CoreLoop } {
-    const core = new CoreLoop(new Rng(1))
-    const director = new WorldDirector({ app: fakeApp(), textures: fakeTextures(), core, storage: countingKv() })
-    core.px = VILLAGE_EAST_IN.x
-    core.py = VILLAGE_EAST_IN.y
-    core.facing = 'right' // 行进方向:东
-    tick(director, core, 0, DT)
-    return { director, core }
-  }
+/** 村舍东出口走入(共享:过场编排与票 #46 横幅/浮签门禁都要走一遍过场) */
+function walkInVillageEast(): { director: WorldDirector; core: CoreLoop } {
+  const core = new CoreLoop(new Rng(1))
+  const director = new WorldDirector({ app: fakeApp(), textures: fakeTextures(), core, storage: countingKv() })
+  core.px = VILLAGE_EAST_IN.x
+  core.py = VILLAGE_EAST_IN.y
+  core.facing = 'right' // 行进方向:东
+  tick(director, core, 0, DT)
+  return { director, core }
+}
 
+describe('WorldDirector:出口过场(走到触发 → 淡黑 → 对侧入口,朝向保持)', () => {
   it('走入触发区:立即进入过场(输入锁定)', () => {
     const { director } = walkInVillageEast()
     expect(director.inputLocked).toBe(true)
@@ -286,5 +287,84 @@ describe('WorldDirector:碰撞注入随图切换', () => {
     for (let i = 0; i < 90; i++) core.update(DT, { holding: false, moveX: 0, moveY: 1 })
     expect(core.py).toBeLessThan(240) // 被挡在岸线(脚部盒半高 3)
     expect(core.py).toBeGreaterThan(220) // 且确实向下走过
+  })
+})
+
+/** 从公开场景树找容器(沿 worldScene.test.ts 的按标签检索先例) */
+function findLabeled(root: Container, label: string): Container {
+  let found: Container | undefined
+  const walk = (node: Container): void => {
+    if (node.label === label) found = node
+    for (const child of node.children) walk(child)
+  }
+  walk(root)
+  if (!found) throw new Error(`场景树里没有 label=${label} 的容器`)
+  return found
+}
+
+describe('WorldDirector:场景横幅(票 #46,过场淡入完成沿触发 + 开机入图)', () => {
+  it('开机即入图:构造完成后横幅在演(村舍池塘),约 2.5s 后自动收场', () => {
+    const core = new CoreLoop(new Rng(1))
+    const director = new WorldDirector({ app: fakeApp(), textures: fakeTextures(), core, storage: countingKv() })
+    expect(director.sceneBanner.playing).toBe(true)
+    expect(director.sceneBanner.label).toBe('村舍池塘')
+    let t = 0
+    for (let i = 0; i < 170; i++) {
+      tick(director, core, t, DT)
+      t += DT
+    }
+    expect(director.sceneBanner.playing).toBe(false)
+  })
+
+  it('过场中横幅仍是旧场景名;到达帧(淡入完成沿)换新场景名并重开时间线', () => {
+    const { director, core } = walkInVillageEast()
+    expect(director.sceneBanner.label).toBe('村舍池塘') // 开机横幅仍在演(2.5s 内)
+    let t = DT
+    for (let i = 0; i < 20; i++) {
+      tick(director, core, t, DT)
+      t += DT
+    }
+    expect(director.mapId).toBe('river') // 已换图(淡出走满)
+    expect(director.sceneBanner.label).toBe('村舍池塘') // 过场中不触发(仍在淡入)
+    for (let i = 0; i < 40 && director.inputLocked; i++) {
+      tick(director, core, t, DT)
+      t += DT
+    }
+    expect(director.inputLocked).toBe(false) // 淡入完成 = 到达沿
+    expect(director.sceneBanner.playing).toBe(true)
+    expect(director.sceneBanner.label).toBe('河谷')
+  })
+})
+
+describe('WorldDirector:出口接近浮签的过场门禁(票 #46:过场中不显)', () => {
+  const WARP_HINT = { x: 888, y: 208, label: '东 · 河谷 →' }
+
+  it('非过场:浮签透传给场景(warp-prompt 容器可见)', () => {
+    const app = fakeApp()
+    const core = new CoreLoop(new Rng(1))
+    const director = new WorldDirector({ app, textures: fakeTextures(), core, storage: countingKv() })
+    director.update(0, DT, null, WARP_HINT)
+    expect(findLabeled(app.stage, 'warp-prompt').visible).toBe(true)
+  })
+
+  it('过场中(输入锁定):浮签强制隐藏(到达帧恢复)', () => {
+    const app = fakeApp()
+    const core = new CoreLoop(new Rng(1))
+    const director = new WorldDirector({ app, textures: fakeTextures(), core, storage: countingKv() })
+    core.px = VILLAGE_EAST_IN.x
+    core.py = VILLAGE_EAST_IN.y
+    let t = 0
+    tick(director, core, t, DT) // 触发过场
+    t += DT
+    expect(director.inputLocked).toBe(true)
+    director.update(t, DT, null, WARP_HINT)
+    expect(findLabeled(app.stage, 'warp-prompt').visible).toBe(false)
+    // 到达帧:过场结束,同签恢复显示
+    for (let i = 0; i < 60 && director.inputLocked; i++) {
+      tick(director, core, t, DT)
+      t += DT
+    }
+    director.update(t, DT, null, WARP_HINT)
+    expect(findLabeled(app.stage, 'warp-prompt').visible).toBe(true)
   })
 })

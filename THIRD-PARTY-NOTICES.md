@@ -58,6 +58,15 @@
 | `public/sprites/scene-atlas.png` | —(自绘) | `scripts/generate-bobber-atlas.mjs` 生成 | 无第三方版权(等效 CC0) | 脚本生成 |
 | `public/sprites/oga-src/` | — | 上列 OGA 素材的原始下载件 + Kenney「Tiny Farm」packed 表(派生来源与溯源凭据) | **CC0 1.0** | 原样保存 |
 
+## UI 素材:DOM 主题九宫格(自 #47 归并)
+
+DOM 面板/顶栏/toast 的 CC0 九宫格件,`border-image` 切片契约与用途见
+`public/ui/kenney-rpg/README.md`(票 #47 选型定案)。
+
+| 仓库文件 | 原始素材 | 来源与作者 | 许可 | 处理 |
+| --- | --- | --- | --- | --- |
+| `public/ui/kenney-rpg/panel_brown.png`、`panel_beige.png`、`panel_beigeLight.png`、`panelInset_brown.png`、`panelInset_beige.png`、`buttonLong_brown.png`、`buttonLong_brown_pressed.png`、`buttonLong_beige.png`、`buttonLong_beige_pressed.png` | `PNG/` 同名件(Kenney「UI Pack: RPG Expansion」整包,kenney.nl/assets/ui-pack-rpg-expansion) | Kenney「UI Pack: RPG Expansion」,Kenney Vleugels(Kenney.nl),<https://kenney.nl/assets/ui-pack-rpg-expansion> | **CC0 1.0**(随包 License.txt 声明) | 原样入库,零改动(2026-11-27 取包,票 #47);基础「UI Pack」一并甄别后弃用(纯色扁平件,无木纹,见 README 留痕) |
+
 ## 代码依赖
 
 | 依赖 | 用途 | 来源 | 许可 |

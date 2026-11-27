@@ -83,6 +83,31 @@ export function warpAt(map: WorldMapData, px: number, py: number): WarpZone | nu
   return null
 }
 
+/** 出口走廊(半开矩形,world px):x ∈ [x0, x1)、y ∈ [y0, y1) */
+export interface WarpCorridor {
+  x0: number
+  x1: number
+  y0: number
+  y1: number
+}
+
+/**
+ * 出口走廊(票 #46):触发区向**最近图边**延伸出的矩形——树墙收边在此豁免
+ * (出口视觉开口),土路沿走廊延伸出画。地图不变量(maps.test/worldMap.test)
+ * 以此钉死「开口只开在出口」;接近浮签(warpHint)的锚点另取触发区几何。
+ */
+export function exitCorridorOf(map: WorldMapData, warp: WarpZone): WarpCorridor {
+  const toLeft = warp.x
+  const toRight = map.widthPx - (warp.x + warp.width)
+  const toTop = warp.y
+  const toBottom = map.heightPx - (warp.y + warp.height)
+  const min = Math.min(toLeft, toRight, toTop, toBottom)
+  if (min === toLeft) return { x0: 0, x1: warp.x, y0: warp.y, y1: warp.y + warp.height }
+  if (min === toRight) return { x0: warp.x + warp.width, x1: map.widthPx, y0: warp.y, y1: warp.y + warp.height }
+  if (min === toTop) return { x0: warp.x, x1: warp.x + warp.width, y0: 0, y1: warp.y }
+  return { x0: warp.x, x1: warp.x + warp.width, y0: warp.y + warp.height, y1: map.heightPx }
+}
+
 function zoneSize(value: unknown, name: string): number {
   if (value === undefined) return DEFAULT_ZONE_SIZE
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {

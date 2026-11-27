@@ -34,10 +34,26 @@ export function promptBoxSize(word: string): PromptBox {
   }
 }
 
-/** 浮标悬停高度(交互点上方)与上下浮动幅度(取整前) */
+/**
+ * 被动浮签盒几何(票 #46 出口接近签):无键帽段,同网格同内边距——
+ * 宽 = 两侧内边 + 词宽,高与主动浮签一致(同族视觉,#48 全体转白底时一并收编)。
+ */
+export function passiveBoxSize(word: string): PromptBox {
+  return {
+    width: PROMPT_PAD_X * 2 + word.length * PROMPT_CHAR_W,
+    height: PROMPT_KEY_H + PROMPT_PAD_Y * 2,
+  }
+}
+
+/** 浮标悬停高度(锚点上方)与上下浮动幅度(取整前) */
 const HOVER_HEIGHT = 24
 const BOB_AMP = 1.5
 const BOB_PERIOD = 2.6
+
+/** 上下浮动量(取整像素;主动/被动浮签共享,同一节奏) */
+function hoverBob(t: number): number {
+  return Math.round(Math.sin(t * BOB_PERIOD) * BOB_AMP)
+}
 
 /** 一个交互点的浮签(短词不变不重画;显隐与位置逐帧更新) */
 export class InteractionPrompt {
@@ -85,8 +101,58 @@ export class InteractionPrompt {
 
   /** 显示于交互点上方(像素取整 + 上下浮动) */
   showAt(x: number, y: number, t: number): void {
-    const bob = Math.round(Math.sin(t * BOB_PERIOD) * BOB_AMP)
-    this.container.position.set(Math.round(x), Math.round(y - HOVER_HEIGHT) + bob)
+    this.container.position.set(Math.round(x), Math.round(y - HOVER_HEIGHT) + hoverBob(t))
+    this.container.visible = true
+  }
+
+  hide(): void {
+    this.container.visible = false
+  }
+}
+
+/**
+ * 被动浮签(票 #46 出口接近签):与 InteractionPrompt 同族的无键帽变体——
+ * 深底圆角小框 + 提示词,「东 · 河谷 →」样式。**不承载任何动作语义**(不进
+ * 动作键意图裁决),纯指引;显隐由组合根按「idle ∧ 无面板 ∧ 非过场 ∧ 无交互签」
+ * 供给,渲染层兜底非 idle 强制隐藏(与主动浮签同双保险)。
+ */
+export class PassivePrompt {
+  readonly container = new Container()
+  private bg = new Graphics()
+  private word: Text
+  /** 最近一次渲染的词(null = 尚未画过,首词必画) */
+  private renderedWord: string | null = null
+
+  constructor() {
+    this.container.label = 'warp-prompt'
+    this.container.visible = false
+    this.word = new Text({
+      text: '',
+      style: { fontFamily: '"Fusion Pixel 12px Proportional SC", sans-serif', fontSize: 12, fill: 0xeaf4f6 },
+    })
+    this.word.anchor.set(0, 0.5)
+    this.container.addChild(this.bg, this.word)
+  }
+
+  /** 词(变化才重画;与主动浮签同「clear → 重画」稳态纪律) */
+  setLabel(word: string): void {
+    if (word === this.renderedWord) return
+    this.renderedWord = word
+    this.word.text = word
+    const { width: w, height: h } = passiveBoxSize(word)
+    const x0 = -w / 2
+    const y0 = -h
+    this.bg
+      .clear()
+      .roundRect(x0, y0, w, h, 4)
+      .fill({ color: 0x0c2f3f, alpha: 0.85 })
+      .stroke({ width: 1, color: 0x9fd8e8, alpha: 0.5 })
+    this.word.position.set(x0 + PROMPT_PAD_X, y0 + h / 2)
+  }
+
+  /** 显示于锚点上方(像素取整 + 上下浮动,与主动浮签同节奏) */
+  showAt(x: number, y: number, t: number): void {
+    this.container.position.set(Math.round(x), Math.round(y - HOVER_HEIGHT) + hoverBob(t))
     this.container.visible = true
   }
 
