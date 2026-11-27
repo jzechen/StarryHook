@@ -120,7 +120,14 @@ export class WorldDirector {
   }
 
   /** 每帧推进:过场状态机 → 换图落位 → 出口检测 → 存档门禁 → 场景渲染 */
-  update(t: number, dt: number, promptState?: InteractionPromptState | null, warpPrompt?: WarpHint | null): void {
+  update(
+    t: number,
+    dt: number,
+    promptState?: InteractionPromptState | null,
+    warpPrompt?: WarpHint | null,
+    /** 钓上宝箱是否已现身(票 #56,组合根按渲染层追踪器透传给场景) */
+    chestActive?: boolean,
+  ): void {
     const action = this.transition.update(dt)
     if (action === 'switch' && this.transition.warp) this.applyWarp(this.transition.warp)
     // 入图横幅(票 #46):淡入完成沿('arrived')起演新场景名——「过场淡入
@@ -141,7 +148,7 @@ export class WorldDirector {
     this.trySave(dt)
     // 出口接近浮签(票 #46):过场中强制隐藏(组合根 gating 之外的导演侧
     // 双保险——过场是本层的职责,门禁在本层收口)
-    this.scene.update(this.core, t, dt, promptState, this.transition.locked ? null : warpPrompt)
+    this.scene.update(this.core, t, dt, promptState, this.transition.locked ? null : warpPrompt, chestActive)
   }
 
   /**

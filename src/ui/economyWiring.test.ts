@@ -8,7 +8,7 @@ import { sellPriceFor, sessionQualityRng, rollQuality } from '../core/quality'
 import { Rng } from '../core/rng'
 import { WalletStore } from '../core/wallet'
 import { memoryStorage } from '../testing/memoryStorage'
-import { baitEffectSource, buyBaitOutcome, equippedBaitView, grantChestLoot, sellFishOutcome } from './economyWiring'
+import { baitEffectSource, buyBaitOutcome, equippedBaitView, grantChestLoot, grantLoot, sellFishOutcome } from './economyWiring'
 
 const DT = 1 / 60
 const HOLD = { holding: true, moveX: 0, moveY: 0 }
@@ -223,11 +223,13 @@ describe('宝箱掉落结算接线(接缝:grantChestLoot,票 #41 spec §4.5)', (
   it('鱼饵宝箱:走库存直加(无扣款),装备槽不动', () => {
     const wallet = new WalletStore(memoryStorage())
     const backpack = new BackpackStore(FISH.map(f => f.id), COLLECTIBLES.map(c => c.id))
-    const chest = CHESTS.find(c => c.loot.type === 'bait')!
-    grantChestLoot(chest, wallet, backpack)
-    expect(wallet.coins()).toBe(0)
-    expect(wallet.baitCount('xianger')).toBe(5)
-    expect(wallet.equippedBait()).toBeNull()
+    for (const chest of CHESTS) {
+      if (chest.loot.type !== 'bait') continue
+      grantChestLoot(chest, wallet, backpack)
+      expect(wallet.coins()).toBe(0)
+      expect(wallet.baitCount(chest.loot.baitId)).toBe(chest.loot.count)
+      expect(wallet.equippedBait()).toBeNull()
+    }
   })
 
   it('收藏品宝箱:backpack.addCollectible 入包(目录 = COLLECTIBLES,票 #41 填充)', () => {
@@ -239,7 +241,8 @@ describe('宝箱掉落结算接线(接缝:grantChestLoot,票 #41 spec §4.5)', (
       grantChestLoot(chest, wallet, backpack)
       expect(backpack.countCollectible(chest.loot.collectibleId)).toBe(1)
     }
-    expect(backpack.collectibleEntries().length).toBeGreaterThanOrEqual(2)
+    // 票 #56 有意规格变更:柳纹木雕移出世界宝箱表后,世界表收藏品箱仅剩湖畔珍珠
+    expect(backpack.collectibleEntries().length).toBe(1)
   })
 
   it('表内每个宝箱都可结算(内容表与接线对齐,无漏接的掉落类型)', () => {
@@ -250,6 +253,37 @@ describe('宝箱掉落结算接线(接缝:grantChestLoot,票 #41 spec §4.5)', (
     }).not.toThrow()
     expect(wallet.coins()).toBe(30)
     expect(wallet.baitCount('xianger')).toBe(5)
-    expect(backpack.collectibleEntries()).toHaveLength(2)
+    // 票 #56 有意规格变更:树影的宝箱改掉浓饵 ×3(柳纹木雕改钓获专属)
+    expect(wallet.baitCount('nonger')).toBe(3)
+    expect(backpack.collectibleEntries()).toHaveLength(1)
+  })
+})
+
+describe('钓上宝箱发放接线(接缝:grantLoot,票 #56:宝箱随渔获一并入包)', () => {
+  it('金币掉落:wallet.earn 入账(金币唯一来源 = 卖鱼 + 宝箱)', () => {
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id), COLLECTIBLES.map(c => c.id))
+    grantLoot({ type: 'coins', coins: 30 }, wallet, backpack)
+    expect(wallet.coins()).toBe(30)
+    expect(backpack.collectibleEntries()).toEqual([])
+  })
+
+  it('鱼饵掉落:库存直加(无扣款),装备槽不动', () => {
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id), COLLECTIBLES.map(c => c.id))
+    grantLoot({ type: 'bait', baitId: 'nonger', count: 3 }, wallet, backpack)
+    expect(wallet.coins()).toBe(0)
+    expect(wallet.baitCount('nonger')).toBe(3)
+    expect(wallet.equippedBait()).toBeNull()
+  })
+
+  it('收藏品掉落:backpack.addCollectible 入包(柳纹木雕钓获专属,目录外忽略)', () => {
+    const wallet = new WalletStore(memoryStorage())
+    const backpack = new BackpackStore(FISH.map(f => f.id), COLLECTIBLES.map(c => c.id))
+    grantLoot({ type: 'collectible', collectibleId: 'willow-carving' }, wallet, backpack)
+    grantLoot({ type: 'collectible', collectibleId: 'willow-carving' }, wallet, backpack)
+    expect(backpack.countCollectible('willow-carving')).toBe(2)
+    grantLoot({ type: 'collectible', collectibleId: '不存在' }, wallet, backpack)
+    expect(backpack.collectibleEntries()).toHaveLength(1)
   })
 })

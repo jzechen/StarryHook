@@ -1,6 +1,6 @@
 import { BAITS } from '../config'
 import type { BackpackStore } from '../core/backpack'
-import type { ChestDef } from '../core/chests'
+import type { ChestDef, ChestLoot } from '../core/chests'
 import type { BaitEffect } from '../core/coreLoop'
 import { FISH } from '../core/fishCatalog'
 import { sellPriceFor } from '../core/quality'
@@ -77,15 +77,22 @@ export function sellFishOutcome(
 }
 
 /**
- * 宝箱掉落结算(组合根接线,票 #41 spec §4.5「开箱即结算」):按内容表把
- * 一次掉落直接送进既有库存路径,无中间态——金币 wallet.earn(金币唯一来源
- * = 卖鱼 + 宝箱)、鱼饵 wallet.grantBait(库存直加,无扣款)、收藏品
- * backpack.addCollectible(目录外忽略)。一次性判定不在此处:组合根先经
- * ChestOpenedStore.open 恰好一次成功后才调用(开箱态为结算唯一入口)。
+ * 单次掉落结算(票 #56 从 grantChestLoot 抽出的共享入账段):按掉落直接送进
+ * 既有库存路径,无中间态——金币 wallet.earn(金币唯一来源 = 卖鱼 + 宝箱)、
+ * 鱼饵 wallet.grantBait(库存直加,无扣款)、收藏品 backpack.addCollectible
+ * (目录外忽略)。世界宝箱与钓上宝箱(票 #56)共用本段,掉落类型不新增。
  */
-export function grantChestLoot(chest: ChestDef, wallet: WalletStore, backpack: BackpackStore): void {
-  const loot = chest.loot
+export function grantLoot(loot: ChestLoot, wallet: WalletStore, backpack: BackpackStore): void {
   if (loot.type === 'coins') wallet.earn(loot.coins)
   else if (loot.type === 'bait') wallet.grantBait(loot.baitId, loot.count)
   else backpack.addCollectible(loot.collectibleId)
+}
+
+/**
+ * 宝箱掉落结算(组合根接线,票 #41 spec §4.5「开箱即结算」):按内容表把
+ * 一次掉落直接送进既有库存路径,无中间态。一次性判定不在此处:组合根先经
+ * ChestOpenedStore.open 恰好一次成功后才调用(开箱态为结算唯一入口)。
+ */
+export function grantChestLoot(chest: ChestDef, wallet: WalletStore, backpack: BackpackStore): void {
+  grantLoot(chest.loot, wallet, backpack)
 }

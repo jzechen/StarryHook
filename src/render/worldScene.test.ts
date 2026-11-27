@@ -617,3 +617,64 @@ describe('出口接近浮签(接缝:WorldScene.update 第 5 参,票 #46:被动�
     }
   })
 })
+
+describe('钓上宝箱图标接线(票 #56:等待/咬钩挂浮标旁,小游戏入轨道跟鱼,接缝 = 第 6 参 chestActive)', () => {
+  it('现身宝箱(waiting/bite):world 层图标可见,位置为整数像素;未现身(false)隐藏', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    scene.update(fakeCore('waiting'), 0.2, 0.016, null, null, true)
+    const icon = findLabeled(world(), 'fishing-chest')
+    expect(icon.visible).toBe(true)
+    expect(Number.isInteger(icon.position.x)).toBe(true)
+    expect(Number.isInteger(icon.position.y)).toBe(true)
+
+    scene.update(fakeCore('bite'), 0.4, 0.016, null, null, true)
+    expect(icon.visible).toBe(true)
+
+    scene.update(fakeCore('waiting'), 0.6, 0.016, null, null, false)
+    expect(icon.visible).toBe(false)
+  })
+
+  it('idle/charging/结算相位不显示浮标旁图标(宝箱未现身或已结算/逃走)', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    for (const phase of ['idle', 'charging', 'minigame', 'caught', 'escaped'] as const) {
+      scene.update(fakeCore(phase), 0, 0.016, null, null, true)
+      expect(findLabeled(world(), 'fishing-chest').visible).toBe(false)
+    }
+  })
+
+  it('小游戏轨道图标:现身宝箱在 ui 层轨道内跟鱼,期望值按面板几何独立推算', () => {
+    const { app, ui } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const core = fakeCore('minigame')
+    core.mg = { t: 0, timer: 0, barV: 0, barY: 0.45, fishY: 0.4, fishTarget: 0.5, progress: 0.5 }
+    scene.update(core, 0.2, 0.016, null, null, true)
+    const icon = findLabeled(ui(), 'mg-chest')
+    expect(icon.visible).toBe(true)
+    // 轨道几何(与 update 内同一公式独立代入):trackX = 480−40,trackW = 26,
+    // trackH = min(270×0.72, 460) = 194.4 → innerY = 40.8,innerH = 188.4;
+    // 宝箱轨道位 = chestTrackY(0.4) = 0.52 → y = 40.8 + (1−0.52)×188.4 = 131.232
+    expect(icon.position.x).toBe(453)
+    expect(icon.position.y).toBeCloseTo(131.232, 3)
+  })
+
+  it('贴顶鱼的宝箱钳回轨道(fishY 0.98 → 宝箱同位 0.98),不顶出面板', () => {
+    const { app, ui } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const core = fakeCore('minigame')
+    core.mg = { t: 0, timer: 0, barV: 0, barY: 0.7, fishY: 0.98, fishTarget: 0.5, progress: 0.5 }
+    scene.update(core, 0.2, 0.016, null, null, true)
+    // y = 40.8 + (1−0.98)×188.4 = 44.568(钳制生效,未按 1.1 越界)
+    expect(findLabeled(ui(), 'mg-chest').position.y).toBeCloseTo(44.568, 3)
+  })
+
+  it('未现身(false)或非小游戏相位:轨道图标隐藏', () => {
+    const { app, ui } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    scene.update(fakeCore('minigame'), 0, 0.016, null, null, false)
+    expect(findLabeled(ui(), 'mg-chest').visible).toBe(false)
+    scene.update(fakeCore('waiting'), 0, 0.016, null, null, true)
+    expect(findLabeled(ui(), 'mg-chest').visible).toBe(false)
+  })
+})

@@ -9,6 +9,7 @@ import { BASE_GROUND_GID, waterFillsBounds, type WorldMapData } from '../world/w
 import { waterAimPoint } from '../world/waterDistance'
 import type { WarpHint } from '../world/warpHint'
 import { InteractionPrompt, PassivePrompt } from './interactionPrompt'
+import { chestTrackY } from './fishingChest'
 import { ScreenShake, shakeTrigger } from './screenShake'
 import { SplashLayer } from './splash'
 import { shimmerActive, shimmerBand } from './progressShimmer'
@@ -137,6 +138,8 @@ export class WorldScene {
   private shadow = new Graphics()
   private playerSprite: Sprite
   private bobberSprite = new Container()
+  /** 钓上宝箱图标(票 #56):等待/咬钩期挂浮标旁(world 层);显隐由组合根按追踪器供给 */
+  private fishingChestSprite = new Sprite()
   private bang: Text
   /** 交互浮签(票 #36):画布内像素浮签,挂 world 层随相机滚动 */
   private prompt = new InteractionPrompt()
@@ -149,6 +152,8 @@ export class WorldScene {
   private track = new Graphics()
   private mgBar = new Graphics()
   private mgFishSprite: Sprite
+  /** 钓上宝箱图标(票 #56):小游戏轨道内跟随鱼,固定尾距与同步判定同源 */
+  private mgChestSprite = new Sprite()
   private mgProgress = new Graphics()
 
   private chestIsOpen: ChestOpenLookup
@@ -267,9 +272,22 @@ export class WorldScene {
     bobber.anchor.set(0.5)
     this.bobberSprite.addChild(bobber)
 
+    // 钓上宝箱(票 #56):图标复用既有宝箱闭箱帧(零新素材)——等待/咬钩期挂
+    // 浮标旁(world 层),小游戏期入轨道跟鱼(ui 层);两态显隐由组合根按
+    // 渲染层追踪器供给(第 6 参),本层不做现身判定
+    this.fishingChestSprite.texture = textures.chestFrames.closed
+    this.fishingChestSprite.anchor.set(0.5)
+    this.fishingChestSprite.visible = false
+    this.fishingChestSprite.label = 'fishing-chest'
+
     this.mgFishSprite = new Sprite(textures.fishFrames.slim[0]!)
     this.mgFishSprite.anchor.set(0.5)
     this.mgFishSprite.visible = false
+
+    this.mgChestSprite.texture = textures.chestFrames.closed
+    this.mgChestSprite.anchor.set(0.5)
+    this.mgChestSprite.visible = false
+    this.mgChestSprite.label = 'mg-chest'
 
     // 角色:脚底锚在核心坐标点下方(沿 pondScene);程序化姿态(bob/呼吸/
     // 前倾)直接应用到该精灵,label 供场景树测试定位(票 #49)
@@ -297,12 +315,13 @@ export class WorldScene {
       this.chargeBar,
       this.player,
       this.bobberSprite,
+      this.fishingChestSprite,
       this.bang,
       this.splash.container,
       this.prompt.container,
       this.warpPrompt.container,
     )
-    this.ui.addChild(this.track, this.mgBar, this.mgFishSprite, this.mgProgress)
+    this.ui.addChild(this.track, this.mgBar, this.mgFishSprite, this.mgChestSprite, this.mgProgress)
 
     // 首帧前先落默认水域色调(此后随 core.area 变化在 update 里切换)
     this.applyAreaPalette(DEFAULT_AREA)
@@ -389,6 +408,11 @@ export class WorldScene {
     dt: number,
     prompt?: InteractionPromptState | null,
     warpPrompt?: WarpHint | null,
+    /**
+     * 钓上宝箱是否已现身(票 #56,渲染层追踪器供给,组合根透传):
+     * 等待/咬钩期挂浮标旁、小游戏期入轨道跟鱼;false/缺省 = 本竿无宝箱。
+     */
+    chestActive?: boolean,
   ): void {
     const W = this.app.screen.width
     const H = this.app.screen.height
@@ -522,6 +546,15 @@ export class WorldScene {
     if (showBobber) {
       this.bobberSprite.position.set(Math.round(bx), Math.round(by))
     }
+    // 钓上宝箱(票 #56):等待/咬钩期挂浮标落点旁(抛竿落水沿即现身——落点
+    // 先于浮标飞行结束定在这里;波伏与浮标同频,咬钩下沉不跟,箱子是死物);
+    // 现身影的消失由追踪器沿(收竿/脱钩/结算)驱动,组合根经第 6 参供给
+    const chestAtBobber = chestActive === true && (core.phase === 'waiting' || core.phase === 'bite')
+    this.fishingChestSprite.visible = chestAtBobber
+    if (chestAtBobber) {
+      const chestBob = core.phase === 'waiting' ? Math.sin(t * 2.4) * BOBBER_FX.idleBob : 0
+      this.fishingChestSprite.position.set(Math.round(tx + 12), Math.round(ty + chestBob - 5))
+    }
     // 捕获水花(票 #43):捕获沿在鱼漂世界坐标(落点 = 浮标回中位置)起一蓬,
     // 逐帧推进在层内部;生成/回收零依赖(spritePool),寿命 ≤0.6s
     if (caughtEdge) this.splash.spawn(tx, ty)
@@ -597,6 +630,7 @@ export class WorldScene {
     this.track.visible = mgVisible
     this.mgBar.visible = mgVisible
     this.mgFishSprite.visible = mgVisible
+    this.mgChestSprite.visible = mgVisible && chestActive === true
     this.mgProgress.visible = mgVisible
     if (mgVisible && core.mg && core.fish) {
       const mg = core.mg
@@ -624,6 +658,10 @@ export class WorldScene {
       const fishFrames = this.textures.fishFrames[core.fish.shape]
       this.mgFishSprite.texture = fishFrames[Math.floor(t / FISH_FRAME_PERIOD) % FISH_FRAME_COUNT]!
       this.mgFishSprite.position.set(trackX + trackW / 2, innerY + innerH - mg.fishY * innerH)
+
+      // 宝箱图标跟随鱼(票 #56):固定尾距 chestTrackY 单源——与追踪器的同步
+      // 判定同源,所见即所判(玩家看到的间隙就是绿条要同时罩住的跨度)
+      this.mgChestSprite.position.set(trackX + trackW / 2, innerY + innerH - chestTrackY(mg.fishY) * innerH)
 
       // 进度条
       const pgX = trackX - 10

@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { BAITS } from '../config'
 import { COLLECTIBLES } from './collectibles'
-import { CHESTS, chestDef, chestLootText, chestOpenToastText } from './chests'
+import {
+  CHESTS,
+  FISHING_CHEST_LOOTS,
+  chestDef,
+  chestLootText,
+  chestOpenToastText,
+  fishingChestToastText,
+} from './chests'
 
 /**
  * 宝箱内容表(票 #41,spec §4.5):内容**表驱动固定**(纯函数,不随机)——
@@ -66,5 +73,47 @@ describe('宝箱文案(纯函数:开箱浮签/提示单源)', () => {
     expect(chestOpenToastText({ id: 'x', name: '篱笆角的宝箱', loot: { type: 'coins', coins: 30 } })).toBe(
       '篱笆角的宝箱:30 金币',
     )
+  })
+})
+
+describe('钓上宝箱掉落池(票 #56:柳纹木雕改钓获专属,世界宝箱表不再掉出)', () => {
+  it('世界宝箱表零柳纹木雕(表驱动断言;树影的宝箱改掉浓饵 ×3,独立字面量)', () => {
+    for (const c of CHESTS) {
+      if (c.loot.type !== 'collectible') continue
+      expect(c.loot.collectibleId, `${c.id} 不应再掉柳纹木雕`).not.toBe('willow-carving')
+    }
+    expect(chestDef('village-grove')!.loot).toEqual({ type: 'bait', baitId: 'nonger', count: 3 })
+  })
+
+  it('钓上宝箱池是柳纹木雕唯一产出入口(恰一条,收藏品目录内)', () => {
+    const willow = FISHING_CHEST_LOOTS.filter(l => l.type === 'collectible' && l.collectibleId === 'willow-carving')
+    expect(willow).toHaveLength(1)
+    expect(COLLECTIBLES.some(x => x.id === 'willow-carving')).toBe(true)
+  })
+
+  it('池复用世界宝箱内容表:世界表每份掉落都在池中(增删自动跟随)', () => {
+    for (const c of CHESTS) expect(FISHING_CHEST_LOOTS).toContain(c.loot)
+  })
+
+  it('池覆盖三类掉落:金币 / 鱼饵 / 收藏品(组合根发放路径全 reachable)', () => {
+    const kinds = new Set(FISHING_CHEST_LOOTS.map(l => l.type))
+    expect(kinds.has('coins')).toBe(true)
+    expect(kinds.has('bait')).toBe(true)
+    expect(kinds.has('collectible')).toBe(true)
+  })
+
+  it('池内引用全部有效:鱼饵/收藏品目录内、金币正整数(与世界表同纪律)', () => {
+    for (const loot of FISHING_CHEST_LOOTS) {
+      if (loot.type === 'bait') expect(BAITS.some(b => b.id === loot.baitId)).toBe(true)
+      if (loot.type === 'collectible') expect(COLLECTIBLES.some(x => x.id === loot.collectibleId)).toBe(true)
+      if (loot.type === 'coins') expect(loot.coins).toBeGreaterThan(0)
+    }
+  })
+
+  it('fishingChestToastText:「钓上的宝箱:掉落摘要」(捕获沿 toast 单源)', () => {
+    expect(fishingChestToastText({ type: 'collectible', collectibleId: 'willow-carving' })).toBe(
+      '钓上的宝箱:柳纹木雕',
+    )
+    expect(fishingChestToastText({ type: 'coins', coins: 30 })).toBe('钓上的宝箱:30 金币')
   })
 })

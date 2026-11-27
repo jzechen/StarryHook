@@ -5,7 +5,7 @@ import { Application } from 'pixi.js'
 import '@fontsource/fusion-pixel-12px-proportional-sc'
 import { RODS } from './config'
 import { BackpackStore } from './core/backpack'
-import { chestDef, chestOpenToastText } from './core/chests'
+import { chestDef, chestOpenToastText, fishingChestToastText } from './core/chests'
 import { ChestOpenedStore } from './core/chestState'
 import { CollectionStore, type KvStorage } from './core/collection'
 import { COLLECTIBLES } from './core/collectibles'
@@ -18,6 +18,7 @@ import type { LoopPhase } from './core/types'
 import { WalletStore } from './core/wallet'
 import { WorldDirector } from './render/worldDirector'
 import { GrandSlamOverlay } from './render/grandSlam'
+import { FishingChestTracker } from './render/fishingChest'
 import { loadSceneTextures } from './render/textures'
 import { applyViewportToCanvas } from './render/viewport'
 import { interactionPromptText, nearestInteraction, parseInteractionSpots } from './world/interactions'
@@ -32,7 +33,7 @@ import { advanceStepClock } from './ui/footstepClock'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
 import { countdownBadgeText } from './ui/countdownBadgeText'
-import { baitEffectSource, buyBaitOutcome, equippedBaitView, grantChestLoot, sellFishOutcome } from './ui/economyWiring'
+import { baitEffectSource, buyBaitOutcome, equippedBaitView, grantChestLoot, grantLoot, sellFishOutcome } from './ui/economyWiring'
 import { BackpackPanel } from './ui/backpackPanel'
 import { Hud } from './ui/hud'
 import { ModePanel } from './ui/modePanel'
@@ -103,6 +104,12 @@ async function main(): Promise<void> {
   // 供两处消费——世界场景两态外观(空箱跟随已开态)与动作键开箱的一次性判定
   const chests = new ChestOpenedStore(storage)
   const director = new WorldDirector({ app, textures, core, storage, chestIsOpen: id => chests.isOpen(id) })
+  // 钓上宝箱(票 #56,spec #52 内容扩充):渲染层追踪器消费核心**已暴露**的
+  // 相位与小游戏状态(条/鱼位置),核心循环零改动。抛竿落水沿按 TUNE 概率
+  // 现身(独立派生种子的会话 Rng,主随机序列一个 draw 不动,?seed 可复现),
+  // 小游戏中累计「绿条同步罩住鱼与宝箱」的时长占比;捕获沿由组合根判定发放
+  // (掉落复用既有宝箱内容表,economyWiring 既有入账路径)。
+  const fishingChest = new FishingChestTracker(seed)
   const seedEl = document.getElementById('seed')
   if (seedEl) seedEl.textContent = `seed ${seed}`
 
@@ -337,6 +344,9 @@ async function main(): Promise<void> {
     // (纯函数边沿判定,上一帧剩余为基准,同 prevPhase 的跨帧姿态)
     if (countdownTick(prevTimeRemaining, core)) sfx.play(sfxForEvent('countdown'))
     prevTimeRemaining = core.timeRemaining
+    // 钓上宝箱追踪器(票 #56):在 core.update 之后消费本帧核心公开态
+    // (现身沿/同步累计/捕获沿结算都在追踪器内,场景图标显隐随其 active 供给)
+    fishingChest.update(core, dt)
 
     // 动作键按下边沿 → 意图(关闭口径优先):关面板 / 摊位开商店 / 储物箱开转移
     // 面板 / 宝箱一次性开启 / 叙事物读彩蛋;钓位蓄力抛竿不经此处——核心已按交互
@@ -398,7 +408,7 @@ async function main(): Promise<void> {
     // 世界推进(票 #35):过场状态机、出口检测、换图落位、存档门禁、场景渲染
     // (交互浮签随场景渲染一并供给,放最后——过场完成/换图在本帧内生效;
     // 入图场景名横幅由导演在淡入完成沿起演,组合根不经手)
-    director.update(tk.lastTime / 1000, dt, promptState, warpHint)
+    director.update(tk.lastTime / 1000, dt, promptState, warpHint, fishingChest.active)
     // 近水水声(票 #44):距离 = 世界层纯函数(到最近水 cell 的矩形距离,
     // 单一来源),音量随距离淡入淡出;常驻循环走 setAmbient 通道,
     // 静音覆盖 = MuteAwareSfxPlayer.setAmbient(静音即显式停循环)
@@ -446,6 +456,14 @@ async function main(): Promise<void> {
       // 经济总量不变、时点后移)。品质由核心在结算沿 roll(独立派生种子),
       // 组合根只读转接入包;得分/XP/图鉴三路照旧,均不受品质影响。
       backpack.addFish(fishId, core.caughtQuality)
+      // 钓上宝箱(票 #56):同步率达门槛 → 宝箱随渔获一并入包,掉落复用既有
+      // 宝箱内容表(入账与开箱同走 grantLoot);不足则宝箱逃走,渔获照常
+      // (上面已入包)。结算单点 = 追踪器捕获沿(captureOutcome 恰好判一次)
+      const chestLoot = fishingChest.capturedLoot
+      if (chestLoot) {
+        grantLoot(chestLoot, wallet, backpack)
+        toasts.showText(fishingChestToastText(chestLoot))
+      }
     }
     // —— 音效:相位边沿触发(映射纯函数查表;静音时播放器空操作)——
     // 抛竿入水 = 进入 waiting 边沿;咬钩 = 进入 bite 边沿;捕获/脱钩 = 结算相位边沿。
