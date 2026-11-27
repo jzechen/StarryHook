@@ -3995,7 +3995,7 @@
     48,
     0,
     0,
-    0,
+    84,
     0,
     0,
     0,
@@ -4463,9 +4463,9 @@
     0,
     5,
     0,
-    0,
-    0,
-    0,
+    97,
+    98,
+    99,
     0,
     0,
     0,
@@ -4819,6 +4819,40 @@
        "value": 208
       }
      ]
+    },
+    {
+     "point": true,
+     "name": "湖畔西路牌",
+     "id": 7,
+     "rotation": 0,
+     "type": "sign",
+     "visible": true,
+     "x": 72,
+     "y": 232,
+     "properties": [
+      {
+       "name": "text",
+       "type": "string",
+       "value": "西 · 河谷"
+      }
+     ]
+    },
+    {
+     "point": true,
+     "name": "石台",
+     "id": 6,
+     "rotation": 0,
+     "type": "note",
+     "visible": true,
+     "x": 856,
+     "y": 344,
+     "properties": [
+      {
+       "name": "text",
+       "type": "string",
+       "value": "石台的字迹已模糊:『湖心静时,鱼会自己游上来看你。』"
+      }
+     ]
     }
    ],
    "opacity": 1,
@@ -4829,7 +4863,7 @@
   }
  ],
  "nextlayerid": 5,
- "nextobjectid": 6,
+ "nextobjectid": 8,
  "orientation": "orthogonal",
  "renderorder": "right-down",
  "tiledversion": "1.11.0",
@@ -5300,7 +5334,47 @@
      ]
     },
     {
+     "id": 83,
+     "properties": [
+      {
+       "name": "collision",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
      "id": 94,
+     "properties": [
+      {
+       "name": "collision",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 96,
+     "properties": [
+      {
+       "name": "collision",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 97,
+     "properties": [
+      {
+       "name": "collision",
+       "type": "bool",
+       "value": true
+      }
+     ]
+    },
+    {
+     "id": 98,
      "properties": [
       {
        "name": "collision",

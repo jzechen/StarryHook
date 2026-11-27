@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { interactionLabel, interactionPromptText, isNarrativeKind, nearestInteraction, parseInteractionSpots } from './interactions'
+import { interactionLabel, interactionPromptText, isNarrativeKind, nearestInteraction, parseInteractionSpots, type InteractionSpotDef } from './interactions'
+import { WORLD_MAPS } from './maps'
 import villageJson from './village.json'
-import { parseWorldMap, type WorldMapObject } from './worldMap'
+import { warpsOf } from './warps'
+import { isBlockedCell, parseWorldMap, type WorldMapData, type WorldMapObject } from './worldMap'
 
 /** 物件条目替身:缺省 = 钓位「南岸」@(456,296),与 village.json 现有条目同形 */
 function obj(partial: Partial<WorldMapObject> = {}): WorldMapObject {
@@ -220,13 +222,82 @@ describe('村舍图叙事物端到端(接缝:village.json → parseInteractionSp
     expect(dist).toBeLessThan(map.widthPx / 4)
   })
 
-  it('东路牌立在村舍东出口前:图东侧、东行土路尽头处,钓位/摊位范围互不重叠', () => {
+  it('东路牌立在村舍东出口前(图东侧,#35 warp 旁),钓位/摊位范围互不重叠', () => {
     const sign = spots.find(s => s.kind === 'sign')!
     expect(sign.x).toBeGreaterThan(map.widthPx * 0.9)
     for (const other of spots) {
       if (other === sign) continue
       const overlap = Math.hypot(other.x - sign.x, other.y - sign.y) < other.radiusPx + sign.radiusPx
       expect(overlap).toBe(false)
+    }
+  })
+})
+
+describe('三图叙事物(接缝:WORLD_MAPS → parseInteractionSpots,票 #37 补位 #35 并图)', () => {
+  /** 叙事物锚点可达:半径内至少一格可行走(挡住牌子埋进墙里点不到) */
+  function reachableViaWalkableCell(map: WorldMapData, def: InteractionSpotDef): boolean {
+    const r = def.radiusPx
+    const t = map.tileWidth
+    for (let dy = -r; dy <= r; dy += t / 2) {
+      for (let dx = -r; dx <= r; dx += t / 2) {
+        const x = def.x + dx
+        const y = def.y + dy
+        if (!isBlockedCell(map, Math.floor(x / t), Math.floor(y / t))) return true
+      }
+    }
+    return false
+  }
+
+  it('四块路牌各立对应出口前(≤ 4 tile、不压触发区、半径内可达),文案按票面方向', () => {
+    // 票面 §2.5:村舍东/河谷西/河谷东/湖畔西,按图与声明序
+    const EXPECTED: Record<'village' | 'river' | 'lake', readonly string[]> = {
+      village: ['东 · 河谷'],
+      river: ['西 · 村舍池塘', '东 · 湖畔'],
+      lake: ['西 · 河谷'],
+    }
+    for (const mapId of ['village', 'river', 'lake'] as const) {
+      const map = WORLD_MAPS[mapId]
+      const signs = parseInteractionSpots(map.objects, map.tileWidth).filter(s => s.kind === 'sign')
+      expect(signs.map(s => s.text)).toEqual(EXPECTED[mapId])
+      const warps = warpsOf(map)
+      for (const sign of signs) {
+        // 对应出口 = 同侧 warp(x 差 < 128);路牌贴出口但不压触发区
+        const near = warps.filter(w => Math.abs(w.x + w.width / 2 - sign.x) < 128)
+        expect(near).toHaveLength(1)
+        const warp = near[0]!
+        const distToWarp = Math.hypot(warp.x + warp.width / 2 - sign.x, warp.y + warp.height / 2 - sign.y)
+        expect(distToWarp).toBeLessThanOrEqual(4 * map.tileWidth)
+        const inZone =
+          sign.x >= warp.x && sign.x < warp.x + warp.width && sign.y >= warp.y && sign.y < warp.y + warp.height
+        expect(inZone).toBe(false)
+        expect(reachableViaWalkableCell(map, sign)).toBe(true)
+      }
+    }
+  })
+
+  it('湖畔:石台(note)在远端角落(与西口对角),文案为既定彩蛋,半径内可达', () => {
+    const map = WORLD_MAPS.lake
+    const notes = parseInteractionSpots(map.objects, map.tileWidth).filter(s => s.kind === 'note')
+    expect(notes).toHaveLength(1)
+    const altar = notes[0]!
+    expect(altar.name).toBe('石台')
+    expect(altar.text).toBe('石台的字迹已模糊:『湖心静时,鱼会自己游上来看你。』')
+    // 西口/出生点在西侧,石台落东南远角(x 东 8 成之外,y 南半)
+    expect(altar.x).toBeGreaterThan(map.widthPx * 0.8)
+    expect(altar.y).toBeGreaterThan(map.heightPx / 2)
+    expect(reachableViaWalkableCell(map, altar)).toBe(true)
+  })
+
+  it('三图各自交互点触发半径互不重叠(浮签不打架)', () => {
+    for (const mapId of ['village', 'river', 'lake'] as const) {
+      const map = WORLD_MAPS[mapId]
+      const spots = parseInteractionSpots(map.objects, map.tileWidth)
+      for (let i = 0; i < spots.length; i++) {
+        for (let j = i + 1; j < spots.length; j++) {
+          const d = Math.hypot(spots[i]!.x - spots[j]!.x, spots[i]!.y - spots[j]!.y)
+          expect(d).toBeGreaterThanOrEqual(spots[i]!.radiusPx + spots[j]!.radiusPx)
+        }
+      }
     }
   })
 })
