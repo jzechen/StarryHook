@@ -12,6 +12,8 @@ import { FISH_FRAME_COUNT, FISH_FRAME_SIZE, FISH_SHAPE_ROW } from './fishAtlas'
  * - grass.png           派生自 OGA「16x16 tileset: water, grass and sand」(1,0) 纯草块,整体压暗
  * - character.png       派生自 OGA「Character sprite + walk animation」ch003.png
  *                       (32x32 四向行走帧众数降采样为 16x16)
+ * - tiny-town.png       Kenney「Tiny Town」packed 表(原样,票 #34):12 列 × 11 行,
+ *                       行优先编号 tile_N = packed (N÷12, N%12)(调研留痕:票 #26)
  * - scene-atlas.png     自绘浮标图集(scripts/generate-bobber-atlas.mjs 生成,无第三方版权)
  * - fish-atlas.png      自绘鱼精灵图集(scripts/generate-fish-atlas.mjs 生成,无第三方版权)
  *
@@ -27,6 +29,10 @@ export const WATER_FRAME_COUNT = 13
 export const WAVE_FRAME_COUNT = 8
 /** 角色每向帧数(character.png 每向 4 帧,帧 0 = 待机) */
 export const PLAYER_FRAME_COUNT = 4
+/** Kenney Tiny Town packed 表列数(village.json tileset 契约同源,票 #34) */
+export const TOWN_COLUMNS = 12
+/** Kenney Tiny Town packed 表 tile 总数(12 列 × 11 行) */
+export const TOWN_TILE_COUNT = 132
 /** 鱼精灵每鱼帧数(fish-atlas.png,帧 0 = 常态 / 帧 1 = 游动) */
 export { FISH_FRAME_COUNT } from './fishAtlas'
 
@@ -44,6 +50,8 @@ export interface SceneTextures {
   waveFrames: Record<WaveEdge, Texture[]>
   /** 角色:每向一组行走帧(帧 0 = 待机) */
   playerFrames: Record<Facing, Texture[]>
+  /** Kenney Tiny Town packed 表切片(下标 = tile id,行优先;世界地图渲染用,票 #34) */
+  townTiles: Texture[]
   /** 浮标:单个精灵贴图 */
   bobber: Texture
   /** 鱼精灵:每种鱼 2 帧游动动画(帧 0 = 常态),按鱼形取用 */
@@ -75,13 +83,14 @@ function sliceGrid(
   )
 }
 
-/** 加载并切片全部场景素材;main 启动时 await 一次,把结果注入 PondScene */
+/** 加载并切片全部场景素材;main 启动时 await 一次,把结果注入场景(WorldScene) */
 export async function loadSceneTextures(): Promise<SceneTextures> {
-  const [flow, waveSheet, grass, chars, props, fishAtlas] = await Promise.all([
+  const [flow, waveSheet, grass, chars, town, props, fishAtlas] = await Promise.all([
     Assets.load<Texture>('/sprites/water-flow.png'),
     Assets.load<Texture>('/sprites/shoreline-waves.png'),
     Assets.load<Texture>('/sprites/grass.png'),
     Assets.load<Texture>('/sprites/character.png'),
+    Assets.load<Texture>('/sprites/tiny-town.png'),
     Assets.load<Texture>('/sprites/scene-atlas.png'),
     Assets.load<Texture>('/sprites/fish-atlas.png'),
   ])
@@ -104,6 +113,8 @@ export async function loadSceneTextures(): Promise<SceneTextures> {
     waveFrames: { top: waveRows[0], right: waveRows[1], bottom: waveRows[2], left: waveRows[3] },
     // 行序与素材表一致:下/上/左/右
     playerFrames: { down: charRows[0], up: charRows[1], left: charRows[2], right: charRows[3] },
+    // Kenney packed 表:12 列 × 11 行行优先切片,下标 = tile id(地图 gid − firstGid)
+    townTiles: sliceGrid(town.source, TOWN_TILE_COUNT / TOWN_COLUMNS, TOWN_COLUMNS, TILE, TILE).flat(),
     bobber: slice(props.source, new Rectangle(0, 0, TILE, TILE)),
     fishFrames,
   }

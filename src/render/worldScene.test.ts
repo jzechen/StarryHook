@@ -2,11 +2,13 @@ import { Application, Container, Graphics, Texture } from 'pixi.js'
 import { describe, expect, it, vi } from 'vitest'
 import type { CoreLoop } from '../core/coreLoop'
 import type { LoopPhase } from '../core/types'
-import { PondScene } from './pondScene'
+import { village } from '../world/village'
+import { WorldScene } from './worldScene'
 import type { SceneTextures } from './textures'
 
 /**
- * 池塘场景 Graphics 指令泄漏守护(接缝:PondScene 构建的 Pixi 场景图)。
+ * 世界场景 Graphics 指令泄漏守护(接缝:WorldScene 构建的 Pixi 场景图,
+ * 自 pondScene.test.ts 收编移植,票 #34)。
  *
  * Pixi v8 的 Graphics 指令列表(context.instructions)只会追加,clear() 才会清空;
  * 静态几何若每帧重画而不先 clear,指令数与内存就随游玩时长持续增长。
@@ -34,34 +36,35 @@ function fakeTextures(): SceneTextures {
     grassTile: tex(),
     waveFrames: { top: n(8), right: n(8), bottom: n(8), left: n(8) },
     playerFrames: { down: n(4), up: n(4), left: n(4), right: n(4) },
+    townTiles: n(132),
     bobber: tex(),
     fishFrames: { slim: n(2), round: n(2), heavy: n(2), puff: n(2), bolt: n(2) },
   }
 }
 
-/** 固定逻辑分辨率下的假 Application:只提供 PondScene 用到的 screen 与 stage */
+/** 固定逻辑分辨率下的假 Application:只提供 WorldScene 用到的 screen 与 stage */
 function fakeApp(): { app: Application; world: () => Container } {
   let world: Container | undefined
   const app = {
     screen: { width: 480, height: 270 },
     stage: {
-      addChild: (child: Container) => {
-        world = child
+      addChild: (...children: Container[]) => {
+        world = children[0]
       },
     },
   } as unknown as Application
-  // world 以取值函数返回:PondScene 构造时才把场景根挂上 stage,返回时还没发生
+  // world 以取值函数返回:WorldScene 构造时才把场景根挂上 stage,返回时还没发生
   return { app, world: () => world! }
 }
 
-/** 最小可用核心状态:字段名与 CoreLoop 公开字段一致,取值保持合法范围 */
+/** 最小可用核心状态:字段名与 CoreLoop 公开字段一致,取值为世界像素 */
 function fakeCore(phase: LoopPhase): CoreLoop {
   return {
-    px: 0.5,
-    py: 0.85,
+    px: 72,
+    py: 64,
     phase,
-    castX: 0.5,
-    castY: 0.85,
+    castX: 72,
+    castY: 64,
     bobberDist: 0.5,
     power: 0.5,
     rodParams: { height: 0.2, speed: 0.3 },
@@ -70,7 +73,7 @@ function fakeCore(phase: LoopPhase): CoreLoop {
   } as unknown as CoreLoop
 }
 
-/** 深度收集场景树里的全部 Graphics(公开场景树,不触 PondScene 私有字段) */
+/** 深度收集场景树里的全部 Graphics(公开场景树,不触 WorldScene 私有字段) */
 function graphicsNodes(root: Container): Graphics[] {
   const out: Graphics[] = []
   const walk = (node: Container) => {
@@ -81,10 +84,10 @@ function graphicsNodes(root: Container): Graphics[] {
   return out
 }
 
-describe('池塘场景 Graphics 指令泄漏守护(接缝:PondScene 场景图)', () => {
+describe('世界场景 Graphics 指令泄漏守护(接缝:WorldScene 场景图)', () => {
   it('静态几何不逐帧累积:waiting 阶段连续 200 帧 update,Graphics 指令总数不变', () => {
     const { app, world } = fakeApp()
-    const scene = new PondScene(app, fakeTextures())
+    const scene = new WorldScene(app, fakeTextures(), village)
     const sceneRoot = world()
     const core = fakeCore('waiting')
     const total = () => graphicsNodes(sceneRoot).reduce((sum, g) => sum + g.context.instructions.length, 0)
@@ -98,19 +101,42 @@ describe('池塘场景 Graphics 指令泄漏守护(接缝:PondScene 场景图)',
     expect(total()).toBe(baseline)
   })
 
-  it('全阶段轮换不累积:五阶段循环 200 帧后,同相位采样指令总数不变', () => {
+  it('全阶段轮换不累积:七阶段循环 210 帧后,同相位采样指令总数不变', () => {
     const { app, world } = fakeApp()
-    const scene = new PondScene(app, fakeTextures())
+    const scene = new WorldScene(app, fakeTextures(), village)
     const sceneRoot = world()
-    const phases: LoopPhase[] = ['idle', 'charging', 'waiting', 'bite', 'minigame']
+    const phases: LoopPhase[] = ['idle', 'charging', 'waiting', 'bite', 'minigame', 'caught', 'escaped']
     const total = () => graphicsNodes(sceneRoot).reduce((sum, g) => sum + g.context.instructions.length, 0)
 
     // 指令总数随阶段合法波动(涟漪/蓄力条只在部分阶段绘制),故采样须同相位对齐:
-    // 基线取在 minigame 帧收尾,200 帧(40 个完整阶段循环)后仍停在 minigame 帧再比较。
-    for (let f = 0; f <= 4; f++) scene.update(fakeCore(phases[f]!), f * 0.016, 0.016)
+    // 基线取在 escaped 帧收尾,循环止于 209(209 % 7 = 6 = escaped,29 个完整循环)再比较。
+    for (let f = 0; f <= 6; f++) scene.update(fakeCore(phases[f]!), f * 0.016, 0.016)
     const baseline = total()
 
-    for (let f = 5; f <= 204; f++) scene.update(fakeCore(phases[f % phases.length]!), f * 0.016, 0.016)
+    for (let f = 7; f <= 209; f++) scene.update(fakeCore(phases[f % phases.length]!), f * 0.016, 0.016)
     expect(total()).toBe(baseline)
+  })
+
+  it('相机钳制:玩家走到图边,世界容器平移不越界(双向四边)', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const core = fakeCore('idle')
+    // 村舍图 960×416,视口 480×270:相机 ∈ [0, 480]×[0, 146],
+    // 世界容器平移 = −相机 → x ∈ [−480, 0],y ∈ [−146, 0]
+    for (const [px, py] of [
+      [0, 135],
+      [960, 135],
+      [480, 0],
+      [480, 416],
+    ] as const) {
+      core.px = px
+      core.py = py
+      scene.update(core, 0, 0.016)
+      expect(sceneRoot.position.x).toBeGreaterThanOrEqual(-(960 - 480))
+      expect(sceneRoot.position.x).toBeLessThanOrEqual(0)
+      expect(sceneRoot.position.y).toBeGreaterThanOrEqual(-(416 - 270))
+      expect(sceneRoot.position.y).toBeLessThanOrEqual(0)
+    }
   })
 })

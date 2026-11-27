@@ -10,7 +10,7 @@ import type { WaterAreaId } from '../core/types'
  * 浮标/角色/鱼精灵不在此表——实体不 tint,只有背景与水面换调。
  */
 export interface AreaPalette {
-  /** 池底矩形色(pondScene 的 pondFill,白底 + tint = 此色) */
+  /** 池底矩形色(worldScene 的 pondFill,白底 + tint = 此色) */
   fill: number
   /** 池塘描边色(pondStroke,同上) */
   stroke: number

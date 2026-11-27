@@ -55,6 +55,12 @@ export interface WorldMapData {
 
 const LAYER_NAMES = ['ground', 'water', 'deco'] as const
 
+/**
+ * 基底草地 gid(tile 0 = Kenney 平草):ground 层该值由渲染层的整片
+ * TilingSprite 覆盖(不逐 tile 出精灵),其余 ground gid 逐 tile 叠加。
+ */
+export const BASE_GROUND_GID = 1
+
 /** 解析入口:raw = import 的 Tiled JSON;不合法即抛错 */
 export function parseWorldMap(raw: unknown): WorldMapData {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
@@ -238,6 +244,24 @@ export function blockedBox(
     }
   }
   return false
+}
+
+/**
+ * 世界碰撞来源(票 #34 注入缝,组合根接线):地图 blocked 网格的谓词封装。
+ * 结构性匹配 coreLoop.WorldCollisionSource(核心不 import 地图,方向倒置)。
+ */
+export interface MapCollisionSource {
+  readonly widthPx: number
+  readonly heightPx: number
+  blockedBox(cx: number, cy: number, halfW: number, halfH: number): boolean
+}
+
+export function worldCollisionSource(map: WorldMapData): MapCollisionSource {
+  return {
+    widthPx: map.widthPx,
+    heightPx: map.heightPx,
+    blockedBox: (cx, cy, halfW, halfH) => blockedBox(map, cx, cy, halfW, halfH),
+  }
 }
 
 function intField(obj: Record<string, unknown>, key: string): number {

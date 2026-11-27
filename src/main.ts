@@ -12,9 +12,11 @@ import { Rng } from './core/rng'
 import { TimedBestStore } from './core/timedBest'
 import type { LoopPhase } from './core/types'
 import { WalletStore } from './core/wallet'
-import { PondScene } from './render/pondScene'
+import { WorldScene } from './render/worldScene'
 import { loadSceneTextures } from './render/textures'
 import { applyViewportToCanvas } from './render/viewport'
+import { village } from './world/village'
+import { worldCollisionSource } from './world/worldMap'
 import { baitBadgeText } from './ui/baitBadgeText'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
@@ -78,7 +80,13 @@ async function main(): Promise<void> {
   const core = new CoreLoop(new Rng(seed))
   // 场景素材:图集加载 + 切片(素材文件 → 图集 → 精灵 管线入口)
   const textures = await loadSceneTextures()
-  const scene = new PondScene(app, textures)
+  // 世界(票 #34):村舍场景图 + 地图驱动碰撞注入 + 出生点落位。
+  // 碰撞来源 = 解析器产出的 blocked 网格谓词(水 tile/大件),核心不 import 地图/渲染;
+  // 位置模型为世界像素,出生点来自物件层(村舍图左上空地)。
+  const scene = new WorldScene(app, textures, village)
+  core.setWorldCollision(worldCollisionSource(village))
+  core.px = village.spawn.x
+  core.py = village.spawn.y
   const seedEl = document.getElementById('seed')
   if (seedEl) seedEl.textContent = `seed ${seed}`
 
@@ -196,7 +204,8 @@ async function main(): Promise<void> {
   app.ticker.add(tk => {
     const dt = Math.min(tk.deltaMS / 1000, 0.05) // 钳制大帧,防止切后台跳变
 
-    // 移动方向:x 分量按宽高比折算,保证斜走速度均匀
+    // 移动方向:斜向归一(票 #34 世界像素坐标;原「x 按宽高比折算」是屏内
+    // 归一化坐标的产物,迁移后废除——核心速度为世界像素/秒,合速度恒定)
     let dx = 0
     let dy = 0
     if (keys.has('KeyD') || keys.has('ArrowRight')) dx += 1
@@ -205,7 +214,7 @@ async function main(): Promise<void> {
     if (keys.has('KeyW') || keys.has('ArrowUp')) dy -= 1
     if (dx !== 0 || dy !== 0) {
       const len = Math.hypot(dx, dy)
-      dx = dx / len / (window.innerWidth / window.innerHeight)
+      dx = dx / len
       dy = dy / len
     }
 
