@@ -126,14 +126,14 @@ export class OrderPanel {
     this.bodyEl.appendChild(this.buildOrderRow(order, fish.name))
   }
 
-  /** 组订单行:名称(星档门槛缀后)+ 数量/酬金/持有(右对齐)+ 交付钮 */
+  /** 组订单行:名称(星档门槛缀后)+ 交付钮同行,数量/酬金/持有整行落第二行 */
   private buildOrderRow(order: OrderDef, fishName: string): HTMLElement {
     const threshold = thresholdLabel(order.minQuality)
     const label = threshold ? `${fishName}·${threshold}` : fishName
     const owned = qualifyingCount(order, this.countsFor(order.fishId))
     const reward = orderReward(FISH.find(f => f.id === order.fishId)!.score, order.count)
     const root = document.createElement('div')
-    root.className = 'shop-item'
+    root.className = 'shop-item order-item'
     const nameEl = document.createElement('span')
     nameEl.className = 'shop-name'
     nameEl.textContent = label
@@ -148,7 +148,7 @@ export class OrderPanel {
       this.reportDeliver(this.onDeliver(), order, fishName)
       deliverBtn.blur()
     })
-    root.append(nameEl, detailEl, deliverBtn)
+    root.append(nameEl, deliverBtn, detailEl)
     return root
   }
 

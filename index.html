@@ -234,6 +234,12 @@
       #order-panel[hidden] { display: none; }
       #order-current { margin-top: 10px; }
       #order-body { margin-top: 6px; display: grid; gap: 6px; }
+      /* 订单行两行布局:名称 + 交付钮同行(名称不折行),数量/酬金/持有整行落第二行
+         (单行放不下鱼名×门槛 + 详情 + 钮,折行竖排是 #47 实测过的风险) */
+      #order-body .order-item { flex-wrap: wrap; }
+      #order-body .order-item .shop-detail {
+        flex: 1 1 100%; margin-left: 0; min-width: 0; text-align: left; opacity: .9;
+      }
       #order-feedback { margin-top: 8px; opacity: .95; }
       #order-feedback[hidden] { display: none; }
       #collection-progress { font-size: 24px; font-weight: normal; color: var(--ui-canvas-accent); }

@@ -109,14 +109,14 @@ describe('OrderPanel:查看订单(接缝:refresh 签名守卫)', () => {
     backpack.addFish('xiaobaitiao', 'silver', 1)
     const row = rowOf(panel)
     expect(row.children[0]!.textContent).toBe('小白条·银星以上')
-    expect(row.children[1]!.textContent).toBe('×3 · 酬金 45 金币 · 持有 1/3')
+    expect(row.children[2]!.textContent).toBe('×3 · 酬金 45 金币 · 持有 1/3')
   })
 
   it('普通门槛不注星:名称就是鱼名(普通即可,无星标噪音)', () => {
     const { panel } = makePanel({ fishId: 'wenzhongji', minQuality: 'normal', count: 4 })
     const row = rowOf(panel)
     expect(row.children[0]!.textContent).toBe('稳重鲫')
-    expect(row.children[1]!.textContent).toBe('×4 · 酬金 90 金币 · 持有 0/4')
+    expect(row.children[2]!.textContent).toBe('×4 · 酬金 90 金币 · 持有 0/4')
   })
 
   it('签名未变不重建行(每帧刷新零 DOM 写入);订单或持有变化才重建', () => {
@@ -130,7 +130,7 @@ describe('OrderPanel:查看订单(接缝:refresh 签名守卫)', () => {
     expect(body.children[0]).toBe(first) // 同一元素对象 = 未重建
     backpack.addFish('xiaobaitiao', 'normal', 1)
     panel.update(core)
-    expect(body.children[0]!.children[1]!.textContent).toContain('持有 1/2')
+    expect(body.children[0]!.children[2]!.textContent).toContain('持有 1/2')
     expect(body.children[0]).not.toBe(first)
   })
 })
@@ -140,7 +140,7 @@ describe('OrderPanel:交付(接缝:交付钮 → deliverOrderOutcome → 行内�
     const { panel, board, backpack, wallet } = makePanel({ fishId: 'xiaobaitiao', minQuality: 'silver', count: 3 })
     backpack.addFish('xiaobaitiao', 'silver', 3)
     const row = rowOf(panel)
-    const deliverBtn = row.children[2] as StubElement
+    const deliverBtn = row.children[1] as StubElement
     deliverBtn.click()
     expect(wallet.coins()).toBe(orderReward(10, 3)) // 45
     expect(backpack.count('xiaobaitiao', 'silver')).toBe(0)
@@ -150,7 +150,7 @@ describe('OrderPanel:交付(接缝:交付钮 → deliverOrderOutcome → 行内�
     expect(feedback.hidden).toBe(false)
     expect(feedback.textContent).toContain('+45 金币')
     panel.update(new CoreLoop(new Rng(1)))
-    expect(byId.get('order-body')!.children[0]!.children[1]!.textContent).not.toContain('小白条·银星以上')
+    expect(byId.get('order-body')!.children[0]!.children[0]!.textContent).not.toContain('小白条·银星以上')
   })
 
   it('缺鱼拒绝(missing):行内文案明示还差几条,订单原样', () => {
@@ -158,7 +158,7 @@ describe('OrderPanel:交付(接缝:交付钮 → deliverOrderOutcome → 行内�
     const { panel, board, backpack, wallet } = makePanel(order)
     backpack.addFish('qiqiuHetun', 'normal', 1)
     const row = rowOf(panel)
-    ;(row.children[2] as StubElement).click()
+    ;(row.children[1] as StubElement).click()
     expect(wallet.coins()).toBe(0)
     expect(backpack.count('qiqiuHetun', 'normal')).toBe(1)
     expect(board.current()).toEqual(order)
@@ -170,7 +170,7 @@ describe('OrderPanel:交付(接缝:交付钮 → deliverOrderOutcome → 行内�
     const { panel, board, backpack, wallet } = makePanel(order)
     backpack.addFish('wenzhongji', 'normal', 10)
     const row = rowOf(panel)
-    ;(row.children[2] as StubElement).click()
+    ;(row.children[1] as StubElement).click()
     expect(wallet.coins()).toBe(0)
     expect(backpack.count('wenzhongji', 'normal')).toBe(10)
     expect(board.current()).toEqual(order)
