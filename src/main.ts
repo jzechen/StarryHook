@@ -21,6 +21,7 @@ import { GrandSlamOverlay } from './render/grandSlam'
 import { loadSceneTextures } from './render/textures'
 import { applyViewportToCanvas } from './render/viewport'
 import { interactionPromptText, nearestInteraction, parseInteractionSpots } from './world/interactions'
+import { warpHintAt } from './world/warpHint'
 import { waterDistancePx } from './world/waterDistance'
 import { WORLD_MAPS } from './world/maps'
 import type { MapId } from './core/types'
@@ -386,9 +387,18 @@ async function main(): Promise<void> {
       core.phase === 'idle' && nearestTarget && !chestOpened
         ? { x: nearestTarget.x, y: nearestTarget.y, label: interactionPromptText(nearestTarget) }
         : null
+    // 出口接近浮签(票 #46,spec 术语「出口」):被动无键帽「东 · 河谷 →」,
+    // 挂出口触发区接近判定上——非交互点(不新增 kind、不进 stallPressAction)。
+    // 门禁:idle ∧ 无面板 ∧ 非过场(垂钓循环与过场中不显);有交互签则让位
+    // (出口旁的路牌签优先,二者不叠加);过场中由 director 侧再兜一层底
+    const warpHint =
+      !panelOpen && !director.inputLocked && core.phase === 'idle' && !promptState
+        ? warpHintAt(WORLD_MAPS[director.mapId], core.px, core.py)
+        : null
     // 世界推进(票 #35):过场状态机、出口检测、换图落位、存档门禁、场景渲染
-    // (交互浮签随场景渲染一并供给,放最后——过场完成/换图在本帧内生效)
-    director.update(tk.lastTime / 1000, dt, promptState)
+    // (交互浮签随场景渲染一并供给,放最后——过场完成/换图在本帧内生效;
+    // 入图场景名横幅由导演在淡入完成沿起演,组合根不经手)
+    director.update(tk.lastTime / 1000, dt, promptState, warpHint)
     // 近水水声(票 #44):距离 = 世界层纯函数(到最近水 cell 的矩形距离,
     // 单一来源),音量随距离淡入淡出;常驻循环走 setAmbient 通道,
     // 静音覆盖 = MuteAwareSfxPlayer.setAmbient(静音即显式停循环)

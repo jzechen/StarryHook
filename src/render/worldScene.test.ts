@@ -343,3 +343,44 @@ describe('进度流光(票 #43:≥70% 启动、回落即停,渲染层接线)', (
     expect(at).toBeGreaterThan(below)
   })
 })
+
+describe('出口接近浮签(接缝:WorldScene.update 第 5 参,票 #46:被动无键帽)', () => {
+  const HINT = { x: 888, y: 208, label: '东 · 河谷 →' }
+
+  function findWarpPrompt(root: Container): Container {
+    let found: Container | undefined
+    const walk = (node: Container): void => {
+      if (node.label === 'warp-prompt') found = node
+      for (const child of node.children) walk(child)
+    }
+    walk(root)
+    if (!found) throw new Error('场景树里没有 warp-prompt 容器')
+    return found
+  }
+
+  it('idle 且组合根供给接近签:显示,位置为整数像素(挂 world 层随相机滚动)', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    scene.update(fakeCore('idle'), 0.3, 0.016, null, HINT)
+    const prompt = findWarpPrompt(world())
+    expect(prompt.visible).toBe(true)
+    expect(Number.isInteger(prompt.position.x)).toBe(true)
+    expect(Number.isInteger(prompt.position.y)).toBe(true)
+  })
+
+  it('未传(组合根已判空:面板打开/无接近出口):隐藏', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    scene.update(fakeCore('idle'), 0, 0.016)
+    expect(findWarpPrompt(world()).visible).toBe(false)
+  })
+
+  it('垂钓循环中(非 idle)强制隐藏:渲染层兜底,与组合根双保险', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    for (const phase of ['charging', 'waiting', 'bite', 'minigame', 'caught', 'escaped'] as const) {
+      scene.update(fakeCore(phase), 0, 0.016, null, HINT)
+      expect(findWarpPrompt(world()).visible).toBe(false)
+    }
+  })
+})

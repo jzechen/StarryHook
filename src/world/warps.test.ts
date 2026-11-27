@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseWorldMap } from './worldMap'
-import { warpAt, warpsOf } from './warps'
+import { exitCorridorOf, warpAt, warpsOf } from './warps'
 
 /**
  * 出口(warp)解析与走入触发(票 #35,spec §1.4):
@@ -179,5 +179,79 @@ describe('warpAt(走入触发判定:半开矩形,第一个命中)', () => {
     expect(warpAt(once, 912, 208)).not.toBeNull()
     expect(warpAt(once, 912, 208)).not.toBeNull()
     expect(objectReads).toBe(1)
+  })
+})
+
+describe('exitCorridorOf(票 #46:出口走廊 = 触发区向最近图边延伸,树墙收边豁免区)', () => {
+  /** 合成 60×26 图(与三图同尺寸,走廊几何独立于地形;水层一格满足解析器) */
+  function bigMap(objects: unknown[]): Record<string, unknown> {
+    const water = new Array(60 * 26).fill(0)
+    water[13 * 60 + 30] = 1
+    return {
+      width: 60,
+      height: 26,
+      tilewidth: 16,
+      tileheight: 16,
+      orientation: 'orthogonal',
+      renderorder: 'right-down',
+      type: 'map',
+      layers: [
+        { type: 'tilelayer', name: 'ground', data: new Array(60 * 26).fill(1) },
+        { type: 'tilelayer', name: 'water', data: water },
+        { type: 'tilelayer', name: 'deco', data: new Array(60 * 26).fill(0) },
+        { type: 'objectgroup', name: 'objects', objects },
+      ],
+      tilesets: [
+        {
+          name: 'tiny-town',
+          image: 'tiny-town.png',
+          imagewidth: 192,
+          imageheight: 176,
+          tilewidth: 16,
+          tileheight: 16,
+          columns: 12,
+          tilecount: 132,
+          firstgid: 1,
+        },
+      ],
+    }
+  }
+  const spawn = { name: '出生点', type: 'spawn', x: 72, y: 72, point: true }
+
+  it('东缘出口:走廊 = 触发区右缘 → 图边(x ∈ [928, 960),y = 触发区行段)', () => {
+    const map = parseWorldMap(bigMap([spawn, warpObject()]))
+    const [warp] = warpsOf(map)
+    expect(exitCorridorOf(map, warp!)).toEqual({ x0: 928, x1: 960, y0: 192, y1: 224 })
+  })
+
+  it('西缘出口:走廊 = 图边 → 触发区左缘(x ∈ [0, 32))', () => {
+    const west = warpObject({
+      name: '西 · 村舍池塘',
+      x: 48,
+      properties: [
+        { name: 'target', type: 'string', value: 'village' },
+        { name: 'tx', type: 'float', value: 872 },
+        { name: 'ty', type: 'float', value: 208 },
+      ],
+    })
+    const map = parseWorldMap(bigMap([spawn, west]))
+    const [warp] = warpsOf(map)
+    expect(exitCorridorOf(map, warp!)).toEqual({ x0: 0, x1: 32, y0: 192, y1: 224 })
+  })
+
+  it('南缘出口:走廊 = 触发区下缘 → 图底(y ∈ [376, 416))', () => {
+    const south = warpObject({
+      name: '南 · 湖畔',
+      x: 480,
+      y: 360,
+      properties: [
+        { name: 'target', type: 'string', value: 'lake' },
+        { name: 'tx', type: 'float', value: 88 },
+        { name: 'ty', type: 'float', value: 208 },
+      ],
+    })
+    const map = parseWorldMap(bigMap([spawn, south]))
+    const [warp] = warpsOf(map)
+    expect(exitCorridorOf(map, warp!)).toEqual({ x0: 464, x1: 496, y0: 376, y1: 416 })
   })
 })

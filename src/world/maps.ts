@@ -21,6 +21,16 @@ export function isKnownMapId(mapId: string): mapId is MapId {
 }
 
 /**
+ * 场景名文案(票 #46,spec 术语「场景横幅」):入图横幅与出口接近浮签的
+ * 单一来源。键集 = 已入库场景集(maps.test 钉住,加图漏补在测试期暴露)。
+ */
+export const SCENE_NAMES: Record<MapId, string> = {
+  village: '村舍池塘',
+  river: '河谷',
+  lake: '湖畔',
+}
+
+/**
  * 位置 → 当前水域的单一推导函数(票 #35,spec §1.5:当前水域不落库,由位置推导)。
  *
  * v1 口径 = 图级映射(每图一水域:村舍池塘→pond、河谷→river、湖畔→lake),

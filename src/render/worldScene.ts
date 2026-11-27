@@ -5,7 +5,8 @@ import { DEFAULT_AREA } from '../core/waterAreas'
 import type { CoreLoop } from '../core/coreLoop'
 import type { LoopPhase, WaterAreaId } from '../core/types'
 import { BASE_GROUND_GID, waterFillsBounds, type WorldMapData } from '../world/worldMap'
-import { InteractionPrompt } from './interactionPrompt'
+import type { WarpHint } from '../world/warpHint'
+import { InteractionPrompt, PassivePrompt } from './interactionPrompt'
 import { ScreenShake, shakeTrigger } from './screenShake'
 import { SplashLayer } from './splash'
 import { shimmerActive, shimmerBand } from './progressShimmer'
@@ -22,7 +23,8 @@ import { FISH_FRAME_COUNT, PLAYER_FRAME_COUNT, TILE, WAVE_FRAME_COUNT, WATER_FRA
  * 河谷带状走逐 cell 水精灵)→ 岸线泡沫(逐 tile,由水 cell 邻接现算,
  * 不入地图数据)→ 装饰(deco 层逐 tile Sprite + 视口剔除)→ 实体
  * (角色/浮标/鱼线/蓄力条/咬钩「!」)→ 捕获水花(票 #43 粒子池)→
- * 交互浮签 → 覆盖 UI(小游戏面板 + 进度流光,屏空间,不随相机滚动);
+ * 交互浮签 / 出口接近浮签(票 #46,被动无键帽)→ 覆盖 UI(小游戏面板 +
+ * 进度流光,屏空间,不随相机滚动);
  * 屏幕 shake(票 #43)以整数偏移叠加在两容器的平移上。
  *
  * 坐标系:核心循环输出世界像素(脚部点);画布固定 480×270 逻辑分辨率
@@ -138,6 +140,8 @@ export class WorldScene {
   private bang: Text
   /** 交互浮签(票 #36):画布内像素浮签,挂 world 层随相机滚动 */
   private prompt = new InteractionPrompt()
+  /** 出口接近浮签(票 #46):被动无键帽变体,同族视觉,挂 world 层 */
+  private warpPrompt = new PassivePrompt()
   /** 捕获水花(票 #43):轻量 sprite 粒子池,挂 world 层,坐标 = 鱼漂世界坐标 */
   private splash = new SplashLayer()
   /** 屏幕 shake(票 #43):相机偏移量,像素取整后加到世界/覆盖 UI 两容器 */
@@ -289,6 +293,7 @@ export class WorldScene {
       this.bang,
       this.splash.container,
       this.prompt.container,
+      this.warpPrompt.container,
     )
     this.ui.addChild(this.track, this.mgBar, this.mgFishSprite, this.mgProgress)
 
@@ -371,7 +376,13 @@ export class WorldScene {
     })
   }
 
-  update(core: CoreLoop, t: number, dt: number, prompt?: InteractionPromptState | null): void {
+  update(
+    core: CoreLoop,
+    t: number,
+    dt: number,
+    prompt?: InteractionPromptState | null,
+    warpPrompt?: WarpHint | null,
+  ): void {
     const W = this.app.screen.width
     const H = this.app.screen.height
 
@@ -528,6 +539,16 @@ export class WorldScene {
       this.prompt.showAt(prompt.x, prompt.y, t)
     } else {
       this.prompt.hide()
+    }
+
+    // 出口接近浮签(票 #46):被动无键帽,锚在出口触发区旁;与交互签同款
+    // 双保险——组合根按「idle ∧ 无面板 ∧ 非过场 ∧ 无交互签」供给,渲染层
+    // 非 idle 强制隐藏(垂钓循环与过场中不显)
+    if (warpPrompt && core.phase === 'idle') {
+      this.warpPrompt.setLabel(warpPrompt.label)
+      this.warpPrompt.showAt(warpPrompt.x, warpPrompt.y, t)
+    } else {
+      this.warpPrompt.hide()
     }
 
     // 钓鱼小游戏面板(右侧;屏空间不随相机滚动;轨道/绿条/进度条几何绘制沿 pondScene)

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import villageJson from './village.json'
+import { exitCorridorOf, warpsOf } from './warps'
 import { blockedBox, isBlockedCell, parseWorldMap, waterFillsBounds, type WorldMapData } from './worldMap'
 
 /**
@@ -81,14 +82,25 @@ describe('村舍地图 village.json(接缝:parseWorldMap 纯函数)', () => {
     for (const [tx, ty] of cells) expect(isBlockedCell(map, tx, ty)).toBe(true)
   })
 
-  it('外圈收边:最外圈与第二圈(树墙+围栏)全部不可走', () => {
+  it('外圈收边:最外圈与第二圈(树墙+围栏)全部不可走,唯出口走廊豁免(票 #46 有意放宽)', () => {
+    // 豁免区 = 出口走廊(warps.exitCorridorOf):东出口在收边圈上开 2×2 缺口,
+    // 土路延伸出画;缺口纪律(只开在出口、3–4 格)由 maps.test 出口开口节钉死
+    const corridors = warpsOf(map).map(w => exitCorridorOf(map, w))
+    const exempt = (tx: number, ty: number): boolean =>
+      corridors.some(c => {
+        const x = tx * map.tileWidth
+        const y = ty * map.tileWidth
+        return x >= c.x0 && x < c.x1 && y >= c.y0 && y < c.y1
+      })
     for (let tx = 0; tx < map.width; tx++) {
       for (const ty of [0, 1, map.height - 2, map.height - 1]) {
+        if (exempt(tx, ty)) continue
         expect(isBlockedCell(map, tx, ty)).toBe(true)
       }
     }
     for (let ty = 0; ty < map.height; ty++) {
       for (const tx of [0, 1, map.width - 2, map.width - 1]) {
+        if (exempt(tx, ty)) continue
         expect(isBlockedCell(map, tx, ty)).toBe(true)
       }
     }
