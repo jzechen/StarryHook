@@ -4,7 +4,7 @@ import { CHESTS } from '../core/chests'
 import { COLLECTIBLES } from '../core/collectibles'
 import { CoreLoop } from '../core/coreLoop'
 import { FISH } from '../core/fishCatalog'
-import { OrderBoardStore, ORDER_TEMPLATES, orderReward } from '../core/orderBoard'
+import { ORDERS_KEY, OrderBoardStore, ORDER_TEMPLATES, orderReward } from '../core/orderBoard'
 import { sellPriceFor, sessionQualityRng, rollQuality } from '../core/quality'
 import { Rng } from '../core/rng'
 import { WalletStore } from '../core/wallet'
@@ -301,8 +301,8 @@ describe('订单交付接线(接缝:deliverOrderOutcome,票 #55:扣包 + 酬金 
   /** 预置公告板当前订单 = 快照直写(不依赖池表抽签顺序,测试钉死已知一单) */
   function boardWith(order: { fishId: string; minQuality: 'normal' | 'silver' | 'gold'; count: number }): OrderBoardStore {
     const storage = memoryStorage()
-    storage.set('starryhook:orders', JSON.stringify({ current: order }))
-    return new OrderBoardStore(new Rng(1), { storage, key: 'starryhook:orders' })
+    storage.set(ORDERS_KEY, JSON.stringify({ current: order }))
+    return new OrderBoardStore(new Rng(1), { storage, key: ORDERS_KEY })
   }
 
   it('交付成功:按低品质在前的贪心扣包,酬金 = 分值 × 数量 × 1.5 入钱包,随即出新单', () => {

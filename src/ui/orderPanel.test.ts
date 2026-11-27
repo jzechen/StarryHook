@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BackpackStore } from '../core/backpack'
 import { CoreLoop } from '../core/coreLoop'
 import { FISH } from '../core/fishCatalog'
-import { OrderBoardStore, orderReward } from '../core/orderBoard'
+import { ORDERS_KEY, OrderBoardStore, orderReward } from '../core/orderBoard'
 import { Rng } from '../core/rng'
 import type { FishQuality } from '../core/types'
 import { WalletStore } from '../core/wallet'
@@ -74,8 +74,8 @@ function boardWithOrder(order: { fishId: string; minQuality: FishQuality; count:
   storage: ReturnType<typeof memoryStorage>
 } {
   const storage = memoryStorage()
-  storage.set('starryhook:orders', JSON.stringify({ current: order }))
-  return { board: new OrderBoardStore(new Rng(1), { storage, key: 'starryhook:orders' }), storage }
+  storage.set(ORDERS_KEY, JSON.stringify({ current: order }))
+  return { board: new OrderBoardStore(new Rng(1), { storage, key: ORDERS_KEY }), storage }
 }
 
 /** 组真实全链面板(公告板 + 背包 + 钱包 + deliverOrderOutcome 接线) */

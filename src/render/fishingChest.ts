@@ -40,17 +40,21 @@ export function rollChestAppearance(rng: Rng, chance: number = TUNE.fishingChest
 
 /**
  * 小游戏中宝箱的轨道位置:跟随鱼、固定尾距,钳在轨道内(与鱼同界 0.02–0.98)
- * ——鱼贴顶时尾距自然收窄,罩住两者的窗口随之放宽(顶部的天然喘息位)。
+ * ——鱼贴顶时尾距自然收窄(宝箱贴向轨道顶,图标不被顶出轨道)。注意条顶
+ * ≤ 1.0 的轨道硬界不因尾距收窄而放宽:贴顶位置的可同步性由 chestSyncCovered
+ * 的相交口径保证,不在此处制造「天然喘息位」。
  */
 export function chestTrackY(fishY: number): number {
   return Math.max(0.02, Math.min(0.98, fishY + CHEST_TRAIL))
 }
 
 /**
- * 绿条是否同时罩住鱼与宝箱(同步判定的几何单源):轨道归一化,barY 为条底,
- * 条带 [barY, barY + barHeight] 须同时罩住两点(各带 fishHalf 判定半径,
- * 与核心小游戏进度对鱼的覆盖同半径)。宝箱在鱼上方(尾距 > 0),罩住二者
- * 必罩住鱼——同步帧同时是渔获进度的上涨帧。
+ * 绿条是否同时罩住鱼与宝箱(同步判定的几何单源):轨道归一化,barY 为条底。
+ * 判定半径 fishHalf 只作用于鱼侧——鱼用与核心渔获进度**同口径**的相交判定
+ * (鱼判定盘与条带有公共点即算罩住;贴顶/贴底时判定盘越出轨道的部分物理
+ * 不可罩,条顶 ≤ 1.0 / 条底 ≥ 0,苛求整盘入条会让贴边位置永远不同步);
+ * 宝箱按点位落条判定,不另计半径。同步条件包含核心对鱼的覆盖条件,故同步帧
+ * 同时是渔获进度的上涨帧。
  */
 export function chestSyncCovered(
   barY: number,
@@ -59,9 +63,9 @@ export function chestSyncCovered(
   chestY: number,
   fishHalf: number,
 ): boolean {
-  const low = Math.min(fishY, chestY) - fishHalf
-  const high = Math.max(fishY, chestY) + fishHalf
-  return low >= barY && high <= barY + barHeight
+  const fishCovered = fishY + fishHalf >= barY && fishY - fishHalf <= barY + barHeight
+  const chestCovered = chestY >= barY && chestY <= barY + barHeight
+  return fishCovered && chestCovered
 }
 
 /** 钓上宝箱掉落抽定:对传入 Rng 抽一签,池上均一权重(现身时刻恰好一签,同签同掉落) */

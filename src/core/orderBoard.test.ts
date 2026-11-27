@@ -4,6 +4,7 @@ import { Rng } from './rng'
 import { memoryStorage } from '../testing/memoryStorage'
 import {
   deliveryPlan,
+  ORDERS_KEY,
   ORDER_TEMPLATES,
   orderReward,
   OrderBoardStore,
@@ -116,10 +117,10 @@ describe('酬金公式(接缝:orderReward,票 #55:分值 × 数量 × 1.5)', () 
   })
 })
 
-describe('订单池(接缝:ORDER_TEMPLATES,票 #55:6~8 模板表驱动轮转)', () => {
-  it('池表 6~8 条(票面口径)', () => {
-    expect(ORDER_TEMPLATES.length).toBeGreaterThanOrEqual(6)
-    expect(ORDER_TEMPLATES.length).toBeLessThanOrEqual(8)
+describe('订单池(接缝:ORDER_TEMPLATES,票 #55 + #53 收口:8~10 模板表驱动轮转)', () => {
+  it('池表 8~10 条(review 收口:补 #53 新鱼行后合并旧行的总量口径)', () => {
+    expect(ORDER_TEMPLATES.length).toBeGreaterThanOrEqual(8)
+    expect(ORDER_TEMPLATES.length).toBeLessThanOrEqual(10)
   })
 
   it('每条模板:鱼种在目录内、品质门槛三档之一、数量 2~5(票面口径)', () => {
@@ -137,15 +138,32 @@ describe('订单池(接缝:ORDER_TEMPLATES,票 #55:6~8 模板表驱动轮转)', 
     expect(new Set(keys).size).toBe(keys.length)
   })
 
-  it('池表覆盖全部既有鱼种(交付链对每种鱼都可玩,票 #55 验收)', () => {
-    // 字面量钉当前 5 鱼种(不随鱼目录自动扩——票 #53 扩鱼种时由该票决定池表怎么长)
-    for (const fishId of ['xiaobaitiao', 'wenzhongji', 'qianzhuinian', 'qiqiuHetun', 'shandiansuo']) {
+  it('池表覆盖既有 5 鱼种 + #53 新鱼代表行(三水域 × 条件门:雨/冬/夜各有窗口)', () => {
+    // 字面量钉池表覆盖面(不随鱼目录自动扩):既有 5 种是票 #55 验收红线;
+    // #53 的 13 条新鱼按「三水域 + 新条件门」补代表行——雨鱼(泥趣鳅)、
+    // 冬鱼(铁甲鲮)、夜鱼(月影鳗)、湖畔日鱼(金鳞鲤);双硬门鱼
+    // (雾影鲈 = 雨夜、霜枪狗鱼 = 冬夜)不上板(白天晴天不可交付窗口过长)。
+    for (const fishId of [
+      'xiaobaitiao',
+      'wenzhongji',
+      'qianzhuinian',
+      'qiqiuHetun',
+      'shandiansuo',
+      'niquQiu',
+      'tiejiaLing',
+      'yueyingMan',
+      'jinlinLi',
+    ]) {
       expect(ORDER_TEMPLATES.some(t => t.fishId === fishId), `鱼种 ${fishId} 有委托`).toBe(true)
     }
   })
 })
 
 describe('公告板 store(接缝:OrderBoardStore,票 #55:队列制同时仅一单 + kv)', () => {
+  it('ORDERS_KEY 钉死持久化键字面量(跨会话存档契约:改键即弃档,消费者统一引用此常量)', () => {
+    expect(ORDERS_KEY).toBe('starryhook:orders')
+  })
+
   it('构造起恒有一单:无档也立即出首单,且订单在池表内', () => {
     const board = new OrderBoardStore(new Rng(1))
     const order = board.current()
@@ -172,18 +190,18 @@ describe('公告板 store(接缝:OrderBoardStore,票 #55:队列制同时仅一�
 
   it('kv 持久化:交付轮转后跨实例保留(同 storage 重开公告板即同单)', () => {
     const storage = memoryStorage()
-    const board = new OrderBoardStore(sessionOrderRng(7), { storage, key: 'starryhook:orders' })
+    const board = new OrderBoardStore(sessionOrderRng(7), { storage, key: ORDERS_KEY })
     const before = board.current()
     const after = board.complete()
     expect(after).not.toEqual(before)
-    const reopened = new OrderBoardStore(sessionOrderRng(7), { storage, key: 'starryhook:orders' })
+    const reopened = new OrderBoardStore(sessionOrderRng(7), { storage, key: ORDERS_KEY })
     expect(reopened.current()).toEqual(after)
   })
 
   it('快照损坏 → 降级安全:重出首单(既有降级模式),不抛错', () => {
     const storage = memoryStorage()
-    storage.set('starryhook:orders', '{not-json')
-    const board = new OrderBoardStore(new Rng(3), { storage, key: 'starryhook:orders' })
+    storage.set(ORDERS_KEY, '{not-json')
+    const board = new OrderBoardStore(new Rng(3), { storage, key: ORDERS_KEY })
     expect(ORDER_TEMPLATES).toContainEqual(board.current())
   })
 
@@ -196,8 +214,8 @@ describe('公告板 store(接缝:OrderBoardStore,票 #55:队列制同时仅一�
       {},
     ]) {
       const storage = memoryStorage()
-      storage.set('starryhook:orders', JSON.stringify(bad))
-      const board = new OrderBoardStore(new Rng(3), { storage, key: 'starryhook:orders' })
+      storage.set(ORDERS_KEY, JSON.stringify(bad))
+      const board = new OrderBoardStore(new Rng(3), { storage, key: ORDERS_KEY })
       expect(ORDER_TEMPLATES).toContainEqual(board.current())
     }
   })
@@ -205,8 +223,8 @@ describe('公告板 store(接缝:OrderBoardStore,票 #55:队列制同时仅一�
   it('快照合法订单原样恢复(不重抽):跨会话同一单', () => {
     const storage = memoryStorage()
     const saved: OrderDef = { fishId: 'wenzhongji', minQuality: 'silver', count: 2 }
-    storage.set('starryhook:orders', JSON.stringify({ current: saved }))
-    const board = new OrderBoardStore(sessionOrderRng(11), { storage, key: 'starryhook:orders' })
+    storage.set(ORDERS_KEY, JSON.stringify({ current: saved }))
+    const board = new OrderBoardStore(sessionOrderRng(11), { storage, key: ORDERS_KEY })
     expect(board.current()).toEqual(saved)
   })
 

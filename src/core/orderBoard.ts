@@ -8,7 +8,7 @@ import { readKvSnapshot, writeKvSnapshot, type KvStorage } from './kvSnapshot'
  * 征集 = {鱼种 × 品质门槛 × 数量}。纯核心 store + 纯函数校验,不依赖渲染、
  * 不感知金币与背包(交付 = 组合根接线扣背包 + wallet.earn,见 ui/economyWiring)。
  *
- * - 订单池:表驱动模板(6~8 条),交付后随机轮转出新单(排除刚交付的模板,
+ * - 订单池:表驱动模板(8~10 条),交付后随机轮转出新单(排除刚交付的模板,
  *   轮转不空转);队列制 = 同一时间至多一单,交付不限时、垂钓中可积累;
  * - 酬金 = 鱼分值 × 数量 × 1.5(四舍五入;品质只影响卖价,订单按条收不按星溢价);
  * - 交付校验:数量与品质门槛判定产出「扣包计划」(从达标堆叠按 低品质优先
@@ -27,18 +27,23 @@ export interface OrderDef {
 }
 
 /**
- * 订单池模板表(6~8 条,票面口径):覆盖全部既有鱼种,普通门槛为主、
- * 银星门槛做进阶变化。票 #53 扩鱼种时往表里加行即插即用(表驱动,零逻辑改动)。
+ * 订单池模板表(8~10 条,review 收口口径):既有 5 种全覆盖(票 #55 验收)+
+ * 票 #53 新鱼代表行——三水域(池塘/河谷/湖畔)与新条件门(雨/冬/夜)各有
+ * 窗口的鱼上板,双硬门鱼(雾影鲈 = 雨夜、霜枪狗鱼 = 冬夜)不上板(白天晴天
+ * 不可交付窗口过长,单槽队列易长期卡单)。普通门槛为主、银星门槛做进阶变化;
+ * 往表里加行即插即用(表驱动,零逻辑改动)。
  */
 export const ORDER_TEMPLATES: readonly OrderDef[] = [
   { fishId: 'xiaobaitiao', minQuality: 'normal', count: 3 },
   { fishId: 'xiaobaitiao', minQuality: 'silver', count: 2 },
   { fishId: 'wenzhongji', minQuality: 'normal', count: 4 },
-  { fishId: 'wenzhongji', minQuality: 'silver', count: 2 },
   { fishId: 'qianzhuinian', minQuality: 'normal', count: 2 },
   { fishId: 'qiqiuHetun', minQuality: 'normal', count: 3 },
   { fishId: 'shandiansuo', minQuality: 'normal', count: 2 },
-  { fishId: 'shandiansuo', minQuality: 'silver', count: 2 },
+  { fishId: 'niquQiu', minQuality: 'normal', count: 3 },
+  { fishId: 'tiejiaLing', minQuality: 'normal', count: 2 },
+  { fishId: 'yueyingMan', minQuality: 'normal', count: 2 },
+  { fishId: 'jinlinLi', minQuality: 'normal', count: 3 },
 ]
 
 /** 酬金倍率(票 #55:分值 × 数量 × 1.5) */

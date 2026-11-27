@@ -112,6 +112,41 @@ describe('小游戏轨道几何(接缝:chestTrackY / chestSyncCovered,纯函数)
       }
     }
   })
+
+  it('轨道顶部可达性:贴顶漂浮鱼(fishY = 0.9)存在可行条底(条顶硬界 1.0 内有解)', () => {
+    // stepCatchBar 钳 barY ∈ [0, 1 − height](条顶 ≤ 1.0);宝箱尾随钳 0.98 后,
+    // 鱼 0.9 时旧实现要求条带罩住 [0.86, 1.02] → 条顶 ≥ 1.02 无解,漂浮鱼
+    // (气球河豚/灯笼鲇/金鳞鲤,目标带 0.78–0.95)宝箱必逃。竹竿 height = 0.28
+    // 为三档最矮,可行则高档竿更可行。
+    const fishY = 0.9
+    const chestY = chestTrackY(fishY)
+    let feasible: number | null = null
+    for (let i = 0; i <= 72; i++) {
+      const barY = i / 100
+      if (chestSyncCovered(barY, 0.28, fishY, chestY, TUNE.minigame.fishHalf)) {
+        feasible = barY
+        break
+      }
+    }
+    expect(feasible, 'fishY = 0.9 应存在可行条底').not.toBeNull()
+  })
+
+  it('全轨道可达性:鱼全域 0.02–0.98 每档存在可行条底(贴底判定盘死角一并消除)', () => {
+    // 鱼轨道可达域 = 钳位界 [0.02, 0.98](fishMotion seek 钳位);同步可行性须
+    // 全域成立,否则该位置帧永远不同步(旧实现贴顶 > 0.84 与贴底 < 0.04 均无解)。
+    for (let i = 0; i <= 96; i++) {
+      const fishY = 0.02 + i / 100
+      const chestY = chestTrackY(fishY)
+      let feasible = false
+      for (let j = 0; j <= 72; j++) {
+        if (chestSyncCovered(j / 100, 0.28, fishY, chestY, TUNE.minigame.fishHalf)) {
+          feasible = true
+          break
+        }
+      }
+      expect(feasible, `fishY = ${fishY.toFixed(2)} 应存在可行条底`).toBe(true)
+    }
+  })
 })
 
 /** 结构化最小核心状态(与 worldScene.test fakeCore 同姿态:字段名与 CoreLoop 公开面一致) */

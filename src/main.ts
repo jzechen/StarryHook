@@ -11,7 +11,7 @@ import { CollectionStore, type KvStorage } from './core/collection'
 import { COLLECTIBLES } from './core/collectibles'
 import { CoreLoop } from './core/coreLoop'
 import { FISH } from './core/fishCatalog'
-import { OrderBoardStore, sessionOrderRng } from './core/orderBoard'
+import { ORDERS_KEY, OrderBoardStore, sessionOrderRng } from './core/orderBoard'
 import { ProgressionStore } from './core/progression'
 import { Rng } from './core/rng'
 import { TimedBestStore } from './core/timedBest'
@@ -171,7 +171,7 @@ async function main(): Promise<void> {
   // 交付 = deliverOrderOutcome 接线(扣背包渔获 + 酬金入钱包 + 出新单一体)
   const orders = new OrderBoardStore(sessionOrderRng(seed), {
     storage,
-    key: 'starryhook:orders',
+    key: ORDERS_KEY,
   })
   // 鱼饵生效(票 #19 香饵 + 票 #21 浓饵;review 修复后两缝合一):核心循环在抛竿时刻
   // (进入 waiting 边沿,core cast 内)调用单一饵效果来源恰好一次,本竿饵消耗恰好一次,
