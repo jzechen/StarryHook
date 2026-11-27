@@ -63,8 +63,12 @@ export class ShopPanel {
   private allowed = true
   /** 最近一次渲染的内容签名(余额/库存/竿可用性/当前竿);变化才写 DOM,避免每帧刷新 */
   private renderedSignature = ''
-  /** 渔获堆叠签名(堆叠随捕获/卖出增减);变化才重建行,与面板既有守卫同思路 */
-  private catchSignature = ''
+  /**
+   * 渔获堆叠签名(堆叠随捕获/卖出增减);变化才重建行,与面板既有守卫同思路。
+   * 首刷哨兵须为 null 而非 '':空包签名就是空串,与 '' 初始值恒等会跳过首刷,
+   * 空包首开不显示占位(批二 #42 顺手修正,与背包/储物箱面板同款哨兵口径)。
+   */
+  private catchSignature: string | null = null
   private feedbackTimer: number | null = null
 
   constructor(
