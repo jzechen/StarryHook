@@ -46,6 +46,9 @@
       #bait-badge { opacity: .95; }
       #bait-badge[hidden] { display: none; }
       #mode-entry:disabled { opacity: .4; cursor: not-allowed; }
+      /* 背包入口(票 #40):顶栏 pill,无快捷键(spec §2.2);可用性随阶段变化(仅
+         待机/蓄力/等待,见 backpackPanelPolicy),与模式入口同款置灰 */
+      #backpack-entry:disabled { opacity: .4; cursor: not-allowed; }
       /* 倒计时(票 #24):限时挑战逐秒「1:23」,金色与金币/得分同层;无限模式整元素隐藏 */
       #countdown { color: #ffd23f; }
       #countdown[hidden] { display: none; }
@@ -101,6 +104,48 @@
         background: rgba(23, 80, 107, .35); opacity: .7;
       }
       #shop-catch-empty[hidden] { display: none; }
+      /* 背包面板(票 #40,spec §4.4):渔获区 + 收藏品区,行样式沿用 .shop-item
+         同族(批二 #42 统一主题化时一并收编);两区常驻、空区占位降不透明度 */
+      #backpack-panel {
+        pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 276px;
+        max-height: calc(100vh - 76px); overflow-y: auto;
+        background: rgba(12, 47, 63, .92);
+        border: 1px solid rgba(159, 216, 232, .5); border-radius: 14px;
+        padding: 12px 14px; font-size: 12px;
+      }
+      #backpack-panel[hidden] { display: none; }
+      #backpack-catch, #backpack-collectibles { margin-top: 10px; }
+      #backpack-catch-list, #backpack-collectible-list { margin-top: 6px; display: grid; gap: 6px; }
+      #backpack-catch-empty, #backpack-collectible-empty {
+        margin-top: 6px; padding: 7px 12px; border-radius: 9px;
+        background: rgba(23, 80, 107, .35); opacity: .7;
+      }
+      #backpack-catch-empty[hidden], #backpack-collectible-empty[hidden] { display: none; }
+      /* 储物箱面板(票 #40,spec §4.4):两栏转移(左背包/右储物箱),行 = 整行按钮,
+         点按整堆转移;列头与空栏占位同背包面板层级 */
+      #storage-panel {
+        pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 420px;
+        max-width: calc(100vw - 32px); max-height: calc(100vh - 76px); overflow-y: auto;
+        background: rgba(12, 47, 63, .92);
+        border: 1px solid rgba(159, 216, 232, .5); border-radius: 14px;
+        padding: 12px 14px; font-size: 12px;
+      }
+      #storage-panel[hidden] { display: none; }
+      #storage-columns { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .storage-col { display: grid; gap: 6px; align-content: start; }
+      #storage-backpack-list, #storage-box-list { display: grid; gap: 6px; }
+      .storage-empty {
+        padding: 7px 12px; border-radius: 9px;
+        background: rgba(23, 80, 107, .35); opacity: .7;
+      }
+      .storage-empty[hidden] { display: none; }
+      /* 转移行:整行按钮继承 .shop-item 底色,补齐按钮重置与悬停反馈 */
+      button.storage-move {
+        width: 100%; border: none; cursor: pointer;
+        font: inherit; color: inherit; text-align: left;
+      }
+      button.storage-move:hover { background: rgba(23, 80, 107, .7); }
+      #storage-hint { margin-top: 10px; opacity: .7; }
       #collection-panel {
         pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 292px;
         background: rgba(12, 47, 63, .92);
@@ -188,6 +233,8 @@
         <button id="collection-entry" type="button" class="pill">图鉴</button>
         <!-- 模式入口(票 #24):挂位与重开相邻(顶栏已满,不再新起一段);可用性随阶段变化(仅待机,见 modePanelPolicy),垂钓中置灰 -->
         <button id="mode-entry" type="button" class="pill">模式</button>
+        <!-- 背包入口(票 #40,spec §2.4 顶栏保留清单新增):pill 入口、无快捷键;渔获区 + 收藏品区总览 -->
+        <button id="backpack-entry" type="button" class="pill">背包</button>
         <button id="reset" type="button" class="pill">重开</button>
         <!-- 静音开关(spec #12):图标即状态,🔊 可听 / 🔇 已静音;持久化见 ui/muteStore.ts -->
         <button id="mute-toggle" type="button" class="pill" aria-label="静音">🔊</button>
@@ -227,6 +274,46 @@
         </div>
         <div id="mode-list"></div><!-- 行由 ModePanel 生成:无限休闲 / 限时挑战 + 当前模式标识;切换走核心 setMode -->
         <div id="mode-best"></div><!-- 限时单局最高纪录(票 #22/#23 纪录双轨),初始文本由 ModePanel 依 TimedBestStore 写入 -->
+      </div>
+      <!-- 背包面板(票 #40,spec §4.4):渔获区(鱼种 × 品质堆叠 + 品质星标)+ 收藏品区
+           (内容表由票 #41 填充,本票空区占位);鱼饵不进包(余量走钱包/顶栏徽章);
+           售卖在商店、存取在储物箱,本面板只读总览 -->
+      <div id="backpack-panel" hidden>
+        <div class="panel-head">
+          <span class="panel-title">背包</span>
+          <button id="backpack-close" type="button" class="pill" aria-label="关闭背包">✕ 关闭</button>
+        </div>
+        <div id="backpack-catch">
+          <div class="shop-section-title">渔获</div>
+          <div id="backpack-catch-list"></div><!-- 行由 BackpackPanel 依背包渔获堆叠生成:目录序 × 品质序,星标缀在鱼名后 -->
+          <div id="backpack-catch-empty" hidden>背包里还没有渔获</div>
+        </div>
+        <div id="backpack-collectibles">
+          <div class="shop-section-title">收藏品</div>
+          <div id="backpack-collectible-list"></div><!-- 行由 BackpackPanel 依收藏品堆叠生成(目录序);内容表票 #41 填充 -->
+          <div id="backpack-collectible-empty" hidden>还没有收藏品</div>
+        </div>
+      </div>
+      <!-- 储物箱面板(票 #40,spec §4.4):村舍储物箱交互点 E 开;两栏转移(左背包/右储物箱),
+           点按整堆转移;渔获与收藏品皆可存、无腐坏、双方无容量上限 -->
+      <div id="storage-panel" hidden>
+        <div class="panel-head">
+          <span class="panel-title">储物箱</span>
+          <button id="storage-close" type="button" class="pill" aria-label="关闭储物箱">✕ 关闭</button>
+        </div>
+        <div id="storage-columns">
+          <div class="storage-col">
+            <div class="shop-section-title">背包</div>
+            <div id="storage-backpack-list"></div><!-- 行由 StoragePanel 依背包堆叠生成,点击存入储物箱 -->
+            <div id="storage-backpack-empty" class="storage-empty" hidden>背包是空的</div>
+          </div>
+          <div class="storage-col">
+            <div class="shop-section-title">储物箱</div>
+            <div id="storage-box-list"></div><!-- 行由 StoragePanel 依储物箱堆叠生成,点击取回背包 -->
+            <div id="storage-box-empty" class="storage-empty" hidden>储物箱是空的</div>
+          </div>
+        </div>
+        <div id="storage-hint">点按物品,整堆转移到对侧</div>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

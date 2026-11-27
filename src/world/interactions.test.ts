@@ -30,6 +30,12 @@ describe('交互点解析(接缝:parseInteractionSpots,票 #36)', () => {
     expect(spots[1]).toMatchObject({ name: '杂货摊', x: 136, y: 112 })
   })
 
+  it('储物箱 kind(票 #40,spec §2.1)解析进表,无附加属性要求', () => {
+    const spots = parseInteractionSpots([obj({ name: '储物箱', type: 'storage', x: 200, y: 200 })], 16)
+    expect(spots.map(s => s.kind)).toEqual(['storage'])
+    expect(spots[0]).toMatchObject({ name: '储物箱', x: 200, y: 200, radiusPx: 24 })
+  })
+
   it('叙事物 kind(票 #37:sign/note)解析进表,text 属性透传为彩蛋文案', () => {
     const spots = parseInteractionSpots(
       [
@@ -123,6 +129,10 @@ describe('动作短词(接缝:interactionLabel,浮签文案)', () => {
     expect(interactionLabel('stall')).toBe('商店')
   })
 
+  it('储物箱 = 储物箱(票 #40:浮签用词与票面一致)', () => {
+    expect(interactionLabel('storage')).toBe('储物箱')
+  })
+
   it('叙事物 = 查看(路牌 sign / 井石台 note 同词,票 #37)', () => {
     expect(interactionLabel('sign')).toBe('查看')
     expect(interactionLabel('note')).toBe('查看')
@@ -169,6 +179,29 @@ describe('村舍图叙事物端到端(接缝:village.json → parseInteractionSp
     for (const other of spots) {
       if (other === sign) continue
       const overlap = Math.hypot(other.x - sign.x, other.y - sign.y) < other.radiusPx + sign.radiusPx
+      expect(overlap).toBe(false)
+    }
+  })
+})
+
+describe('村舍储物箱端到端(接缝:village.json → parseInteractionSpots,票 #40)', () => {
+  const map = parseWorldMap(villageJson)
+  const spots = parseInteractionSpots(map.objects, map.tileWidth)
+
+  it('储物箱交互点恰好一个,锚在储物箱 tile (12,12) 中心,默认触发半径', () => {
+    const storages = spots.filter(s => s.kind === 'storage')
+    expect(storages).toHaveLength(1)
+    expect(storages[0]).toMatchObject({ name: '储物箱', x: 12 * 16 + 8, y: 12 * 16 + 8, radiusPx: 24 })
+  })
+
+  it('储物箱在村舍近旁(家 = 仓库锚点,spec §4.4):图西半、井的东南侧,不压井交互半径', () => {
+    const storage = spots.find(s => s.kind === 'storage')!
+    expect(storage.x).toBeLessThan(map.widthPx / 3)
+    const well = spots.find(s => s.kind === 'note')!
+    expect(storage.y).toBeGreaterThan(well.y)
+    for (const other of spots) {
+      if (other === storage) continue
+      const overlap = Math.hypot(other.x - storage.x, other.y - storage.y) < other.radiusPx + storage.radiusPx
       expect(overlap).toBe(false)
     }
   })

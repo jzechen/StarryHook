@@ -132,6 +132,18 @@ describe('村舍地图 village.json(接缝:parseWorldMap 纯函数)', () => {
     expect(notes[0]!.y).toBe(well[1] * map.tileWidth + map.tileWidth / 2)
     expect(notes[0]!.properties['text']).toBeTruthy()
   })
+
+  it('储物箱(票 #40):木箱 tile(gid 131)立在村舍旁且挡路,交互点恰好一个、锚在箱 tile 中心', () => {
+    const crate = cellOf(map.deco, map, 131)
+    expect(crate).not.toBeNull()
+    expect(isBlockedCell(map, crate![0], crate![1])).toBe(true)
+    // 家 = 仓库锚点(spec §4.4):箱在村舍东墙外的院子里(图西半)
+    expect(crate![0]).toBeLessThan(map.width / 3)
+    const storages = map.objects.filter(o => o.type === 'storage')
+    expect(storages).toHaveLength(1)
+    expect(storages[0]!.x).toBe(crate![0] * map.tileWidth + map.tileWidth / 2)
+    expect(storages[0]!.y).toBe(crate![1] * map.tileWidth + map.tileWidth / 2)
+  })
 })
 
 describe('解析器拒绝坏数据(纯函数契约,合成最小图)', () => {

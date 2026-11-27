@@ -22,6 +22,14 @@ describe('动作键意图(接缝:stallPressAction,票 #36)', () => {
     expect(stallPressAction(false, 'note')).toBe('read-narrative')
   })
 
+  it('无面板、储物箱在前:按下 = 开储物箱面板(票 #40,spec §2.1/§4.4)', () => {
+    expect(stallPressAction(false, 'storage')).toBe('open-storage')
+  })
+
+  it('面板打开时储物箱同样让位关面板(关闭口径优先,票 #40 沿用 #36 优先级)', () => {
+    expect(stallPressAction(true, 'storage')).toBe('close-panel')
+  })
+
   it('面板打开时叙事物同样让位关面板(关闭口径优先,票 #37 沿用 #36 优先级)', () => {
     expect(stallPressAction(true, 'sign')).toBe('close-panel')
     expect(stallPressAction(true, 'note')).toBe('close-panel')

@@ -6,6 +6,7 @@ import '@fontsource/fusion-pixel-12px-proportional-sc'
 import { RODS } from './config'
 import { BackpackStore } from './core/backpack'
 import { CollectionStore, type KvStorage } from './core/collection'
+import { COLLECTIBLES } from './core/collectibles'
 import { CoreLoop } from './core/coreLoop'
 import { FISH } from './core/fishCatalog'
 import { ProgressionStore } from './core/progression'
@@ -24,6 +25,7 @@ import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
 import { countdownBadgeText } from './ui/countdownBadgeText'
 import { baitEffectSource, buyBaitOutcome, equippedBaitView, sellFishOutcome } from './ui/economyWiring'
+import { BackpackPanel } from './ui/backpackPanel'
 import { Hud } from './ui/hud'
 import { ModePanel } from './ui/modePanel'
 import { MuteStore } from './ui/muteStore'
@@ -34,6 +36,8 @@ import { roundSettlementText } from './ui/roundSettlementText'
 import { AudioSfxPlayer, MuteAwareSfxPlayer } from './ui/sfx'
 import { sfxForEvent } from './ui/sfxMapping'
 import { ShopPanel, type ShopBuyOutcome } from './ui/shopPanel'
+import { StoragePanel } from './ui/storagePanel'
+import { transferBetween } from './ui/storageWiring'
 import { stallPressAction } from './ui/interactionPolicy'
 import { ToastLayer } from './ui/toastLayer'
 
@@ -118,9 +122,19 @@ async function main(): Promise<void> {
   // 本票接香饵抛竿消耗,商店购竿与购饵 UI 属后续票。
   // 票 #39 起:金币唯一来源 = 摊位卖鱼 + 宝箱(spec §4.1),捕获不再即时入账
   const wallet = new WalletStore(storage)
-  // 背包(票 #39):渔获按(鱼种 × 品质)堆叠,纯核心 store;kv 持久化与
-  // 背包/储物箱面板归票 #40,本票只接捕获入包与摊位卖鱼
-  const backpack = new BackpackStore(FISH.map(f => f.id))
+  // 背包(票 #39 堆叠语义 + 票 #40 kv 持久化):渔获按(鱼种 × 品质)堆叠,
+  // 收藏品为第二分区(目录 = collectibles 表,票 #41 填充内容,本票为空表)。
+  // 变动即落盘(独立键),损坏快照按空包降级;储物箱 = 同一 store 形态的第二
+  // 实例(家中仓库,独立键),两块面板与转移接线消费。
+  const collectibleIds = COLLECTIBLES.map(c => c.id)
+  const backpack = new BackpackStore(FISH.map(f => f.id), collectibleIds, {
+    storage,
+    key: 'starryhook:backpack',
+  })
+  const storageBox = new BackpackStore(FISH.map(f => f.id), collectibleIds, {
+    storage,
+    key: 'starryhook:storage',
+  })
   // 鱼饵生效(票 #19 香饵 + 票 #21 浓饵;review 修复后两缝合一):核心循环在抛竿时刻
   // (进入 waiting 边沿,core cast 内)调用单一饵效果来源恰好一次,本竿饵消耗恰好一次,
   // 消耗与效果同源产出,不再有调用次序契约:
@@ -175,6 +189,20 @@ async function main(): Promise<void> {
   // ——垂钓中核心层同样拒绝,与入口策略(modePanelAllowed,仅待机)双保险。
   // 局毕(归零强制结算)自动回面板可再来一局;第四面板经 PanelExclusion 注册即入
   const modePanel = new ModePanel(core, timedBest, panelExclusion)
+  // 背包面板(票 #40,spec §4.4):顶栏「背包」pill 开总览面板(无快捷键),
+  // 渔获区(鱼种 × 品质堆叠 + 星标)+ 收藏品区(内容表 #41 填充,空区占位);
+  // 鱼饵不进包——余量走钱包/顶栏徽章,本面板只读
+  const backpackPanel = new BackpackPanel(backpack, panelExclusion)
+  // 储物箱面板(票 #40,spec §4.4):村舍储物箱交互点 E 开两栏转移面板
+  // (左背包/右储物箱,点按整堆转移);转移 = 源取出 + 目标存入一体
+  // (transferBetween 接线,组合根注入回调;面板只管展示与转发)
+  const storagePanel = new StoragePanel(
+    backpack,
+    storageBox,
+    transferBetween(backpack, storageBox),
+    transferBetween(storageBox, backpack),
+    panelExclusion,
+  )
   // 轻提示层:新收录 / 池塘大满贯,顶部居中,不拦截游戏输入
   const toasts = new ToastLayer()
   let prevPhase: LoopPhase = core.phase
@@ -190,7 +218,7 @@ async function main(): Promise<void> {
   const interactions = parseInteractionSpots(village.objects, village.tileWidth)
   // 已开面板(互斥协调器保证至多一个):面板打开时世界动作全歇、浮签全隐、移动锁死
   const openPanel = (): { close(): void } | null =>
-    [collectionPanel, shopPanel, modePanel].find(p => p.isOpen()) ?? null
+    [collectionPanel, shopPanel, modePanel, backpackPanel, storagePanel].find(p => p.isOpen()) ?? null
   // 每帧刷新的「范围内最近交互点」:交互门禁/浮签/自动切水/摊位动作四方同源,
   // 不因各自取值时机不同而打架(核心门禁在 core.update 内消费的即本帧值)
   let nearestTarget: ReturnType<typeof nearestInteraction> = null
@@ -262,14 +290,16 @@ async function main(): Promise<void> {
     // 面板打开锁移动(spec §2.4):方向分量清零,核心侧无需感知面板
     core.update(dt, { holding, moveX: panelOpen ? 0 : dx, moveY: panelOpen ? 0 : dy })
 
-    // 动作键按下边沿 → 意图(关闭口径优先):关面板 / 摊位开商店 / 叙事物读彩蛋;
-    // 钓位蓄力抛竿不经此处——核心已按交互门禁在本帧 update 内处理。
+    // 动作键按下边沿 → 意图(关闭口径优先):关面板 / 摊位开商店 / 储物箱开转移
+    // 面板 / 叙事物读彩蛋;钓位蓄力抛竿不经此处——核心已按交互门禁在本帧 update
+    // 内处理。
     // 叙事物(票 #37)仅在待机响应:小游戏连按 E 是玩法操作,垂钓中不弹彩蛋
     // (与摊位「仅 idle 可开」同口径);toast 一句静态文案,零奖励、可重复查看
     if (pressed) {
       const intent = stallPressAction(panelOpen, nearestTarget?.kind ?? null)
       if (intent === 'close-panel') openPanel()?.close()
       else if (intent === 'open-shop') shopPanel.open()
+      else if (intent === 'open-storage') storagePanel.open()
       else if (intent === 'read-narrative' && core.phase === 'idle') {
         const narrative = nearestTarget?.text
         if (narrative) toasts.showNarrative(narrative)
@@ -380,6 +410,10 @@ async function main(): Promise<void> {
     shopPanel.update(core)
     // 模式面板(票 #24):入口可用性(仅待机)、自动收起、局毕自动回面板、当前模式与纪录刷新
     modePanel.update(core)
+    // 背包面板(票 #40):入口可用性(待机/蓄力/等待)、自动收起、堆叠刷新(打开时游戏照常推进)
+    backpackPanel.update(core)
+    // 储物箱面板(票 #40):离开待机自动收起、两栏内容刷新(打开时游戏照常推进)
+    storagePanel.update(core)
   })
 }
 

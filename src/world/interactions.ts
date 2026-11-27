@@ -9,11 +9,12 @@ import type { WorldMapObject } from './worldMap'
  * 触发判定为纯函数:玩家脚部点 → 范围内最近交互点(重叠取最近,平局取先声明)。
  * 票 #37 追加叙事物 sign(路牌)/note(井石台,spec §2.5):彩蛋文案走物件
  * text 属性,交互 = 动作键弹一句静态文案,零奖励、不持久化已读;
- * chest/storage 由后续票按同一物件层声明扩展(kind 表 + 动作短词表即插即用)。
+ * 票 #40 追加 storage(村舍储物箱,spec §4.4):交互 = 动作键开两栏转移面板;
+ * chest 由后续票按同一物件层声明扩展(kind 表 + 动作短词表即插即用)。
  */
 
 /** 本票落地的交互 kind(spec §2.1 全集的子集;后续票追加) */
-export type InteractionKind = 'spot' | 'stall' | 'sign' | 'note'
+export type InteractionKind = 'spot' | 'stall' | 'sign' | 'note' | 'storage'
 
 /** 默认触发半径(tile;spec §2.1「统一 1.5 tile」) */
 export const DEFAULT_RADIUS_TILES = 1.5
@@ -48,6 +49,7 @@ const ACTION_LABELS: Readonly<Record<InteractionKind, string>> = {
   stall: '商店',
   sign: '查看',
   note: '查看',
+  storage: '储物箱',
 }
 
 /** 交互点动作短词(未知 kind = 空串:浮签不渲染无主文案) */
@@ -63,7 +65,9 @@ function isWaterAreaId(value: unknown): value is WaterAreaId {
 
 /** 物件层条目 → 交互点定义;kind 非交互返回 null(调用方过滤) */
 function toInteractionSpot(o: WorldMapObject, tileWidth: number): InteractionSpotDef | null {
-  if (o.type !== 'spot' && o.type !== 'stall' && o.type !== 'sign' && o.type !== 'note') return null
+  if (o.type !== 'spot' && o.type !== 'stall' && o.type !== 'sign' && o.type !== 'note' && o.type !== 'storage') {
+    return null
+  }
   const kind = o.type as InteractionKind
   const radiusTiles = o.properties['radius']
   let radiusPx = DEFAULT_RADIUS_TILES * tileWidth
