@@ -6,6 +6,44 @@
     <title>StarryHook · 星钩垂钓</title>
     <style>
       * { box-sizing: border-box; }
+      /* ── 皮肤主题令牌(票 #42,spec §5.1 批二):一处定义、全 DOM 生效 ──
+         面板族 / 顶栏 pill 组 / toast 的色板、边框、圆角、标题条、阴影、
+         焦点态、禁用态全部只允许引用这里的变量,逐面板不得再写硬编码色值。
+         深色基底延续批一:深青蓝面板面 × 浅青描边 × 金色强调,质感升级
+         只加阴影 / 标题条 / 焦点环,不动布局与字号。
+         (html/body 的 #2c3b2a 是画布信箱底色,与 main.ts 场景底成对,不属 DOM 主题面。) */
+      :root {
+        /* 色板 */
+        --ui-text: #eaf4f6;                       /* 常规前景 */
+        --ui-text-dim: #9fb4ba;                   /* 次级 / 锁定前景 */
+        --ui-accent: #ffd23f;                     /* 金色强调:得分/金币/倒计时/当前模式描边 */
+        --ui-surface: rgba(12, 47, 63, .92);      /* 面板面 */
+        --ui-surface-pill: rgba(12, 47, 63, .8);  /* 顶栏 pill 面 */
+        --ui-surface-toast: rgba(12, 47, 63, .88);/* toast 面(比 pill 实一点,压得住画布) */
+        --ui-titlebar: rgba(9, 34, 46, .65);      /* 面板标题条(通栏) */
+        --ui-row: rgba(23, 80, 107, .35);         /* 行 / 条目 / 空区占位底 */
+        --ui-row-raised: rgba(23, 80, 107, .5);   /* 行内小钮底 */
+        --ui-row-hover: rgba(23, 80, 107, .7);    /* 行悬停 */
+        --ui-surface-hover: rgba(23, 80, 107, .9);/* pill 悬停 */
+        --ui-band-gold: rgba(96, 69, 12, .92);    /* 大满贯金带面 */
+        --ui-gold-text: #fff3b0;                  /* 大满贯金带前景 */
+        /* 边框 */
+        --ui-border: rgba(159, 216, 232, .5);
+        --ui-border-soft: rgba(159, 216, 232, .4);
+        --ui-border-accent: rgba(255, 210, 63, .55);
+        --ui-border-accent-strong: rgba(255, 210, 63, .9);
+        /* 圆角 */
+        --ui-radius-panel: 14px;
+        --ui-radius-row: 9px;
+        --ui-radius-pill: 999px;
+        /* 阴影 */
+        --ui-shadow-panel: 0 6px 18px rgba(0, 0, 0, .38);
+        --ui-shadow-pill: 0 2px 8px rgba(0, 0, 0, .3);
+        --ui-text-shadow: 0 1px 4px rgba(0, 0, 0, .6);
+        /* 焦点态 / 禁用态 */
+        --ui-focus: var(--ui-accent);
+        --ui-disabled-opacity: .4;
+      }
       html, body { margin: 0; height: 100%; overflow: hidden; background: #2c3b2a; }
       #game { position: fixed; inset: 0; overflow: hidden; }
       /* 画布由 viewport.ts 写入绝对定位 + 整数倍宽高(信箱);这里只管像素级采样 */
@@ -21,77 +59,91 @@
            位图风字形不糊,强调改由字号/颜色承担 */
         font-family: 'Fusion Pixel 12px Proportional SC', system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif;
         font-synthesis: none;
-        color: #eaf4f6;
+        color: var(--ui-text);
       }
       #topbar {
         position: absolute; top: 14px; left: 16px; right: 16px;
         display: flex; align-items: center; gap: 14px;
-        text-shadow: 0 1px 3px rgba(0, 0, 0, .55);
+        text-shadow: var(--ui-text-shadow);
         font-size: 12px;
       }
-      #topbar b { font-size: 24px; font-weight: normal; color: #ffd23f; }
-      /* 胶囊按钮公共样式:图鉴入口 / 重开 / 静音 / 图鉴关闭共用 */
+      #topbar b { font-size: 24px; font-weight: normal; color: var(--ui-accent); }
+      /* 胶囊按钮公共样式:图鉴入口 / 重开 / 静音 / 各面板关闭共用;
+         焦点态(键盘可达)与禁用态(置灰)由下面的统一规则承载,不逐钮重复 */
       .pill {
         pointer-events: auto;
         font: inherit; font-size: 12px; padding: 4px 14px;
-        color: #eaf4f6; background: rgba(12, 47, 63, .8);
-        border: 1px solid rgba(159, 216, 232, .5); border-radius: 999px; cursor: pointer;
+        color: var(--ui-text); background: var(--ui-surface-pill);
+        border: 1px solid var(--ui-border); border-radius: var(--ui-radius-pill); cursor: pointer;
+        box-shadow: var(--ui-shadow-pill);
       }
-      .pill:hover:enabled { background: rgba(23, 80, 107, .9); }
+      .pill:hover:enabled { background: var(--ui-surface-hover); }
+      /* 焦点态(票 #42 统一):键盘焦点统一金色描边,不占布局(outline);
+         鼠标点按不触发(:focus-visible),与既有「点击后 blur 防误触」口径不冲突 */
+      #hud button:focus-visible {
+        outline: 2px solid var(--ui-focus); outline-offset: 2px;
+      }
+      /* 禁用态(票 #42 统一):所有入口/购买/转移钮同一置灰,替代逐选择器重复 */
+      #hud button:disabled {
+        opacity: var(--ui-disabled-opacity); cursor: not-allowed;
+      }
       /* 环境徽章(票 #15):季节 · 昼夜 · 天气,文案由 envBadgeText 派生,内容变化才重写 */
       #env-badge { letter-spacing: 1px; opacity: .95; }
       /* 金币(票 #17 故事 2)与装备饵余量徽章(review 修复):顶栏紧凑小字,不另占行;
          金币取商店面板头同款金色,饵余量跟环境徽章同灰度层级,克制不挤 */
-      #coins { color: #ffd23f; }
+      #coins { color: var(--ui-accent); }
       #bait-badge { opacity: .95; }
       #bait-badge[hidden] { display: none; }
-      #mode-entry:disabled { opacity: .4; cursor: not-allowed; }
-      /* 背包入口(票 #40):顶栏 pill,无快捷键(spec §2.2);可用性随阶段变化(仅
-         待机/蓄力/等待,见 backpackPanelPolicy),与模式入口同款置灰 */
-      #backpack-entry:disabled { opacity: .4; cursor: not-allowed; }
       /* 倒计时(票 #24):限时挑战逐秒「1:23」,金色与金币/得分同层;无限模式整元素隐藏 */
-      #countdown { color: #ffd23f; }
+      #countdown { color: var(--ui-accent); }
       #countdown[hidden] { display: none; }
-      /* 模式面板(票 #24):与既有面板同族样式,面板经 PanelExclusion 互斥打开;
-         单局最高纪录(限时单局纪录)常驻面板尾(单局口径,跨会话持久,见 core/timedBest.ts) */
-      #mode-panel {
-        pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 244px;
-        background: rgba(12, 47, 63, .92);
-        border: 1px solid rgba(159, 216, 232, .5); border-radius: 14px;
+      /* 面板族公共壳(票 #42 统一):五面板同一张面、描边、圆角、标题条与投影;
+         布局壳(定位/宽度/滚动)仍逐面板声明。标题条 = 通栏色带 + 下缘分隔线,
+         负外边距吃掉面板内边距,靠面板 overflow 裁掉圆角处的色带 */
+      #mode-panel, #shop-panel, #backpack-panel, #storage-panel, #collection-panel {
+        pointer-events: auto; position: absolute; top: 60px; right: 16px;
+        overflow: hidden;
+        background: var(--ui-surface);
+        border: 1px solid var(--ui-border); border-radius: var(--ui-radius-panel);
+        box-shadow: var(--ui-shadow-panel);
         padding: 12px 14px; font-size: 12px;
       }
+      .panel-head {
+        display: flex; align-items: center; gap: 10px;
+        margin: -12px -14px 0; padding: 8px 14px;
+        background: var(--ui-titlebar);
+        border-bottom: 1px solid var(--ui-border-soft);
+      }
+      .panel-title { font-size: 12px; }
+      /* 模式面板(票 #24):与既有面板同族样式,面板经 PanelExclusion 互斥打开;
+         单局最高纪录(限时单局纪录)常驻面板尾(单局口径,跨会话持久,见 core/timedBest.ts) */
+      #mode-panel { width: 244px; }
       #mode-panel[hidden] { display: none; }
       #mode-list { margin: 10px 0 0; display: grid; gap: 6px; }
       .mode-item {
         display: flex; align-items: baseline; gap: 10px; width: 100%;
         font: inherit; text-align: left; padding: 7px 12px;
-        color: #eaf4f6; background: rgba(23, 80, 107, .35);
-        border: 1px solid transparent; border-radius: 9px; cursor: pointer;
+        color: var(--ui-text); background: var(--ui-row);
+        border: 1px solid transparent; border-radius: var(--ui-radius-row); cursor: pointer;
       }
-      .mode-item:hover { background: rgba(23, 80, 107, .7); }
+      .mode-item:hover { background: var(--ui-row-hover); }
       .mode-item .mode-hint { margin-left: auto; opacity: .9; }
-      .mode-item.current { border-color: rgba(255, 210, 63, .55); }
-      .mode-item .mode-current { color: #ffd23f; }
+      .mode-item.current { border-color: var(--ui-border-accent); }
+      .mode-item .mode-current { color: var(--ui-accent); }
       #mode-best { margin-top: 10px; opacity: .9; }
       /* 商店面板(票 #20;票 #36 起入口 = 世界摊位交互):与图鉴/模式面板同族样式,
          经 PanelExclusion 互斥打开;金币余额常驻面板头,行内提示承载购买反馈(不用 alert) */
-      #shop-panel {
-        pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 276px;
-        background: rgba(12, 47, 63, .92);
-        border: 1px solid rgba(159, 216, 232, .5); border-radius: 14px;
-        padding: 12px 14px; font-size: 12px;
-      }
+      #shop-panel { width: 276px; }
       #shop-panel[hidden] { display: none; }
-      #shop-coins { font-size: 24px; font-weight: normal; color: #ffd23f; }
+      #shop-coins { font-size: 24px; font-weight: normal; color: var(--ui-accent); }
       #shop-list { margin: 10px 0 0; display: grid; gap: 6px; }
       .shop-item {
         display: flex; align-items: baseline; gap: 10px;
-        padding: 7px 12px; border-radius: 9px; background: rgba(23, 80, 107, .35);
+        padding: 7px 12px; border-radius: var(--ui-radius-row); background: var(--ui-row);
       }
       .shop-item .shop-detail { margin-left: auto; opacity: .9; text-align: right; }
-      .shop-item .shop-buy { padding: 2px 10px; background: rgba(23, 80, 107, .5); border-color: rgba(159, 216, 232, .4); }
-      /* 金币不足置灰:购买钮禁用即压暗(与入口置灰同族),价格与竿名保持可读 */
-      .shop-item .shop-buy:disabled { opacity: .4; cursor: not-allowed; }
+      .shop-item .shop-buy { padding: 2px 10px; background: var(--ui-row-raised); border-color: var(--ui-border-soft); }
+      /* 金币不足置灰:购买钮禁用即压暗(统一禁用态规则承载),价格与竿名保持可读 */
       #shop-feedback { margin-top: 8px; opacity: .95; }
       #shop-feedback[hidden] { display: none; }
       /* 渔获区块(票 #39,spec §4.3):余额下方常驻收购位,行与卖出钮沿用
@@ -99,78 +151,60 @@
       #shop-catch { margin-top: 10px; }
       .shop-section-title { opacity: .9; }
       #shop-catch-list { margin-top: 6px; display: grid; gap: 6px; }
-      #shop-catch-empty {
-        margin-top: 6px; padding: 7px 12px; border-radius: 9px;
-        background: rgba(23, 80, 107, .35); opacity: .7;
+      /* 空区占位(商店渔获 / 背包两区 / 储物箱两栏)统一走行底色 + 降不透明度层级;
+         外边距按容器分:商店/背包是块级流需补 6px,储物箱在 gap 网格内不另加 */
+      #shop-catch-empty, #backpack-catch-empty, #backpack-collectible-empty, .storage-empty {
+        padding: 7px 12px; border-radius: var(--ui-radius-row);
+        background: var(--ui-row); opacity: .7;
       }
+      #shop-catch-empty, #backpack-catch-empty, #backpack-collectible-empty { margin-top: 6px; }
       #shop-catch-empty[hidden] { display: none; }
       /* 背包面板(票 #40,spec §4.4):渔获区 + 收藏品区,行样式沿用 .shop-item
          同族(批二 #42 统一主题化时一并收编);两区常驻、空区占位降不透明度 */
       #backpack-panel {
-        pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 276px;
+        width: 276px;
         max-height: calc(100vh - 76px); overflow-y: auto;
-        background: rgba(12, 47, 63, .92);
-        border: 1px solid rgba(159, 216, 232, .5); border-radius: 14px;
-        padding: 12px 14px; font-size: 12px;
       }
       #backpack-panel[hidden] { display: none; }
       #backpack-catch, #backpack-collectibles { margin-top: 10px; }
       #backpack-catch-list, #backpack-collectible-list { margin-top: 6px; display: grid; gap: 6px; }
-      #backpack-catch-empty, #backpack-collectible-empty {
-        margin-top: 6px; padding: 7px 12px; border-radius: 9px;
-        background: rgba(23, 80, 107, .35); opacity: .7;
-      }
       #backpack-catch-empty[hidden], #backpack-collectible-empty[hidden] { display: none; }
       /* 储物箱面板(票 #40,spec §4.4):两栏转移(左背包/右储物箱),行 = 整行按钮,
          点按整堆转移;列头与空栏占位同背包面板层级 */
       #storage-panel {
-        pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 420px;
+        width: 420px;
         max-width: calc(100vw - 32px); max-height: calc(100vh - 76px); overflow-y: auto;
-        background: rgba(12, 47, 63, .92);
-        border: 1px solid rgba(159, 216, 232, .5); border-radius: 14px;
-        padding: 12px 14px; font-size: 12px;
       }
       #storage-panel[hidden] { display: none; }
       #storage-columns { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
       .storage-col { display: grid; gap: 6px; align-content: start; }
       #storage-backpack-list, #storage-box-list { display: grid; gap: 6px; }
-      .storage-empty {
-        padding: 7px 12px; border-radius: 9px;
-        background: rgba(23, 80, 107, .35); opacity: .7;
-      }
       .storage-empty[hidden] { display: none; }
       /* 转移行:整行按钮继承 .shop-item 底色,补齐按钮重置与悬停反馈 */
       button.storage-move {
         width: 100%; border: none; cursor: pointer;
         font: inherit; color: inherit; text-align: left;
       }
-      button.storage-move:hover { background: rgba(23, 80, 107, .7); }
+      button.storage-move:hover { background: var(--ui-row-hover); }
       #storage-hint { margin-top: 10px; opacity: .7; }
-      #collection-panel {
-        pointer-events: auto; position: absolute; top: 60px; right: 16px; width: 292px;
-        background: rgba(12, 47, 63, .92);
-        border: 1px solid rgba(159, 216, 232, .5); border-radius: 14px;
-        padding: 12px 14px; font-size: 12px;
-      }
+      #collection-panel { width: 292px; }
       #collection-panel[hidden] { display: none; }
-      .panel-head { display: flex; align-items: center; gap: 10px; }
-      .panel-title { font-size: 12px; }
-      #collection-progress { font-size: 24px; font-weight: normal; color: #ffd23f; }
+      #collection-progress { font-size: 24px; font-weight: normal; color: var(--ui-accent); }
       #collection-close {
         margin-left: auto; font-size: 12px; padding: 2px 10px;
-        background: rgba(23, 80, 107, .5);
-        border-color: rgba(159, 216, 232, .4);
+        background: var(--ui-row-raised);
+        border-color: var(--ui-border-soft);
       }
       #collection-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
       .fish-item {
         display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px;
-        padding: 7px 12px; border-radius: 9px; background: rgba(23, 80, 107, .35);
+        padding: 7px 12px; border-radius: var(--ui-radius-row); background: var(--ui-row);
       }
       .fish-item .fish-detail { margin-left: auto; font-size: 12px; opacity: .9; }
       /* 出没条件次行(票 #16):文案由 ui/collectionPanelHabitat.ts 依亲和字段派生,
          建行时一次写入;占满整行落到名称/详情下方;保持 12px 像素字体网格,靠降不透明度区分层级 */
       .fish-item .fish-habitat { flex: 1 1 100%; font-size: 12px; opacity: .7; }
-      .fish-item.locked { opacity: .45; color: #9fb4ba; }
+      .fish-item.locked { opacity: .45; color: var(--ui-text-dim); }
       .fish-item.locked .fish-detail { font-size: 12px; }
       /* 条目鱼精灵(票 #11):fish-atlas.png 作 CSS sprite,2x 放大 + pixelated;
          2 帧游动动画与小游戏同周期(0.2s/帧);background-position-y 由
@@ -199,23 +233,24 @@
       }
       .toast {
         padding: 7px 24px; font-size: 24px; letter-spacing: 2px;
-        color: #ffd23f; background: rgba(12, 47, 63, .88);
-        border: 1px solid rgba(255, 210, 63, .55); border-radius: 999px;
-        text-shadow: 0 1px 4px rgba(0, 0, 0, .6);
+        color: var(--ui-accent); background: var(--ui-surface-toast);
+        border: 1px solid var(--ui-border-accent); border-radius: var(--ui-radius-pill);
+        text-shadow: var(--ui-text-shadow);
+        box-shadow: var(--ui-shadow-pill);
         /* 动画时序由 toastLayer.ts 依 TOAST_LIFETIME_MS 推导后内联写入,此处只留 keyframes */
       }
       .toast--grand-slam {
-        color: #fff3b0; border-color: rgba(255, 210, 63, .9);
-        background: rgba(96, 69, 12, .92);
+        color: var(--ui-gold-text); border-color: var(--ui-border-accent-strong);
+        background: var(--ui-band-gold);
       }
       @keyframes toast-in { from { opacity: 0; transform: translateY(-10px) scale(.92); } to { opacity: 1; transform: none; } }
       @keyframes toast-out { to { opacity: 0; transform: translateY(-8px); } }
       #hint {
         position: absolute; bottom: 34px; left: 0; right: 0;
         text-align: center; font-size: 24px; letter-spacing: 1px;
-        text-shadow: 0 1px 4px rgba(0, 0, 0, .6);
+        text-shadow: var(--ui-text-shadow);
       }
-      #hint.urgent { color: #ffd23f; animation: pulse .35s ease-in-out infinite alternate; }
+      #hint.urgent { color: var(--ui-accent); animation: pulse .35s ease-in-out infinite alternate; }
       @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.12); } }
       #seed { position: absolute; bottom: 10px; right: 12px; font-size: 12px; opacity: .55; }
     </style>
