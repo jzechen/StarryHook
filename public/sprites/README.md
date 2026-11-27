@@ -12,6 +12,7 @@
 | 文件 | 来源 | 许可 | 说明 |
 | --- | --- | --- | --- |
 | `water-flow.png` | OGA「Animated flowing water 2d 16x16」,作者 InThePixel,<https://opengameart.org/content/animated-flowing-water-2d-16x16> | CC0 | 13 帧流水条,原样入库未改动 |
+| `tiny-town.png` | Kenney「Tiny Town」v1.0 的 `Tilemap/tilemap_packed.png`,<https://kenney.nl/assets/tiny-town> | CC0 | 世界地图 packed 表(192×176,12 列 × 11 行,无间隔),原样入库未改动;tile 编号行优先 `tile_N = packed (N÷12, N%12)`(调研留痕:票 #26),地图 JSON(src/world/village.json)以单 tileset 引用,切片经 textures.ts |
 | `shoreline-waves.png` | 派生自 OGA「16x16 Shoreline Wave Animation Tiles」,作者 Zabin,<https://opengameart.org/content/16x16-shoreline-wave-animation-tiles> | CC0 | 见下方派生规则 |
 | `grass.png` | 派生自 OGA「16x16 tileset: water, grass and sand」,作者 Syrsly,<https://opengameart.org/content/16x16-tileset-water-grass-and-sand> | CC0 | 见下方派生规则 |
 | `character.png` | 派生自 OGA「Character sprite + walk animation」,作者 Flixberry Entertainment,<https://opengameart.org/content/character-sprite-walk-animation> | CC0 | 见下方派生规则 |

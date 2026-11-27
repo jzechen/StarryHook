@@ -43,6 +43,7 @@
 | 仓库文件 | 原始素材 | 来源与作者 | 许可 | 处理 |
 | --- | --- | --- | --- | --- |
 | `public/sprites/water-flow.png` | 原样入库 | OGA「Animated flowing water 2d 16x16」,InThePixel,<https://opengameart.org/content/animated-flowing-water-2d-16x16> | **CC0 1.0** | 未改动 |
+| `public/sprites/tiny-town.png` | `Tilemap/tilemap_packed.png`(Kenney「Tiny Town」整包,kenney.nl/assets/tiny-town) | Kenney「Tiny Town」,Kenney Vleugels(Kenney.nl),<https://kenney.nl/assets/tiny-town> | **CC0 1.0**(随包 License.txt 声明) | 原样入库,零改动;16×16、12 列 packed 表,地图 JSON 以单 tileset 引用(切片经 textures.ts) |
 | `public/sprites/shoreline-waves.png` | `oga-src/cc0waveanimtiles16x16.png` | OGA「16x16 Shoreline Wave Animation Tiles」,Zabin,<https://opengameart.org/content/16x16-shoreline-wave-animation-tiles> | **CC0 1.0** | 派生:抠透明 + 旋转四边(规则见 sprites README) |
 | `public/sprites/grass.png` | `oga-src/voda_pesok_trava_revision_2.png` | OGA「16x16 tileset: water, grass and sand」,Syrsly,<https://opengameart.org/content/16x16-tileset-water-grass-and-sand> | **CC0 1.0** | 派生:取纯草块并压暗(RGB × 0.78) |
 | `public/sprites/character.png` | `oga-src/ch003.png` | OGA「Character sprite + walk animation」,Flixberry Entertainment,<https://opengameart.org/content/character-sprite-walk-animation> | **CC0 1.0** | 派生:32×32 → 16×16 众数降采样 |
