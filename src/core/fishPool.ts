@@ -38,6 +38,7 @@ export function computePoolWeights(
     if (habitat?.areas && !habitat.areas.includes(env.area)) return 0
     if (habitat?.seasons && !habitat.seasons.includes(env.season)) return 0
     if (habitat?.daylight && !habitat.daylight.includes(env.daylight)) return 0
+    if (habitat?.weather && !habitat.weather.includes(env.weather)) return 0 // 票 #53:天气门(雾影鲈/霜枪狗鱼首用)
     // 软修正:各维倍率连乘(缺省 1,永不归零)
     const seasonMul = habitat?.seasonMul?.[env.season] ?? 1
     const daylightMul = habitat?.daylightMul?.[env.daylight] ?? 1

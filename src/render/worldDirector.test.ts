@@ -1,5 +1,6 @@
 import { Application, Container, Texture } from 'pixi.js'
 import { describe, expect, it, vi } from 'vitest'
+import { FISH } from '../core/fishCatalog'
 import { PLAYER_POSITION_KEY } from '../core/playerPosition'
 import { CoreLoop } from '../core/coreLoop'
 import { Rng } from '../core/rng'
@@ -37,7 +38,8 @@ function fakeTextures(): SceneTextures {
     chestFrames: { closed: tex(), open: tex() },
     farmerStand: tex(),
     bobber: tex(),
-    fishFrames: { slim: n(2), round: n(2), heavy: n(2), puff: n(2), bolt: n(2) },
+    // 行序契约 = 鱼种(票 #53):占位帧按目录逐鱼 2 帧
+    fishFrames: Object.fromEntries(FISH.map((f) => [f.id, n(2)])),
   }
 }
 

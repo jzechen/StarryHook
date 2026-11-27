@@ -3,6 +3,7 @@ import { advanceWalkPhase, breathPose, castLeanPose, facingToward, shadowPose, w
 import { computeCamera } from './camera'
 import { AREA_PALETTES } from './areaPalette'
 import { DEFAULT_AREA } from '../core/waterAreas'
+import { FISH } from '../core/fishCatalog'
 import type { CoreLoop } from '../core/coreLoop'
 import type { Facing, LoopPhase, WaterAreaId } from '../core/types'
 import { BASE_GROUND_GID, waterFillsBounds, type WorldMapData } from '../world/worldMap'
@@ -267,7 +268,8 @@ export class WorldScene {
     bobber.anchor.set(0.5)
     this.bobberSprite.addChild(bobber)
 
-    this.mgFishSprite = new Sprite(textures.fishFrames.slim[0]!)
+    // 小游戏鱼精灵初始贴图 = 目录首鱼(占位,咬钩进入小游戏即按场上鱼种换装,票 #53 行序契约)
+    this.mgFishSprite = new Sprite(textures.fishFrames[FISH[0]!.id]![0]!)
     this.mgFishSprite.anchor.set(0.5)
     this.mgFishSprite.visible = false
 
@@ -620,8 +622,8 @@ export class WorldScene {
       const barTop = innerY + innerH - (mg.barY + bar.height) * innerH
       this.mgBar.clear().roundRect(innerX, barTop, innerW, barPixH, 2).fill({ color: 0x6ee06e, alpha: 0.85 })
 
-      // 鱼精灵:按场上鱼形取贴图,2 帧按周期交替(挣扎摆尾);配色来自贴图本身
-      const fishFrames = this.textures.fishFrames[core.fish.shape]
+      // 鱼精灵:按场上鱼种取贴图(票 #53 行序契约从鱼形改鱼种),2 帧按周期交替(挣扎摆尾);配色来自贴图本身
+      const fishFrames = this.textures.fishFrames[core.fish.id]
       this.mgFishSprite.texture = fishFrames[Math.floor(t / FISH_FRAME_PERIOD) % FISH_FRAME_COUNT]!
       this.mgFishSprite.position.set(trackX + trackW / 2, innerY + innerH - mg.fishY * innerH)
 

@@ -60,6 +60,19 @@ describe('出鱼权重修正引擎(接缝:computePoolWeights)', () => {
     expect(computePoolWeights(SYNTH, SYNTH_POOL, env({ season: 'summer', daylight: 'night' }), 0)[1]).toBe(6)
   })
 
+  it('天气硬门(票 #53 雾影鲈「雨天+夜晚」首用):亲和集合不含当前天气 → 归零,含 → 正常;浓饵不越门', () => {
+    const rainOnly: FishDef[] = [
+      {
+        id: 'wr', name: '甲', behavior: 'smooth', difficulty: 3, score: 25, color: 0x1, shape: 'round',
+        habitat: { areas: ['lake'], weather: ['rain'] },
+      },
+    ]
+    const pool = { wr: 2 }
+    expect(computePoolWeights(rainOnly, pool, env({ area: 'lake', weather: 'sunny' }), 0)).toEqual([0])
+    expect(computePoolWeights(rainOnly, pool, env({ area: 'lake', weather: 'rain' }), 0)).toEqual([2])
+    expect(computePoolWeights(rainOnly, pool, env({ area: 'lake', weather: 'sunny' }), 0, true)).toEqual([0])
+  })
+
   it('不在基底鱼池的鱼权重为 0(亲和匹配也进不来)', () => {
     const withoutSe = { ...SYNTH_POOL, se: 0 }
     const w = computePoolWeights(SYNTH, withoutSe, env({ season: 'winter', daylight: 'night', weather: 'rain' }), 0)

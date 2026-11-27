@@ -1,5 +1,6 @@
 import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js'
 import { describe, expect, it, vi } from 'vitest'
+import { FISH } from '../core/fishCatalog'
 import type { CoreLoop } from '../core/coreLoop'
 import type { LoopPhase } from '../core/types'
 import { WORLD_MAPS } from '../world/maps'
@@ -41,7 +42,8 @@ function fakeTextures(): SceneTextures {
     chestFrames: { closed: tex(), open: tex() },
     farmerStand: tex(),
     bobber: tex(),
-    fishFrames: { slim: n(2), round: n(2), heavy: n(2), puff: n(2), bolt: n(2) },
+    // 行序契约 = 鱼种(票 #53):占位帧按目录逐鱼 2 帧
+    fishFrames: Object.fromEntries(FISH.map((f) => [f.id, n(2)])),
   }
 }
 
@@ -75,7 +77,7 @@ function fakeCore(phase: LoopPhase): CoreLoop {
     power: 0.5,
     rodParams: { height: 0.2, speed: 0.3 },
     mg: { barY: 0.5, fishY: 0.4, progress: 0.5 },
-    fish: { shape: 'slim' },
+    fish: { id: 'xiaobaitiao', shape: 'slim' },
   } as unknown as CoreLoop
 }
 
