@@ -31,13 +31,22 @@ const BOX_H = 28
 /** 横幅底缘距屏底(逻辑像素) */
 const BOTTOM_MARGIN = 10
 
+/**
+ * 横幅配色(票 #48 星露谷全铺):深底 band 换白底圆角深字,与 DOM 面板同族——
+ * 米纸面(--ui-surface #ece3ce)+ 木框描边(--ui-border #886644)+ 暖深字
+ * (--ui-text #4a3423,浅底上不再压深色描边)。
+ */
+const BANNER_BG = 0xece3ce
+const BANNER_BORDER = 0x886644
+const BANNER_TEXT = 0x4a3423
+
 /** 横幅透明度时间线(纯函数):0 → 淡入 1 → 保持 → 线性淡出 → 0 */
 export function sceneBannerAlpha(elapsed: number): number {
   if (elapsed <= 0 || elapsed >= SCENE_BANNER_SECONDS) return 0
   return Math.min(1, elapsed / FADE_IN, (SCENE_BANNER_SECONDS - elapsed) / FADE_OUT)
 }
 
-/** 底部场景名横幅:一次性绘制band + 文案,alpha 走容器属性(不逐帧重画) */
+/** 底部场景名横幅(白底圆角深字,票 #48):一次性绘制band + 文案,alpha 走容器属性(不逐帧重画) */
 export class SceneBanner {
   readonly container = new Container()
   private bg = new Graphics()
@@ -57,12 +66,14 @@ export class SceneBanner {
       style: {
         fontFamily: "'Fusion Pixel 12px Proportional SC', sans-serif",
         fontSize: 18,
-        fill: 0xeaf4f6,
-        stroke: { color: 0x0c2f3f, width: 3 },
+        fill: BANNER_TEXT,
         letterSpacing: 2,
       },
     })
     this.labelText.anchor.set(0.5)
+    // 文案居中于 band(-BOX_H..0):构造期定死,与 band 一次性绘制同族;
+    // #48 换白底深字时修正——原锚点落在 band 底缘,深字下半截浮在场景上不可读
+    this.labelText.position.set(0, -BOX_H / 2)
     this.container.addChild(this.bg, this.labelText)
     this.container.visible = false
   }
@@ -88,8 +99,8 @@ export class SceneBanner {
       this.bg
         .clear()
         .roundRect(-w / 2, -BOX_H, w, BOX_H, 6)
-        .fill({ color: 0x0c2f3f, alpha: 0.85 })
-        .stroke({ width: 1, color: 0x9fd8e8, alpha: 0.5 })
+        .fill({ color: BANNER_BG, alpha: 0.92 })
+        .stroke({ width: 1, color: BANNER_BORDER, alpha: 0.8 })
     }
     this.container.alpha = sceneBannerAlpha(0)
     this.container.visible = true

@@ -1,8 +1,9 @@
 import { Container, Graphics, Text } from 'pixi.js'
 
 /**
- * 交互浮签(票 #36,spec §2.1):画布内像素浮签 = 深底圆角小框 + E 键帽 +
- * 动作短词。跟随交互点世界坐标、随相机滚动(挂 worldScene 的 world 容器)、
+ * 交互浮签(票 #36,spec §2.1):画布内像素浮签 = 白底圆角小框 + E 键帽 +
+ * 动作短词(票 #48 星露谷全铺:白底圆角深字,与 DOM 面板同族)。
+ * 跟随交互点世界坐标、随相机滚动(挂 worldScene 的 world 容器)、
  * 上下浮动、位置与浮动量全部取整像素(整数平移,无亚像素抖动)。
  *
  * Fusion Pixel 是 DOM 字体,画布内绘制直接以其 fontFamily 走 Pixi Text
@@ -19,6 +20,17 @@ export const PROMPT_KEY_H = 12
 export const PROMPT_PAD_X = 5
 export const PROMPT_PAD_Y = 4
 export const PROMPT_GAP = 4
+
+/**
+ * 浮签配色(票 #48 星露谷全铺):白底圆角深字,与 DOM 面板同族——
+ * 米纸面(--ui-surface #ece3ce)+ 木框描边(--ui-border #886644)+
+ * 暖深字(--ui-text #4a3423);键帽反转为深棕底 + 米白字(浅底上可读)。
+ */
+const PROMPT_BG = 0xece3ce
+const PROMPT_BORDER = 0x886644
+const PROMPT_TEXT = 0x4a3423
+const PROMPT_KEY_BG = 0x4a3423
+const PROMPT_KEY_TEXT = 0xf2e7cf
 
 /** 浮签盒尺寸(逻辑像素) */
 export interface PromptBox {
@@ -69,12 +81,12 @@ export class InteractionPrompt {
     this.container.visible = false
     this.keyCap = new Text({
       text: 'E',
-      style: { fontFamily: 'sans-serif', fontSize: 9, fontWeight: '700', fill: 0x0c2f3f },
+      style: { fontFamily: 'sans-serif', fontSize: 9, fontWeight: '700', fill: PROMPT_KEY_TEXT },
     })
     this.keyCap.anchor.set(0.5)
     this.word = new Text({
       text: '',
-      style: { fontFamily: '"Fusion Pixel 12px Proportional SC", sans-serif', fontSize: 12, fill: 0xeaf4f6 },
+      style: { fontFamily: '"Fusion Pixel 12px Proportional SC", sans-serif', fontSize: 12, fill: PROMPT_TEXT },
     })
     this.word.anchor.set(0, 0.5)
     this.container.addChild(this.bg, this.keyCap, this.word)
@@ -91,10 +103,10 @@ export class InteractionPrompt {
     this.bg
       .clear()
       .roundRect(x0, y0, w, h, 4)
-      .fill({ color: 0x0c2f3f, alpha: 0.85 })
-      .stroke({ width: 1, color: 0x9fd8e8, alpha: 0.5 })
+      .fill({ color: PROMPT_BG, alpha: 0.92 })
+      .stroke({ width: 1, color: PROMPT_BORDER, alpha: 0.8 })
       .roundRect(x0 + PROMPT_PAD_X, y0 + PROMPT_PAD_Y, PROMPT_KEY_W, PROMPT_KEY_H, 2)
-      .fill({ color: 0xeaf4f6, alpha: 0.95 })
+      .fill({ color: PROMPT_KEY_BG, alpha: 0.9 })
     this.keyCap.position.set(x0 + PROMPT_PAD_X + PROMPT_KEY_W / 2, y0 + PROMPT_PAD_Y + PROMPT_KEY_H / 2)
     this.word.position.set(x0 + PROMPT_PAD_X + PROMPT_KEY_W + PROMPT_GAP, y0 + h / 2)
   }
@@ -112,7 +124,8 @@ export class InteractionPrompt {
 
 /**
  * 被动浮签(票 #46 出口接近签):与 InteractionPrompt 同族的无键帽变体——
- * 深底圆角小框 + 提示词,「东 · 河谷 →」样式。**不承载任何动作语义**(不进
+ * 白底圆角小框 + 提示词,「东 · 河谷 →」样式(票 #48 与主动浮签一并转白底)。
+ * **不承载任何动作语义**(不进
  * 动作键意图裁决),纯指引;显隐由组合根按「idle ∧ 无面板 ∧ 非过场 ∧ 无交互签」
  * 供给,渲染层兜底非 idle 强制隐藏(与主动浮签同双保险)。
  */
@@ -128,7 +141,7 @@ export class PassivePrompt {
     this.container.visible = false
     this.word = new Text({
       text: '',
-      style: { fontFamily: '"Fusion Pixel 12px Proportional SC", sans-serif', fontSize: 12, fill: 0xeaf4f6 },
+      style: { fontFamily: '"Fusion Pixel 12px Proportional SC", sans-serif', fontSize: 12, fill: PROMPT_TEXT },
     })
     this.word.anchor.set(0, 0.5)
     this.container.addChild(this.bg, this.word)
@@ -145,8 +158,8 @@ export class PassivePrompt {
     this.bg
       .clear()
       .roundRect(x0, y0, w, h, 4)
-      .fill({ color: 0x0c2f3f, alpha: 0.85 })
-      .stroke({ width: 1, color: 0x9fd8e8, alpha: 0.5 })
+      .fill({ color: PROMPT_BG, alpha: 0.92 })
+      .stroke({ width: 1, color: PROMPT_BORDER, alpha: 0.8 })
     this.word.position.set(x0 + PROMPT_PAD_X, y0 + h / 2)
   }
 
