@@ -32,9 +32,15 @@
 | `public/sfx/escape.ogg`(脱钩) | `uhoh.wav` | 同上 | 同上 | 同上 |
 | `public/sfx/level-up.ogg`(升级) | `Audio/8-Bit jingles/jingles_NES00.ogg` | Kenney「Music Jingles」,Kenney Vleugels(Kenney.nl),<https://kenney.nl/assets/music-jingles> | **CC0 1.0** | 原样入库,零改动 |
 | `public/sfx/new-entry.ogg`(新收录) | `Audio/confirmation_002.ogg` | Kenney「Interface Sounds」,Kenney Vleugels(Kenney.nl),<https://kenney.nl/assets/interface-sounds> | **CC0 1.0** | 原样入库,零改动 |
+| `public/sfx/grand-slam.ogg`(大满贯) | `Audio/Hit jingles/jingles_HIT11.ogg` | Kenney「Music Jingles」,Kenney Vleugels(Kenney.nl),<https://kenney.nl/assets/music-jingles> | **CC0 1.0** | 原样入库,零改动(票 #44) |
+| `public/sfx/countdown.ogg`(倒计时) | `Audio/tick_001.ogg` | Kenney「Interface Sounds」,Kenney Vleugels(Kenney.nl),<https://kenney.nl/assets/interface-sounds> | **CC0 1.0** | 原样入库,零改动(票 #44) |
+| `public/sfx/footstep.ogg`(脚步) | `Audio/footstep09.ogg` | Kenney「RPG Audio」,Kenney Vleugels(Kenney.nl),<https://kenney.nl/assets/rpg-audio> | **CC0 1.0** | 原样入库,零改动(票 #44) |
+| `public/sfx/ambient-water.ogg`(近水水声) | `water_flowing.ogg` | OGA「30 CC0 SFX loops」,rubberduck,<https://opengameart.org/content/30-cc0-sfx-loops> | **CC0 1.0** | ffmpeg `volume=10dB` 增益后 libvorbis q5 重编码(仅响度,内容零改动;票 #44) |
 
 - 甄别与下载过程留痕:`public/sfx/README.md`
-- Kenney 两个包随包 `License.txt` 均声明 CC0(署名非强制,此处按项目惯例仍予署名)
+- Kenney 三个包(Music Jingles / Interface Sounds / RPG Audio)随包 `License.txt` 均声明 CC0
+  (署名非强制,此处按项目惯例仍予署名)
+- OGA「30 CC0 SFX loops」页面整体标注 CC0(2018-07 上传)
 
 ## 场景精灵(自 #10 归并)
 

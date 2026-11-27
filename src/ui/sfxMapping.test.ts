@@ -6,7 +6,18 @@ import { sfxForEvent } from './sfxMapping'
  * 源头以目录与 THIRD-PARTY-NOTICES.md 为准)。测试进程不做磁盘读取,
  * 依赖面与既有用例保持一致。
  */
-const SFX_FILES_ON_DISK = ['bite', 'cast-splash', 'catch', 'escape', 'level-up', 'new-entry']
+const SFX_FILES_ON_DISK = [
+  'bite',
+  'cast-splash',
+  'catch',
+  'escape',
+  'level-up',
+  'new-entry',
+  'grand-slam',
+  'countdown',
+  'footstep',
+  'ambient-water',
+]
 
 /**
  * 接缝:事件 → 音效映射(纯函数,表驱动,期望值为独立字面量)。
@@ -14,17 +25,32 @@ const SFX_FILES_ON_DISK = ['bite', 'cast-splash', 'catch', 'escape', 'level-up',
  * 期望值逐行手写字面量钉死映射表:任何一行的静默漂移(换文件/漏配)都会在此暴露。
  */
 describe('sfxForEvent(接缝:事件 → 音效映射)', () => {
-  it('六个事件逐一映射到约定的音效文件标识', () => {
+  it('十个事件逐一映射到约定的音效文件标识', () => {
     expect(sfxForEvent('bite')).toBe('bite')
     expect(sfxForEvent('cast-splash')).toBe('cast-splash')
     expect(sfxForEvent('catch')).toBe('catch')
     expect(sfxForEvent('escape')).toBe('escape')
     expect(sfxForEvent('level-up')).toBe('level-up')
     expect(sfxForEvent('new-entry')).toBe('new-entry')
+    expect(sfxForEvent('grand-slam')).toBe('grand-slam')
+    expect(sfxForEvent('countdown')).toBe('countdown')
+    expect(sfxForEvent('footstep')).toBe('footstep')
+    expect(sfxForEvent('ambient-water')).toBe('ambient-water')
   })
 
   it('映射结果必须是已入库清单内的音效文件(表与素材库一致)', () => {
-    for (const event of ['bite', 'cast-splash', 'catch', 'escape', 'level-up', 'new-entry'] as const) {
+    for (const event of [
+      'bite',
+      'cast-splash',
+      'catch',
+      'escape',
+      'level-up',
+      'new-entry',
+      'grand-slam',
+      'countdown',
+      'footstep',
+      'ambient-water',
+    ] as const) {
       const id = sfxForEvent(event)
       expect(id, `事件 ${event} 的音效文件 ${id}.ogg 未入库`).not.toBeNull()
       expect(SFX_FILES_ON_DISK, `事件 ${event} 的音效文件 ${id}.ogg 未入库`).toContain(id)

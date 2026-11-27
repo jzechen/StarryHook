@@ -21,9 +21,13 @@ import { GrandSlamOverlay } from './render/grandSlam'
 import { loadSceneTextures } from './render/textures'
 import { applyViewportToCanvas } from './render/viewport'
 import { interactionPromptText, nearestInteraction, parseInteractionSpots } from './world/interactions'
+import { waterDistancePx } from './world/waterDistance'
 import { WORLD_MAPS } from './world/maps'
 import type { MapId } from './core/types'
 import { baitBadgeText } from './ui/baitBadgeText'
+import { ambientWaterLevel } from './ui/ambientWater'
+import { countdownTick } from './ui/countdownTick'
+import { advanceStepClock } from './ui/footstepClock'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
 import { countdownBadgeText } from './ui/countdownBadgeText'
@@ -222,6 +226,10 @@ async function main(): Promise<void> {
   let prevRoundActive = core.roundActive
   // 动作键按下边沿基准(票 #36):与核心同帧消费同一 holding 信号
   let prevHolding = false
+  // 音效状态基准(票 #44):脚步相位钟(跨帧积累,静止归零)与上一帧限时剩余
+  // (倒计时 tick 的跨秒边沿判定需要上一帧值,同 prevPhase/prevRoundActive 姿态)
+  let footstepAccum = 0
+  let prevTimeRemaining = core.timeRemaining
 
   // —— 交互点系统(票 #36,spec §2.1–2.3):物件层声明 → 触发判定 → 动作 ——
   // 解析交互点(钓位/摊位;note 等后续票 kind 不在本票解析范围);
@@ -312,9 +320,21 @@ async function main(): Promise<void> {
     // 过场中输入锁定(票 #35):组合根停止喂输入,核心停在 idle——
     // 核心循环不感知过场;位置冻结,存档门禁同样跳过(worldDirector 内判)
     // 面板打开锁移动(spec §2.4):方向分量清零,核心侧无需感知面板
+    // 脚步声地面真值(票 #44):取本帧核心循环前后的实际位移——被墙挡住/
+    // 锁移动/面板开时位移 ≈ 0,脚步钟视同静止(按方向键的意图不作依据)
+    const footPrevX = core.px
+    const footPrevY = core.py
     if (!director.inputLocked) {
       core.update(dt, { holding, moveX: panelOpen ? 0 : dx, moveY: panelOpen ? 0 : dy })
     }
+    // 脚步声(票 #44):移动中按步频触发、停止即停(相位钟纯函数,余量制)
+    const step = advanceStepClock(footstepAccum, dt, Math.hypot(core.px - footPrevX, core.py - footPrevY))
+    footstepAccum = step.accum
+    if (step.fire) sfx.play(sfxForEvent('footstep'))
+    // 限时倒计时(票 #44):最后 10 秒每秒一响;归零强制结算帧不新增音效
+    // (纯函数边沿判定,上一帧剩余为基准,同 prevPhase 的跨帧姿态)
+    if (countdownTick(prevTimeRemaining, core)) sfx.play(sfxForEvent('countdown'))
+    prevTimeRemaining = core.timeRemaining
 
     // 动作键按下边沿 → 意图(关闭口径优先):关面板 / 摊位开商店 / 储物箱开转移
     // 面板 / 宝箱一次性开启 / 叙事物读彩蛋;钓位蓄力抛竿不经此处——核心已按交互
@@ -368,6 +388,10 @@ async function main(): Promise<void> {
     // 世界推进(票 #35):过场状态机、出口检测、换图落位、存档门禁、场景渲染
     // (交互浮签随场景渲染一并供给,放最后——过场完成/换图在本帧内生效)
     director.update(tk.lastTime / 1000, dt, promptState)
+    // 近水水声(票 #44):距离 = 世界层纯函数(到最近水 cell 的矩形距离,
+    // 单一来源),音量随距离淡入淡出;常驻循环走 setAmbient 通道,
+    // 静音覆盖 = MuteAwareSfxPlayer.setAmbient(静音即显式停循环)
+    sfx.setAmbient(sfxForEvent('ambient-water'), ambientWaterLevel(waterDistancePx(WORLD_MAPS[director.mapId], core.px, core.py)))
     // 结算捕获 → 登记进收集册与成长(两系统无耦合,核心循环自身不感知)。
     // 顺序不可换:先读捕获前快照 → 登记 → 再读快照 → 按纯函数决策弹提示
     if (core.phase === 'caught' && prevPhase !== 'caught' && core.fish) {
@@ -385,8 +409,9 @@ async function main(): Promise<void> {
         // 演出中重复触发由演出层幂等(start 不重入),一辈子一次由下行的
         // 持久化标记保证(重开/刷新后不再触发)
         grandSlam.start()
-        // 音效接缝(票 #44):播放点 = 演出起点(本处),事件名预留
-        // 'grand-slam'(sfxMapping 注释已有扩展位);本票不配音、不接播放
+        // 音效(票 #44):大满贯 jingle 与演出同帧起播(#43 预留的接缝,
+        // #44 落表行即通,演出层零改动)
+        sfx.play(sfxForEvent('grand-slam'))
         collection.acknowledgeCompletion()
       }
       // 成长:按捕获分值登记经验(非幂等,每次都加);竿档变化 → 注入新参数
