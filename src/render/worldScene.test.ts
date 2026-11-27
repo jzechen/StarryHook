@@ -492,3 +492,45 @@ describe('持竿姿态接线(票 #49:垂钓锁朝水朝向 + 抛竿前倾,接缝
     expect(body.texture).toBe(tex.playerFrames.down[0])
   })
 })
+
+describe('脚下影子(票 #49:椭圆半透明,贴地随 bob 微缩淡,接缝 = player-shadow Graphics)', () => {
+  it('影子常驻(站立/行走/垂钓都在),钉在角色容器内地面线(不随 bob 抬起)', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const core = fakeCore('idle')
+    scene.update(core, 0, 0.016)
+    const shadow = findLabeled(sceneRoot, 'player-shadow') as Graphics
+    expect(shadow.visible).toBe(true)
+
+    // 行走至 bob 最高点:身体 y < 基准,影子在容器内的位置不动(贴地)
+    const shadowY = shadow.position.y
+    const body = findLabeled(sceneRoot, 'player-body') as unknown as Sprite
+    let sawLift = false
+    for (let f = 1; f <= 40; f++) {
+      core.px += 70 / 60
+      scene.update(core, f * 0.016, 0.016)
+      if (body.y < 7) sawLift = true
+      expect(shadow.position.y).toBe(shadowY)
+    }
+    expect(sawLift).toBe(true)
+  })
+
+  it('影子几何随 bob 缩淡:行走中椭圆半宽随抬升收窄(指令重画,半径变化)', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const core = fakeCore('idle')
+    // 静止:影子按基准几何绘制
+    scene.update(core, 0, 0.016)
+    const shadow = findLabeled(sceneRoot, 'player-shadow') as Graphics
+    const restInstructions = shadow.context.instructions.length
+    expect(restInstructions).toBeGreaterThan(0)
+    // 行走中仍每帧重画且不累积(指令数稳定 = clear → 重画)
+    for (let f = 1; f <= 30; f++) {
+      core.px += 70 / 60
+      scene.update(core, f * 0.016, 0.016)
+    }
+    expect(shadow.context.instructions.length).toBe(restInstructions)
+  })
+})

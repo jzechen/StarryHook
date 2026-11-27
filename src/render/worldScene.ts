@@ -1,5 +1,5 @@
 import { Application, Container, Graphics, Sprite, Text, TilingSprite } from 'pixi.js'
-import { advanceWalkPhase, breathPose, castLeanPose, facingToward, walkBobOffset } from './characterMotion'
+import { advanceWalkPhase, breathPose, castLeanPose, facingToward, shadowPose, walkBobOffset } from './characterMotion'
 import { computeCamera } from './camera'
 import { AREA_PALETTES } from './areaPalette'
 import { DEFAULT_AREA } from '../core/waterAreas'
@@ -131,6 +131,8 @@ export class WorldScene {
   private line = new Graphics()
   private chargeBar = new Graphics()
   private player = new Container()
+  /** 脚下影子(票 #49):贴地椭圆,随 bob 微缩淡;画在角色精灵之下 */
+  private shadow = new Graphics()
   private playerSprite: Sprite
   private bobberSprite = new Container()
   private bang: Text
@@ -272,7 +274,11 @@ export class WorldScene {
     this.playerSprite.anchor.set(0.5, 1)
     this.playerSprite.position.set(0, PLAYER_FOOT_OFFSET)
     this.playerSprite.label = 'player-body'
-    this.player.addChild(this.playerSprite)
+    // 脚下影子(票 #49):先画影子再画角色(精灵压住影子后半),位置 = 角色
+    // 容器内的地面线(脚底处),不随 bob 抬起——人抬起时影子留在地面读作离地
+    this.shadow.label = 'player-shadow'
+    this.shadow.position.set(0, PLAYER_FOOT_OFFSET)
+    this.player.addChild(this.shadow, this.playerSprite)
 
     app.stage.addChild(this.world, this.ui)
     this.world.addChild(
@@ -477,6 +483,14 @@ export class WorldScene {
     this.playerSprite.scale.set(1, pose.scaleY)
     this.playerSprite.rotation = pose.rotation
     this.player.position.set(Math.round(core.px), Math.round(core.py))
+
+    // 脚下影子(票 #49):贴地不随容器内位移,几何随 bob 抬升微缩淡
+    // (shadowPose 单源;呼吸是脚不动的纵伸,不算离地,影子不动)
+    const sp = shadowPose(walking ? -walkBobOffset(this.walkPhase) : 0)
+    this.shadow
+      .clear()
+      .ellipse(0, 0, sp.rx, sp.ry)
+      .fill({ color: 0x0b1f12, alpha: sp.alpha })
 
     const showBobber = core.phase !== 'idle' && core.phase !== 'charging'
     let bx = tx
