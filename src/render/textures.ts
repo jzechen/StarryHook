@@ -44,7 +44,11 @@ export type WaveEdge = 'top' | 'right' | 'bottom' | 'left'
 export interface SceneTextures {
   /** 池水流动帧(按周期轮换 = 流水动画) */
   waterFrames: Texture[]
-  /** 草地岸块:全屏平铺 */
+  /**
+   * OGA 草块(press 暗化派生):pondScene 时代的整屏基底;世界场景(票 #34)
+   * 改用 townTiles[0] Kenney 平草后暂无消费方,素材与切片保留(派生管线不删,
+   * 票 #42 主题化/调色复检可能复用)。
+   */
   grassTile: Texture
   /** 岸线波纹:每条边一组泡沫动画帧 */
   waveFrames: Record<WaveEdge, Texture[]>
