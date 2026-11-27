@@ -1,11 +1,12 @@
 import { Application, Container, Graphics, Sprite, Text, TilingSprite } from 'pixi.js'
-import { advanceWalkPhase, breathPose, walkBobOffset } from './characterMotion'
+import { advanceWalkPhase, breathPose, castLeanPose, facingToward, walkBobOffset } from './characterMotion'
 import { computeCamera } from './camera'
 import { AREA_PALETTES } from './areaPalette'
 import { DEFAULT_AREA } from '../core/waterAreas'
 import type { CoreLoop } from '../core/coreLoop'
-import type { LoopPhase, WaterAreaId } from '../core/types'
+import type { Facing, LoopPhase, WaterAreaId } from '../core/types'
 import { BASE_GROUND_GID, waterFillsBounds, type WorldMapData } from '../world/worldMap'
+import { waterAimPoint } from '../world/waterDistance'
 import { InteractionPrompt } from './interactionPrompt'
 import { ScreenShake, shakeTrigger } from './screenShake'
 import { SplashLayer } from './splash'
@@ -154,6 +155,8 @@ export class WorldScene {
   // —— 角色动画状态(朝向由核心持有,票 #35;行走相位/bob/呼吸曲线在 characterMotion,票 #49) ——
   /** 行走相位(按实际位移推进,票 #49);静止时归零回到待机帧 */
   private walkPhase = 0
+  /** 持竿朝向(票 #49):垂钓中锁「朝水」;回 idle 释放,渲染回核心朝向 */
+  private rodFacing: Facing | null = null
   private prevPx = -1
   private prevPy = -1
 
@@ -382,13 +385,32 @@ export class WorldScene {
     this.world.position.set(Math.round(-cam.x + shake.x), Math.round(-cam.y + shake.y))
     this.ui.position.set(shake.x, shake.y)
 
+    // 浮标落点(世界像素;钳在水域内):抛竿点向水域中心,远近由蓄力决定。
+    // 提到阶段切换之前计算——抛竿沿的「朝水朝向」要用同一落点(票 #49)
+    const wr = this.map.waterRectPx
+    const ox = core.castX
+    const oy = core.castY
+    const cx = wr.x + wr.width / 2
+    const cy = wr.y + wr.height / 2
+    const k = 0.3 + 0.5 * core.bobberDist
+    const tx = Math.max(wr.x + BOBBER_INSET, Math.min(wr.x + wr.width - BOBBER_INSET, ox + (cx - ox) * k))
+    const ty = Math.max(wr.y + BOBBER_INSET, Math.min(wr.y + wr.height - BOBBER_INSET, oy + (cy - oy) * k))
+
     // 阶段切换检测(渲染侧动画计时)+ juice 触发沿(票 #43):shake 仅
     // 咬钩/捕获两边沿(screenShake.shakeTrigger 单源钉死),水花只随捕获沿
-    // 在鱼漂位置起(spec §5.2 唯二触发点,其余相位零演出)
+    // 在鱼漂位置起(spec §5.2 唯二触发点,其余相位零演出)。
+    // 持竿朝向沿(票 #49):蓄力沿 = 朝最近水面(蓄力时尚无浮标落点);抛竿沿 =
+    // 朝浮标落点;回 idle 释放(垂钓全程锁定,结算相位不翻回行进朝向)
     let caughtEdge = false
     if (core.phase !== this.prevPhase) {
       if (core.phase === 'waiting') this.castT = 0
       if (core.phase === 'bite') this.biteT = 0
+      if (core.phase === 'charging') {
+        const aim = waterAimPoint(this.map, core.px, core.py)
+        if (aim) this.rodFacing = facingToward(aim.x - core.px, aim.y - core.py)
+      }
+      if (core.phase === 'waiting') this.rodFacing = facingToward(tx - core.px, ty - core.py)
+      if (core.phase === 'idle') this.rodFacing = null
       const shakeKind = shakeTrigger(this.prevPhase, core.phase)
       if (shakeKind) this.shake.trigger(shakeKind)
       caughtEdge = core.phase === 'caught'
@@ -431,10 +453,10 @@ export class WorldScene {
       chest.sprite.texture = this.chestIsOpen(chest.chestId) ? this.textures.chestFrames.open : this.textures.chestFrames.closed
     }
 
-    // 角色朝向与行走:朝向由核心持有(票 #35:过场保持行进方向 + 存档口径
-    // 同源,渲染侧不再自推导)。行走相位按**实际位移**推进(票 #49:像素驱动
-    // = 步频帧时序对齐移速,静止/被挡自动归零回待机);bob/呼吸曲线出整数
-    // 像素姿态,应用到精灵(锚在脚底:呼吸纵伸向上、bob 抬起离地)
+    // 角色朝向与行走:朝向由核心持有(票 #35),垂钓中覆盖为持竿朝向(票 #49)。
+    // 行走相位按**实际位移**推进(票 #49:像素驱动 = 步频帧时序对齐移速,
+    // 静止/被挡自动归零回待机);bob/呼吸/前倾曲线出整数像素姿态,应用到
+    // 精灵(锚在脚底:呼吸纵伸向上、bob 抬起离地、前倾绕脚底旋转)
     let movedPx = 0
     if (this.prevPx >= 0) movedPx = Math.hypot(core.px - this.prevPx, core.py - this.prevPy)
     this.prevPx = core.px
@@ -442,28 +464,20 @@ export class WorldScene {
     this.walkPhase = advanceWalkPhase(this.walkPhase, movedPx)
     const walking = this.walkPhase > 0
     const frame = walking ? Math.floor(this.walkPhase) % PLAYER_FRAME_COUNT : 0
-    // 三态观感(票 #49):移动 = bob;静止 idle = 呼吸;垂钓/结算 = 定身(持竿
-    // 朝向与前倾在下方 rod 相位分支覆盖)
+    // 三态观感(票 #49):移动 = bob;静止 idle = 呼吸;垂钓/结算 = 持竿定身
+    // (朝水朝向 + 抛竿前倾,casterT 与浮标飞行同源)
+    const facing = this.rodFacing ?? core.facing
     const pose = walking
       ? { dy: walkBobOffset(this.walkPhase), scaleY: 1, rotation: 0 }
       : core.phase === 'idle'
         ? breathPose(t)
-        : { dy: 0, scaleY: 1, rotation: 0 }
-    this.playerSprite.texture = this.textures.playerFrames[core.facing][frame]!
+        : castLeanPose(this.castT, facing)
+    this.playerSprite.texture = this.textures.playerFrames[facing][frame]!
     this.playerSprite.position.y = PLAYER_FOOT_OFFSET + pose.dy
     this.playerSprite.scale.set(1, pose.scaleY)
     this.playerSprite.rotation = pose.rotation
     this.player.position.set(Math.round(core.px), Math.round(core.py))
 
-    // 浮标落点:从抛竿点向水域中心,远近由蓄力决定(世界像素;钳在水域内)
-    const wr = this.map.waterRectPx
-    const ox = core.castX
-    const oy = core.castY
-    const cx = wr.x + wr.width / 2
-    const cy = wr.y + wr.height / 2
-    const k = 0.3 + 0.5 * core.bobberDist
-    const tx = Math.max(wr.x + BOBBER_INSET, Math.min(wr.x + wr.width - BOBBER_INSET, ox + (cx - ox) * k))
-    const ty = Math.max(wr.y + BOBBER_INSET, Math.min(wr.y + wr.height - BOBBER_INSET, oy + (cy - oy) * k))
     const showBobber = core.phase !== 'idle' && core.phase !== 'charging'
     let bx = tx
     let by = ty

@@ -405,3 +405,90 @@ describe('人物程序化细节接线(票 #49:行走 bob + 待机呼吸,接缝 =
     for (const s of walking.scaleYs) expect(s).toBe(1)
   })
 })
+
+describe('持竿姿态接线(票 #49:垂钓锁朝水朝向 + 抛竿前倾,接缝 = player-body 精灵)', () => {
+  /** 村舍池水域矩形中心(玩家在池上方岸边垂钓 → 应朝下) */
+  function pondCenter(): { x: number; y: number } {
+    const wr = village.waterRectPx
+    return { x: wr.x + wr.width / 2, y: wr.y + wr.height / 2 }
+  }
+
+  it('垂钓中渲染朝向锁向水面:核心朝向朝上,渲染帧取「朝水」行的帧 0', () => {
+    const { app, world } = fakeApp()
+    const tex = fakeTextures()
+    const scene = new WorldScene(app, tex, village)
+    const sceneRoot = world()
+    const core = fakeCore('waiting')
+    core.facing = 'up' // 走进钓位时的行进朝向
+    // 玩家站在水域上方岸边:瞄准点在下方 → 渲染应朝下(与核心朝向不同)
+    const c = pondCenter()
+    core.px = c.x
+    core.py = c.y - 40
+    core.castX = core.px
+    core.castY = core.py
+    scene.update(core, 0, 0.016)
+    const body = findLabeled(sceneRoot, 'player-body') as unknown as Sprite
+    expect(body.texture).toBe(tex.playerFrames.down[0])
+  })
+
+  it('idle 不锁朝向:同一站位渲染回核心朝向', () => {
+    const { app, world } = fakeApp()
+    const tex = fakeTextures()
+    const scene = new WorldScene(app, tex, village)
+    const sceneRoot = world()
+    const core = fakeCore('idle')
+    core.facing = 'up'
+    scene.update(core, 0, 0.016)
+    const body = findLabeled(sceneRoot, 'player-body') as unknown as Sprite
+    expect(body.texture).toBe(tex.playerFrames.up[0])
+  })
+
+  it('抛竿前倾:朝右垂钓时抛竿中段 rotation 为正(约 0.12rad),落水后回正', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const core = fakeCore('charging')
+    const c = pondCenter()
+    core.px = c.x - 40 // 池西侧 → 朝水 = 朝右
+    core.py = c.y
+    core.facing = 'left'
+    core.castX = core.px
+    core.castY = core.py
+    scene.update(core, 0, 0.016)
+    const body = findLabeled(sceneRoot, 'player-body') as unknown as Sprite
+    // charging 已锁朝水(朝右)
+    expect(body.rotation).toBe(0)
+
+    core.phase = 'waiting' // 抛竿沿:castT 归零起飞
+    scene.update(core, 0.016, 0.016)
+    // 前倾中段采样(峰值在 castT=0.5 ≈ 0.11s 处)
+    let peak = 0
+    for (let f = 2; f <= 14; f++) {
+      scene.update(core, f * 0.016, 0.016)
+      peak = Math.max(peak, body.rotation)
+    }
+    expect(peak).toBeGreaterThan(0.05)
+    // 0.22s 飞行结束:回正
+    for (let f = 15; f < 20; f++) scene.update(core, f * 0.016, 0.016)
+    expect(body.rotation).toBe(0)
+  })
+
+  it('结算相位(caught/escaped)保持持竿朝向,不中途翻回行进朝向', () => {
+    const { app, world } = fakeApp()
+    const tex = fakeTextures()
+    const scene = new WorldScene(app, tex, village)
+    const sceneRoot = world()
+    const core = fakeCore('waiting')
+    const c = pondCenter()
+    core.px = c.x
+    core.py = c.y - 40
+    core.facing = 'left'
+    core.castX = core.px
+    core.castY = core.py
+    scene.update(core, 0, 0.016)
+    core.phase = 'caught'
+    scene.update(core, 0.016, 0.016)
+    const body = findLabeled(sceneRoot, 'player-body') as unknown as Sprite
+    expect(body.texture).toBe(tex.playerFrames.down[0])
+  })
+})

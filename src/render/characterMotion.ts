@@ -85,7 +85,8 @@ export const CAST_LEAN_RAD = 0.12
  * 重心前压(1px 下沉)。castT ≥ 1(已落水)完全恢复立直。
  */
 export function castLeanPose(castT: number, facing: Facing): CharacterPose {
-  const lean = Math.sin(Math.PI * Math.min(1, Math.max(0, castT)))
+  const c = Math.min(1, Math.max(0, castT))
+  const lean = c >= 1 ? 0 : Math.sin(Math.PI * c)
   if (facing === 'left') return { dy: 0, scaleY: 1, rotation: -lean * CAST_LEAN_RAD }
   if (facing === 'right') return { dy: 0, scaleY: 1, rotation: lean * CAST_LEAN_RAD }
   return { dy: Math.round(lean), scaleY: 1, rotation: 0 }
