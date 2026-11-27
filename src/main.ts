@@ -52,6 +52,7 @@ import { StoragePanel } from './ui/storagePanel'
 import { transferBetween } from './ui/storageWiring'
 import { stallPressAction } from './ui/interactionPolicy'
 import { ToastLayer } from './ui/toastLayer'
+import { createTouchPrototype } from './prototype/touch'
 
 /** 浏览器 localStorage 适配器:读写两侧都吞异常(隐私模式/配额),游戏不受影响 */
 function localStorageKv(): KvStorage {
@@ -295,12 +296,22 @@ async function main(): Promise<void> {
     return nearestTarget?.kind === 'spot' ? { kind: 'spot', spotMul: nearestTarget.spotMul } : null
   })
 
+  // —— 触控原型(wayfinder #63,仅 prototype/touch-schemes 分支,main 不含)——
+  // ?prototype=touch&variant=a|b|c:三套触控方案挂在真实游戏上试玩选型
+  // (手感是唯一裁决标准,浮动条/[ ]键切换);无该参数 = null,输入路径逐位不变。
+  const protoVariant = params.get('prototype') === 'touch' ? (params.get('variant') ?? 'a') : null
+  const touchProto = protoVariant
+    ? createTouchPrototype({ canvas: app.canvas, core, director, variant: protoVariant, panelOpen: anyPanelOpen })
+    : null
+
   // —— 输入:鼠标/触摸 + 键盘(动作键 = E/空格/按住鼠标三等效,WASD/方向键 = 移动,ESC = 关面板) ——
   const keys = new Set<string>()
   let mouseHold = false
 
   app.canvas.addEventListener('pointerdown', e => {
     e.preventDefault()
+    // 触控原型接管期间,画布按下不再当作动作键(mouseHold)——方案各自定义语义
+    if (touchProto?.pointerDown(e)) return
     mouseHold = true
   })
   window.addEventListener('pointerup', () => {
@@ -343,9 +354,16 @@ async function main(): Promise<void> {
       dy = dy / len
     }
 
-    // 动作键(票 #36 spec §2.2)= E ∨ 空格 ∨ 鼠标/触摸按住,同语义三等效;
-    // 按下边沿与核心同帧同源(同一 holding 信号),摊位开面板/关面板按意图策略走
-    const holding = mouseHold || keys.has('Space') || keys.has('KeyE')
+    // 触控原型(wayfinder #63):方案供给方向与动作键,方向非零时覆盖键盘合成
+    const touch = touchProto?.sample() ?? null
+    if (touch && (touch.dx !== 0 || touch.dy !== 0)) {
+      dx = touch.dx
+      dy = touch.dy
+    }
+
+    // 动作键(票 #36 spec §2.2)= E ∨ 空格 ∨ 鼠标/触摸按住 ∨ 触控原型动作钮,
+    // 同语义等效;按下边沿与核心同帧同源(同一 holding 信号),摊位开面板/关面板按意图策略走
+    const holding = mouseHold || keys.has('Space') || keys.has('KeyE') || (touch?.holding ?? false)
     const pressed = holding && !prevHolding
     prevHolding = holding
     // 范围内最近交互点(本帧单源);面板打开时世界交互全歇(浮签全隐、无动作)
