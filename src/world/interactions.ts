@@ -19,7 +19,7 @@ import type { WorldMapObject } from './worldMap'
  */
 
 /** 本票落地的交互 kind(spec §2.1 全集的子集;后续票追加) */
-export type InteractionKind = 'spot' | 'stall' | 'sign' | 'note' | 'storage' | 'chest'
+export type InteractionKind = 'spot' | 'stall' | 'sign' | 'note' | 'storage' | 'chest' | 'board'
 
 /** 默认触发半径(tile;spec §2.1「统一 1.5 tile」) */
 export const DEFAULT_RADIUS_TILES = 1.5
@@ -63,6 +63,7 @@ const ACTION_LABELS: Readonly<Record<InteractionKind, string>> = {
   note: '查看',
   storage: '储物箱',
   chest: '开启',
+  board: '委托',
 }
 
 /** 交互点动作短词(未知 kind = 空串:浮签不渲染无主文案) */
@@ -125,7 +126,8 @@ function toInteractionSpot(o: WorldMapObject, tileWidth: number): InteractionSpo
     o.type !== 'sign' &&
     o.type !== 'note' &&
     o.type !== 'storage' &&
-    o.type !== 'chest'
+    o.type !== 'chest' &&
+    o.type !== 'board'
   ) {
     return null
   }

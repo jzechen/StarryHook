@@ -118,7 +118,7 @@
          面板宽度按 #47 几何清单逐面板重定(商店 276→336,其余同边厚补偿 +60)。
          标题条 = 内嵌木牌(panelInset_brown fill,见 .panel-head),不再通栏负外边距;
          border-image 不吃 border-radius,圆角由素材自带(radius 置 0) */
-      #mode-panel, #shop-panel, #backpack-panel, #storage-panel, #collection-panel {
+      #mode-panel, #shop-panel, #backpack-panel, #storage-panel, #collection-panel, #order-panel {
         pointer-events: auto; position: absolute; top: 60px; right: 16px;
         overflow: hidden;
         background: var(--ui-surface);
@@ -226,6 +226,16 @@
       #storage-hint { margin-top: 10px; opacity: .7; }
       #collection-panel { width: 352px; }
       #collection-panel[hidden] { display: none; }
+      /* 公告板面板(票 #55,spec 内容扩充「公告板与订单」):河谷公告板交互点 E 开,
+         木框小面板(壳同族);当前订单一行(鱼种 × 品质门槛 × 数量 + 酬金与持有进度)
+         + 交付钮,交付成功面板内直接显示新单(队列制同时仅一单);
+         行样式沿用 .shop-item 同族,行内拒绝文案承载交付反馈(不用 alert) */
+      #order-panel { width: 304px; }
+      #order-panel[hidden] { display: none; }
+      #order-current { margin-top: 10px; }
+      #order-body { margin-top: 6px; display: grid; gap: 6px; }
+      #order-feedback { margin-top: 8px; opacity: .95; }
+      #order-feedback[hidden] { display: none; }
       #collection-progress { font-size: 24px; font-weight: normal; color: var(--ui-canvas-accent); }
       #collection-close { margin-left: auto; }
       #collection-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
@@ -382,6 +392,20 @@
           </div>
         </div>
         <div id="storage-hint">点按物品,整堆转移到对侧</div>
+      </div>
+      <!-- 公告板面板(票 #55,spec 内容扩充「公告板与订单」):河谷公告板交互点 E 开;
+           当前订单(鱼种 × 品质门槛 × 数量)+ 交付,酬金 = 分值 × 数量 × 1.5 入钱包,
+           交付成功随即出新单(队列制同时仅一单);缺鱼/品质不足行内分列拒绝 -->
+      <div id="order-panel" hidden>
+        <div class="panel-head">
+          <span class="panel-title">公告板</span>
+          <button id="order-close" type="button" class="pill" aria-label="关闭公告板">✕ 关闭</button>
+        </div>
+        <div id="order-current">
+          <div class="shop-section-title">当前委托</div>
+          <div id="order-body"></div><!-- 行由 OrderPanel 依公告板当前订单生成:鱼种 × 品质门槛 × 数量 + 酬金与持有进度 + 交付钮 -->
+        </div>
+        <div id="order-feedback" hidden></div><!-- 交付反馈:面板内行内提示,不用 alert -->
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

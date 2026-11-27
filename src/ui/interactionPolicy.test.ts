@@ -42,4 +42,12 @@ describe('动作键意图(接缝:stallPressAction,票 #36)', () => {
     expect(stallPressAction(true, 'sign')).toBe('close-panel')
     expect(stallPressAction(true, 'note')).toBe('close-panel')
   })
+
+  it('无面板、公告板在前:按下 = 开公告板面板(票 #55,查看订单/交付)', () => {
+    expect(stallPressAction(false, 'board')).toBe('open-board')
+  })
+
+  it('面板打开时公告板同样让位关面板(关闭口径优先,票 #55 沿用 #36 优先级)', () => {
+    expect(stallPressAction(true, 'board')).toBe('close-panel')
+  })
 })
