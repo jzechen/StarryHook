@@ -17,7 +17,7 @@
 | `farmer.png` | 派生自 Kenney「Tiny Farm」v1.0 的 `Tilemap/tilemap_packed.png` tile 0109(原件存 `oga-src/tiny-farm-tilemap_packed.png`),<https://kenney.nl/assets/tiny-farm> | CC0 | 摊位农夫立绘(票 #49,#36 暖色 tint 替身退役):见下方派生规则;生成器 `scripts/generate-farmer-sprite.mjs` 留档可复现 |
 | `shoreline-waves.png` | 派生自 OGA「16x16 Shoreline Wave Animation Tiles」,作者 Zabin,<https://opengameart.org/content/16x16-shoreline-wave-animation-tiles> | CC0 | 见下方派生规则 |
 | `grass.png` | 派生自 OGA「16x16 tileset: water, grass and sand」,作者 Syrsly,<https://opengameart.org/content/16x16-tileset-water-grass-and-sand> | CC0 | 见下方派生规则 |
-| `character.png` | 派生自 OGA「Character sprite + walk animation」,作者 Flixberry Entertainment,<https://opengameart.org/content/character-sprite-walk-animation> | CC0 | 见下方派生规则 |
+| `character.png` | 派生自 OGA「Character sprite + walk animation」,作者 Flixberry Entertainment,<https://opengameart.org/content/character-sprite-walk-animation> | CC0 | 见下方派生规则;生成器 `scripts/generate-character-sprite.mjs` 留档可复现 |
 | `scene-atlas.png` | 自绘浮标图集 | 无第三方版权(等效 CC0) | 由 `scripts/generate-bobber-atlas.mjs` 生成 |
 | `fish-atlas.png` | 自绘鱼精灵图集(5 种鱼 × 2 帧,32×80) | 无第三方版权(等效 CC0) | 由 `scripts/generate-fish-atlas.mjs` 手绘像素矩阵生成;行序契约见 `src/render/fishAtlas.ts` |
 | `oga-src/` | 上列 OGA 素材的原始下载件 + Kenney「Tiny Farm」packed 表(2026-11-27 经会话 cookie 下载法取包,管线留痕见 `public/sfx/README.md` 下载过程节) | CC0 | 原样保存,作派生来源与溯源凭据 |
@@ -31,8 +31,12 @@
 - **grass.png**(16×16)取原件 (1,0) 处纯草块,RGB 乘 0.78 压暗
   (原件偏亮的荧光绿全屏平铺过于刺眼,且不利于浅色 HUD 文本可读性;alpha 不动)。
 - **character.png**(64×64 = 4 向 × 4 帧,行序 下/上/左/右)
-  原件 ch003.png 每帧 32×32,按 2×2 众数(出现最多的像素色,全透明块才判透明)
-  降采样为 16×16,保留描边与五官的主要色块;帧序与行序沿用原件。
+  原件 ch003.png 每帧 32×32,**逐帧独立**按 2×2 众数降采样为 16×16:众数只在
+  不透明像素里计(块内全透明才判透明),平局取扫描序先见者——细腿/摆臂在
+  2×2 块内是少数派,混入透明像素一起计众数会被投没(旧产物 4 帧全同、行走
+  换帧从未生效的根源;票 #49 review 重派生)。帧序与行序沿用原件。
+  生成器 `scripts/generate-character-sprite.mjs` 留档可复现;产物契约
+  (每向相邻帧像素差 > 0 + 重派生逐像素一致)由 `scripts/character-sprite.test.mjs` 锁定。
 - **farmer.png**(16×16,票 #49)取 Tiny Farm packed 表 tile 0109(草帽农夫,朝下)。
   Kenney 角色件在 packed 表内以深梅色实底(rgb 63,38,49)承托、表级透明索引 0 只出现在
   tile 四角——直接切片会带矩形底。派生两步:①实底色与透明索引全部键出,得角色剪影

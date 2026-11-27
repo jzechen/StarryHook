@@ -11,7 +11,8 @@ import { FISH_FRAME_COUNT, FISH_FRAME_SIZE, FISH_SHAPE_ROW } from './fishAtlas'
  *                       8 帧(品红键色与泥土像素置透明,只留白色泡沫,旋转出四边贴图)
  * - grass.png           派生自 OGA「16x16 tileset: water, grass and sand」(1,0) 纯草块,整体压暗
  * - character.png       派生自 OGA「Character sprite + walk animation」ch003.png
- *                       (32x32 四向行走帧众数降采样为 16x16)
+ *                       (32x32 四向行走帧逐帧 2x2 不透明众数降采样为 16x16,
+ *                       生成器 scripts/generate-character-sprite.mjs)
  * - tiny-town.png       Kenney「Tiny Town」packed 表(原样,票 #34):12 列 × 11 行,
  *                       行优先编号 tile_N = packed (N÷12, N%12)(调研留痕:票 #26)
  * - tiny-dungeon.png    Kenney「Tiny Dungeon」packed 表(原样,票 #41):同 12 列 × 11 行
