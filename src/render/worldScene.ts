@@ -1,4 +1,5 @@
 import { Application, Container, Graphics, Sprite, Text, TilingSprite } from 'pixi.js'
+import { advanceWalkPhase, breathPose, walkBobOffset } from './characterMotion'
 import { computeCamera } from './camera'
 import { AREA_PALETTES } from './areaPalette'
 import { DEFAULT_AREA } from '../core/waterAreas'
@@ -35,12 +36,8 @@ import { FISH_FRAME_COUNT, PLAYER_FRAME_COUNT, TILE, WAVE_FRAME_COUNT, WATER_FRA
 const WATER_FRAME_PERIOD = 0.15
 /** 岸线波纹帧轮换周期(秒)——8 帧一轮 2.4s,浪涌节奏(沿 pondScene) */
 const WAVE_FRAME_PERIOD = 0.3
-/** 行走动画帧周期(秒)——4 帧一轮(沿 pondScene) */
-const WALK_FRAME_PERIOD = 0.14
 /** 小游戏鱼精灵帧周期(秒)——2 帧交替(沿 pondScene) */
 const FISH_FRAME_PERIOD = 0.2
-/** 判定「在移动」的每帧最小位移(逻辑像素) */
-const MOVE_EPS = 0.1
 /** 角色脚底相对核心坐标点(px/py)的偏移:贴图底边落在脚部点 */
 const PLAYER_FOOT_OFFSET = 7
 /** 波纹贴片土侧宽度:泡沫带起点距水边的像素数(沿 pondScene) */
@@ -154,9 +151,9 @@ export class WorldScene {
   private biteT = 0
   /** 最近一次应用的水域色调(变化才重设 tint) */
   private renderedArea: WaterAreaId | null = null
-  // —— 角色动画状态(朝向由核心持有,票 #35;渲染侧只管行走计时) ——
-  /** 行走动画计时;静止时归零回到待机帧 */
-  private walkT = 0
+  // —— 角色动画状态(朝向由核心持有,票 #35;行走相位/bob/呼吸曲线在 characterMotion,票 #49) ——
+  /** 行走相位(按实际位移推进,票 #49);静止时归零回到待机帧 */
+  private walkPhase = 0
   private prevPx = -1
   private prevPy = -1
 
@@ -266,10 +263,12 @@ export class WorldScene {
     this.mgFishSprite.anchor.set(0.5)
     this.mgFishSprite.visible = false
 
-    // 角色:脚底锚在核心坐标点下方(沿 pondScene)
+    // 角色:脚底锚在核心坐标点下方(沿 pondScene);程序化姿态(bob/呼吸/
+    // 前倾)直接应用到该精灵,label 供场景树测试定位(票 #49)
     this.playerSprite = new Sprite(textures.playerFrames.down[0]!)
     this.playerSprite.anchor.set(0.5, 1)
     this.playerSprite.position.set(0, PLAYER_FOOT_OFFSET)
+    this.playerSprite.label = 'player-body'
     this.player.addChild(this.playerSprite)
 
     app.stage.addChild(this.world, this.ui)
@@ -433,17 +432,27 @@ export class WorldScene {
     }
 
     // 角色朝向与行走:朝向由核心持有(票 #35:过场保持行进方向 + 存档口径
-    // 同源,渲染侧不再自推导);渲染侧只按位移推进行走动画计时
-    if (this.prevPx >= 0) {
-      const dx = core.px - this.prevPx
-      const dy = core.py - this.prevPy
-      if (Math.hypot(dx, dy) > MOVE_EPS) this.walkT += dt
-      else this.walkT = 0
-    }
+    // 同源,渲染侧不再自推导)。行走相位按**实际位移**推进(票 #49:像素驱动
+    // = 步频帧时序对齐移速,静止/被挡自动归零回待机);bob/呼吸曲线出整数
+    // 像素姿态,应用到精灵(锚在脚底:呼吸纵伸向上、bob 抬起离地)
+    let movedPx = 0
+    if (this.prevPx >= 0) movedPx = Math.hypot(core.px - this.prevPx, core.py - this.prevPy)
     this.prevPx = core.px
     this.prevPy = core.py
-    this.playerSprite.texture =
-      this.textures.playerFrames[core.facing][Math.floor(this.walkT / WALK_FRAME_PERIOD) % PLAYER_FRAME_COUNT]!
+    this.walkPhase = advanceWalkPhase(this.walkPhase, movedPx)
+    const walking = this.walkPhase > 0
+    const frame = walking ? Math.floor(this.walkPhase) % PLAYER_FRAME_COUNT : 0
+    // 三态观感(票 #49):移动 = bob;静止 idle = 呼吸;垂钓/结算 = 定身(持竿
+    // 朝向与前倾在下方 rod 相位分支覆盖)
+    const pose = walking
+      ? { dy: walkBobOffset(this.walkPhase), scaleY: 1, rotation: 0 }
+      : core.phase === 'idle'
+        ? breathPose(t)
+        : { dy: 0, scaleY: 1, rotation: 0 }
+    this.playerSprite.texture = this.textures.playerFrames[core.facing][frame]!
+    this.playerSprite.position.y = PLAYER_FOOT_OFFSET + pose.dy
+    this.playerSprite.scale.set(1, pose.scaleY)
+    this.playerSprite.rotation = pose.rotation
     this.player.position.set(Math.round(core.px), Math.round(core.py))
 
     // 浮标落点:从抛竿点向水域中心,远近由蓄力决定(世界像素;钳在水域内)

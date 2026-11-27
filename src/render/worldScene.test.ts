@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Texture } from 'pixi.js'
+import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js'
 import { describe, expect, it, vi } from 'vitest'
 import type { CoreLoop } from '../core/coreLoop'
 import type { LoopPhase } from '../core/types'
@@ -341,5 +341,67 @@ describe('进度流光(票 #43:≥70% 启动、回落即停,渲染层接线)', (
     const at = instructionsAt(0.7)
     expect(near).toBe(below)
     expect(at).toBeGreaterThan(below)
+  })
+})
+
+describe('人物程序化细节接线(票 #49:行走 bob + 待机呼吸,接缝 = player-body 精灵)', () => {
+  /** 60fps 驱动 n 帧(每帧 dt=1/60,t 自增);opts.move = 每帧东移 70px/s × dt */
+  function drive(
+    worldRoot: Container,
+    scene: WorldScene,
+    core: CoreLoop,
+    n: number,
+    opts: { move?: boolean; t0?: number } = {},
+  ): { body: Sprite; ys: number[]; textures: Texture[]; scaleYs: number[] } {
+    const body = findLabeled(worldRoot, 'player-body') as unknown as Sprite
+    const ys: number[] = []
+    const textures: Texture[] = []
+    const scaleYs: number[] = []
+    const t0 = opts.t0 ?? 0
+    for (let f = 0; f < n; f++) {
+      if (opts.move) core.px += 70 / 60
+      scene.update(core, t0 + f / 60, 1 / 60)
+      ys.push(body.y)
+      textures.push(body.texture)
+      scaleYs.push(body.scale.y)
+    }
+    return { body, ys, textures, scaleYs }
+  }
+
+  it('行走 bob:匀速行走时脚部点竖直起伏(最高抬 2px、着地回基准),朝向帧照常轮换', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const core = fakeCore('idle')
+    const baseline = 7 // PLAYER_FOOT_OFFSET:静止时贴图底边相对脚部点的偏移
+    const { ys, textures } = drive(sceneRoot, scene, core, 40, { move: true })
+    expect(Math.max(...ys)).toBe(baseline)
+    expect(Math.min(...ys)).toBe(baseline - 2)
+    expect(new Set(textures).size).toBe(4) // 4 帧都出现(相位按位移推进)
+  })
+
+  it('静止不 bob(位移 0 时 y 只在基准/呼吸微抬两档);呼吸 1.6s 周期内两态可辨', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const core = fakeCore('idle')
+    const idle = drive(sceneRoot, scene, core, 120, { t0: 0 })
+    // 呼吸两态:放松(基准 7)与吸气(整像素上抬 1 → 6);整周期回到放松
+    expect(new Set(idle.ys).size).toBeLessThanOrEqual(2)
+    expect(idle.ys[0]).toBe(7)
+    expect(Math.min(...idle.ys)).toBe(6)
+    expect(idle.ys[96]).toBe(7) // 96 帧 = 1.6s 整周期
+    expect(idle.scaleYs[0]).toBe(1)
+    expect(Math.max(...idle.scaleYs)).toBeCloseTo(1.06, 10)
+    expect(idle.scaleYs[96]).toBeCloseTo(1, 4)
+  })
+
+  it('移动中无呼吸(三态可辨:移动 = bob,静止 = 呼吸)', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const core = fakeCore('idle')
+    const walking = drive(sceneRoot, scene, core, 40, { move: true })
+    for (const s of walking.scaleYs) expect(s).toBe(1)
   })
 })
