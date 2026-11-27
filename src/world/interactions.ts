@@ -1,3 +1,4 @@
+import { FISH } from '../core/fishCatalog'
 import type { WaterAreaId } from '../core/types'
 import { WATER_AREAS } from '../core/waterAreas'
 import type { WorldMapObject } from './worldMap'
@@ -9,6 +10,8 @@ import type { WorldMapObject } from './worldMap'
  * 触发判定为纯函数:玩家脚部点 → 范围内最近交互点(重叠取最近,平局取先声明)。
  * 票 #37 追加叙事物 sign(路牌)/note(井石台,spec §2.5):彩蛋文案走物件
  * text 属性,交互 = 动作键弹一句静态文案,零奖励、不持久化已读;
+ * 票 #38 追加钓位微差(spec §3):spot 物件可选 spotMul 属性(per-fish 倍率表),
+ * 抛竿时随当前钓位进入权重引擎;
  * 票 #40 追加 storage(村舍储物箱,spec §4.4):交互 = 动作键开两栏转移面板;
  * chest 由后续票按同一物件层声明扩展(kind 表 + 动作短词表即插即用)。
  */
@@ -31,6 +34,11 @@ export interface InteractionSpotDef {
   readonly radiusPx: number
   /** 钓位所属水域(spot 专用;走近自动 setWater 的来源;stall 无) */
   readonly area?: WaterAreaId
+  /**
+   * 钓位微差倍率表(票 #38,spot 专用;物件 spotMul 属性):
+   * 键 = 鱼目录 id,值 = 倍率(≥ 1 只增不减);缺省无修饰 = 现行权重。
+   */
+  readonly spotMul?: Readonly<Record<string, number>>
   /** 叙事物彩蛋文案(sign/note 专用;物件 text 属性,交互时整句弹出,不入玩法状态) */
   readonly text?: string
 }
@@ -58,9 +66,50 @@ export function interactionLabel(kind: string): string {
   return label ?? ''
 }
 
+/**
+ * 浮签文案(票 #38,spec §3 呈现):钓位名进浮签(「深湾 · 抛竿」);
+ * 其余 kind 沿动作短词不加名(摊位「商店」、叙事物「查看」)。
+ * kind 取 string(沿 interactionLabel 的扩表先例:未注册 kind = 空串)。
+ */
+export function interactionPromptText(spot: { readonly kind: string; readonly name: string }): string {
+  const label = interactionLabel(spot.kind)
+  return spot.kind === 'spot' ? `${spot.name} · ${label}` : label
+}
+
 /** 水域 id 校验(注册表单源;拼错的 area 在解析期抛错,不流入 setWater) */
 function isWaterAreaId(value: unknown): value is WaterAreaId {
   return typeof value === 'string' && WATER_AREAS.some(a => a.id === value)
+}
+
+/**
+ * 钓位微差倍率表解析(票 #38,spec §3):物件 spotMul 属性 → {鱼id: 倍率}。
+ * Tiled 自定义属性无映射类型,JSON 串承载;手写地图也接受直接物件形态。
+ * 纪律进解析器:键必须是鱼目录 id(不引新鱼种,拼写错挡在解析期),
+ * 值必须是 ≥ 1 的有限数(只增不减)。
+ */
+function parseSpotMul(o: WorldMapObject, raw: unknown): Record<string, number> {
+  let table: unknown = raw
+  if (typeof raw === 'string') {
+    try {
+      table = JSON.parse(raw)
+    } catch {
+      throw new Error(`交互点「${o.name}」的 spotMul 不是合法 JSON:${String(raw)}`)
+    }
+  }
+  if (typeof table !== 'object' || table === null || Array.isArray(table)) {
+    throw new Error(`交互点「${o.name}」的 spotMul 必须是 {鱼id: 倍率} 物件(现 ${String(raw)})`)
+  }
+  const mul: Record<string, number> = {}
+  for (const [fishId, value] of Object.entries(table as Record<string, unknown>)) {
+    if (!FISH.some(f => f.id === fishId)) {
+      throw new Error(`交互点「${o.name}」的 spotMul 键不是鱼目录 id:「${fishId}」(不引新鱼种)`)
+    }
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) {
+      throw new Error(`交互点「${o.name}」的 spotMul[${fishId}] 必须是 ≥ 1 的数(只增不减,现 ${String(value)})`)
+    }
+    mul[fishId] = value
+  }
+  return mul
 }
 
 /** 物件层条目 → 交互点定义;kind 非交互返回 null(调用方过滤) */
@@ -85,6 +134,9 @@ function toInteractionSpot(o: WorldMapObject, tileWidth: number): InteractionSpo
   if (isNarrativeKind(kind) && (typeof text !== 'string' || text.length === 0)) {
     throw new Error(`叙事物「${o.name}」的 text 必须是非空字符串(彩蛋文案,现 ${String(text)})`)
   }
+  // 钓位微差(票 #38):属性存在即校验格式(与 area 同款),只挂到钓位上
+  const spotMulRaw = o.properties['spotMul']
+  const spotMul = spotMulRaw !== undefined ? parseSpotMul(o, spotMulRaw) : undefined
   return {
     kind,
     name: o.name,
@@ -92,6 +144,7 @@ function toInteractionSpot(o: WorldMapObject, tileWidth: number): InteractionSpo
     y: o.y,
     radiusPx,
     ...(kind === 'spot' && area !== undefined ? { area: area as WaterAreaId } : {}),
+    ...(kind === 'spot' && spotMul !== undefined ? { spotMul } : {}),
     ...(isNarrativeKind(kind) && text !== undefined ? { text: text as string } : {}),
   }
 }

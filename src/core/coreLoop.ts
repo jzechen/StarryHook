@@ -11,6 +11,7 @@ import { daylightOf, seasonOf, sessionWeather } from './worldEnv'
 import type {
   EnvState,
   FishDef,
+  Facing,
   FishQuality,
   LoopPhase,
   MinigameState,
@@ -29,6 +30,9 @@ export interface UpdateInput {
 /** 角色脚部碰撞盒半尺寸(像素;spec §1.3:碰撞盒 < 1 tile) */
 export const PLAYER_HALF_W = 5
 export const PLAYER_HALF_H = 3
+
+/** 判定「在移动」的每帧最小位移(逻辑像素;与渲染侧行走判定同阈) */
+const MOVE_EPS = 0.1
 
 /**
  * 世界碰撞来源(票 #34 注入缝):移动阻挡与边界钳制的参数来源。
@@ -53,9 +57,13 @@ const DEFAULT_WORLD: WorldCollisionSource = {
 /**
  * 交互点最小视图(票 #36 注入缝):核心只关心「范围内最近交互点的 kind」,
  * 不感知坐标/半径/名称(结构化匹配 world/interactions 的解析产物)。
+ * 票 #38:钓位可携带微差倍率表(spot 专用,组合根从解析产物透传)——
+ * 抛竿按当前钓位读取修饰;缺省(无字段)= 现行权重逐位一致。
  */
 export interface InteractionTargetView {
   readonly kind: string
+  /** 钓位微差倍率表(票 #38,spec §3):{鱼id: 倍率};仅 kind = spot 时存在 */
+  readonly spotMul?: Readonly<Record<string, number>>
 }
 
 /**
@@ -102,6 +110,12 @@ export class CoreLoop {
   /** 玩家位置(世界像素,脚部点;缺省 = 缺省世界左上合法位,组合根注入出生点覆盖) */
   px = PLAYER_HALF_W
   py = PLAYER_HALF_H
+  /**
+   * 玩家朝向(票 #35,spec §1.5 存档口径的一部分):由实际位移主轴推导,
+   * 静止保持;过场「朝向保持行进方向」与跨会话恢复由组合根直接赋值——
+   * 核心只持有状态,不感知存档。
+   */
+  facing: Facing = 'down'
   /** 抛竿瞬间的玩家位置(浮标起飞点,等待中不随移动漂移) */
   castX = PLAYER_HALF_W
   castY = PLAYER_HALF_H
@@ -138,6 +152,11 @@ export class CoreLoop {
   private qualityRng: Rng
   /** 本次抛竿的出鱼权重(蓄力时算出) */
   private pool: number[] = []
+  /**
+   * 按下时刻捕获的钓位微差倍率(票 #38):蓄力起按当前钓位读取(垂钓全程锁移动,
+   * 抛竿时位置与按下时一致);cast 消费,缺省 = 现行权重。
+   */
+  private pendingSpotMul: Readonly<Record<string, number>> | undefined
   /** 当前竿的绿条参数(默认 = 现行手感;成长系统经 setRodParams 注入) */
   private barParams: BarParams = TUNE.bar
   /** 本竿剩余等待秒数(waiting 中逐帧递减,咬钩判定用;抛竿时刻由等待时长参数源算定) */
@@ -310,9 +329,14 @@ export class CoreLoop {
       case 'idle':
         // 抛竿门禁(票 #36):按下时刻须在钓位范围内(来源 kind = spot);
         // 范围外/摊位前按下无动作——无效抛竿不存在。摊位动作归组合根。
-        if (pressed && this.interact()?.kind === 'spot') {
-          this.power = 0
-          this.phase = 'charging'
+        // 钓位微差(票 #38):按下时刻顺带捕获当前钓位的倍率表,cast 消费。
+        if (pressed) {
+          const target = this.interact()
+          if (target?.kind === 'spot') {
+            this.pendingSpotMul = target.spotMul
+            this.power = 0
+            this.phase = 'charging'
+          }
         }
         break
       case 'charging':
@@ -412,13 +436,24 @@ export class CoreLoop {
     const ny = this.py + moveY * TUNE.move.speed * dt
     const cx = Math.max(PLAYER_HALF_W, Math.min(w.widthPx - PLAYER_HALF_W, nx))
     const cy = Math.max(PLAYER_HALF_H, Math.min(w.heightPx - PLAYER_HALF_H, ny))
+    const prevX = this.px
+    const prevY = this.py
     if (!w.blockedBox(cx, this.py, PLAYER_HALF_W, PLAYER_HALF_H)) this.px = cx
     if (!w.blockedBox(this.px, cy, PLAYER_HALF_W, PLAYER_HALF_H)) this.py = cy
+    // 朝向 = 本帧实际位移的主轴方向(票 #35):被挡轴整步取消 → 沿墙滑动时
+    // 自然转向滑行方向;静止(位移 < MOVE_EPS)保持原朝向。判定阈值与渲染侧
+    // 行走贴图的原推导一致(渲染侧改读此状态,不再自行推导)。
+    const ex = this.px - prevX
+    const ey = this.py - prevY
+    if (Math.hypot(ex, ey) > MOVE_EPS) {
+      this.facing = Math.abs(ex) >= Math.abs(ey) ? (ex > 0 ? 'right' : 'left') : ey > 0 ? 'down' : 'up'
+    }
   }
 
   private cast(): void {
     // 本竿饵效果:单缝来源在抛竿时刻调用恰好一次(默认 null = 现行行为逐位一致)。
-    // 出鱼权重 = 修正引擎(当前水域基底鱼池 × 抛竿时刻环境 × 蓄力 × 浓饵标记);
+    // 出鱼权重 = 修正引擎(当前水域基底鱼池 × 抛竿时刻环境 × 蓄力 × 浓饵标记
+    // × 当前钓位微差倍率,票 #38);
     // 现行「蓄力偏向难鱼」乘子已并入引擎,权重在抛竿时刻算定,咬钩时刻不再重算。
     const bait = this.baitEffect()
     this.pool = computePoolWeights(
@@ -427,6 +462,7 @@ export class CoreLoop {
       this.env,
       this.power,
       bait?.richBait ?? false,
+      this.pendingSpotMul,
     )
     this.bobberDist = this.power
     this.castX = this.px

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { interactionLabel, isNarrativeKind, nearestInteraction, parseInteractionSpots } from './interactions'
+import { interactionLabel, interactionPromptText, isNarrativeKind, nearestInteraction, parseInteractionSpots, type InteractionSpotDef } from './interactions'
+import { WORLD_MAPS } from './maps'
 import villageJson from './village.json'
-import { parseWorldMap, type WorldMapObject } from './worldMap'
+import { warpsOf } from './warps'
+import { isBlockedCell, parseWorldMap, type WorldMapData, type WorldMapObject } from './worldMap'
 
 /** 物件条目替身:缺省 = 钓位「南岸」@(456,296),与 village.json 现有条目同形 */
 function obj(partial: Partial<WorldMapObject> = {}): WorldMapObject {
@@ -90,6 +92,46 @@ describe('交互点解析(接缝:parseInteractionSpots,票 #36)', () => {
     const [spot] = parseInteractionSpots([obj()], 16)
     expect(spot!.area).toBeUndefined()
   })
+
+  it('钓位微差(票 #38):spotMul JSON 串属性解析为 per-fish 倍率表', () => {
+    const [spot] = parseInteractionSpots([obj({ properties: { area: 'river', spotMul: '{"qianzhuinian":2}' } })], 16)
+    expect(spot!.spotMul).toEqual({ qianzhuinian: 2 })
+  })
+
+  it('钓位微差:spotMul 直接物件形态(手写地图)同样解析', () => {
+    const [spot] = parseInteractionSpots([obj({ properties: { spotMul: { qiqiuHetun: 2 } } })], 16)
+    expect(spot!.spotMul).toEqual({ qiqiuHetun: 2 })
+  })
+
+  it('钓位微差:无 spotMul 属性 = 无修饰(undefined)', () => {
+    const [spot] = parseInteractionSpots([obj({ properties: { area: 'pond' } })], 16)
+    expect(spot!.spotMul).toBeUndefined()
+  })
+
+  it('钓位微差纪律进解析器:倍率 < 1 / 非数 / 非有限 → 抛错(只增不减)', () => {
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: '{"qianzhuinian":0.5}' } })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: { qianzhuinian: 0 } } })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: { qianzhuinian: -2 } } })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: { qianzhuinian: '翻倍' } } })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: { qianzhuinian: Number.POSITIVE_INFINITY } } })], 16)).toThrow()
+  })
+
+  it('钓位微差:键不是鱼目录 id → 抛错(拼写错挡在解析期,不引新鱼种)', () => {
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: '{"qianzhuiNian":2}' } })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: { 神秘鱼: 2 } } })], 16)).toThrow()
+  })
+
+  it('钓位微差:spotMul 非物件(数组/非法 JSON/标量)→ 抛错', () => {
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: '[2]' } })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: '{qianzhuinian:2}' } })], 16)).toThrow()
+    expect(() => parseInteractionSpots([obj({ properties: { spotMul: 42 } })], 16)).toThrow()
+  })
+
+  it('钓位微差:非钓位(stall)不挂倍率,属性格式照常校验', () => {
+    const spots = parseInteractionSpots([obj({ name: '杂货摊', type: 'stall', properties: { spotMul: '{"xiaobaitiao":2}' } })], 16)
+    expect(spots[0]!.spotMul).toBeUndefined()
+    expect(() => parseInteractionSpots([obj({ name: '杂货摊', type: 'stall', properties: { spotMul: '{bad' } })], 16)).toThrow()
+  })
 })
 
 describe('触发判定(接缝:nearestInteraction,票 #36)', () => {
@@ -143,6 +185,23 @@ describe('动作短词(接缝:interactionLabel,浮签文案)', () => {
   })
 })
 
+describe('浮签文案(接缝:interactionPromptText,票 #38 钓位名进浮签)', () => {
+  it('钓位 = 「钓位名 · 动作短词」(「深湾 · 抛竿」)', () => {
+    expect(interactionPromptText({ kind: 'spot', name: '深湾' })).toBe('深湾 · 抛竿')
+    expect(interactionPromptText({ kind: 'spot', name: '湖心' })).toBe('湖心 · 抛竿')
+  })
+
+  it('其余 kind 沿动作短词不加名(摊位 = 商店、叙事物 = 查看,spec §3 只改钓位)', () => {
+    expect(interactionPromptText({ kind: 'stall', name: '杂货摊' })).toBe('商店')
+    expect(interactionPromptText({ kind: 'sign', name: '东路牌' })).toBe('查看')
+    expect(interactionPromptText({ kind: 'note', name: '井' })).toBe('查看')
+  })
+
+  it('未知 kind = 空串(浮签不渲染无主文案)', () => {
+    expect(interactionPromptText({ kind: 'chest', name: '宝箱' })).toBe('')
+  })
+})
+
 describe('叙事物判定(接缝:isNarrativeKind,动作键意图策略消费)', () => {
   it('sign/note 是叙事物;spot/stall 与未注册 kind 不是', () => {
     expect(isNarrativeKind('sign')).toBe(true)
@@ -173,7 +232,7 @@ describe('村舍图叙事物端到端(接缝:village.json → parseInteractionSp
     expect(dist).toBeLessThan(map.widthPx / 4)
   })
 
-  it('东路牌立在村舍东出口前:图东侧、东行土路尽头处,钓位/摊位范围互不重叠', () => {
+  it('东路牌立在村舍东出口前(图东侧,#35 warp 旁),钓位/摊位范围互不重叠', () => {
     const sign = spots.find(s => s.kind === 'sign')!
     expect(sign.x).toBeGreaterThan(map.widthPx * 0.9)
     for (const other of spots) {
@@ -203,6 +262,75 @@ describe('村舍储物箱端到端(接缝:village.json → parseInteractionSpots
       if (other === storage) continue
       const overlap = Math.hypot(other.x - storage.x, other.y - storage.y) < other.radiusPx + storage.radiusPx
       expect(overlap).toBe(false)
+    }
+  })
+})
+
+describe('三图叙事物(接缝:WORLD_MAPS → parseInteractionSpots,票 #37 补位 #35 并图)', () => {
+  /** 叙事物锚点可达:半径内至少一格可行走(挡住牌子埋进墙里点不到) */
+  function reachableViaWalkableCell(map: WorldMapData, def: InteractionSpotDef): boolean {
+    const r = def.radiusPx
+    const t = map.tileWidth
+    for (let dy = -r; dy <= r; dy += t / 2) {
+      for (let dx = -r; dx <= r; dx += t / 2) {
+        const x = def.x + dx
+        const y = def.y + dy
+        if (!isBlockedCell(map, Math.floor(x / t), Math.floor(y / t))) return true
+      }
+    }
+    return false
+  }
+
+  it('四块路牌各立对应出口前(≤ 4 tile、不压触发区、半径内可达),文案按票面方向', () => {
+    // 票面 §2.5:村舍东/河谷西/河谷东/湖畔西,按图与声明序
+    const EXPECTED: Record<'village' | 'river' | 'lake', readonly string[]> = {
+      village: ['东 · 河谷'],
+      river: ['西 · 村舍池塘', '东 · 湖畔'],
+      lake: ['西 · 河谷'],
+    }
+    for (const mapId of ['village', 'river', 'lake'] as const) {
+      const map = WORLD_MAPS[mapId]
+      const signs = parseInteractionSpots(map.objects, map.tileWidth).filter(s => s.kind === 'sign')
+      expect(signs.map(s => s.text)).toEqual(EXPECTED[mapId])
+      const warps = warpsOf(map)
+      for (const sign of signs) {
+        // 对应出口 = 同侧 warp(x 差 < 128);路牌贴出口但不压触发区
+        const near = warps.filter(w => Math.abs(w.x + w.width / 2 - sign.x) < 128)
+        expect(near).toHaveLength(1)
+        const warp = near[0]!
+        const distToWarp = Math.hypot(warp.x + warp.width / 2 - sign.x, warp.y + warp.height / 2 - sign.y)
+        expect(distToWarp).toBeLessThanOrEqual(4 * map.tileWidth)
+        const inZone =
+          sign.x >= warp.x && sign.x < warp.x + warp.width && sign.y >= warp.y && sign.y < warp.y + warp.height
+        expect(inZone).toBe(false)
+        expect(reachableViaWalkableCell(map, sign)).toBe(true)
+      }
+    }
+  })
+
+  it('湖畔:石台(note)在远端角落(与西口对角),文案为既定彩蛋,半径内可达', () => {
+    const map = WORLD_MAPS.lake
+    const notes = parseInteractionSpots(map.objects, map.tileWidth).filter(s => s.kind === 'note')
+    expect(notes).toHaveLength(1)
+    const altar = notes[0]!
+    expect(altar.name).toBe('石台')
+    expect(altar.text).toBe('石台的字迹已模糊:『湖心静时,鱼会自己游上来看你。』')
+    // 西口/出生点在西侧,石台落东南远角(x 东 8 成之外,y 南半)
+    expect(altar.x).toBeGreaterThan(map.widthPx * 0.8)
+    expect(altar.y).toBeGreaterThan(map.heightPx / 2)
+    expect(reachableViaWalkableCell(map, altar)).toBe(true)
+  })
+
+  it('三图各自交互点触发半径互不重叠(浮签不打架)', () => {
+    for (const mapId of ['village', 'river', 'lake'] as const) {
+      const map = WORLD_MAPS[mapId]
+      const spots = parseInteractionSpots(map.objects, map.tileWidth)
+      for (let i = 0; i < spots.length; i++) {
+        for (let j = i + 1; j < spots.length; j++) {
+          const d = Math.hypot(spots[i]!.x - spots[j]!.x, spots[i]!.y - spots[j]!.y)
+          expect(d).toBeGreaterThanOrEqual(spots[i]!.radiusPx + spots[j]!.radiusPx)
+        }
+      }
     }
   })
 })

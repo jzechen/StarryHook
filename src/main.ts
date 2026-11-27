@@ -14,12 +14,12 @@ import { Rng } from './core/rng'
 import { TimedBestStore } from './core/timedBest'
 import type { LoopPhase } from './core/types'
 import { WalletStore } from './core/wallet'
-import { WorldScene } from './render/worldScene'
+import { WorldDirector } from './render/worldDirector'
 import { loadSceneTextures } from './render/textures'
 import { applyViewportToCanvas } from './render/viewport'
-import { village } from './world/village'
-import { interactionLabel, nearestInteraction, parseInteractionSpots } from './world/interactions'
-import { worldCollisionSource } from './world/worldMap'
+import { interactionPromptText, nearestInteraction, parseInteractionSpots } from './world/interactions'
+import { WORLD_MAPS } from './world/maps'
+import type { MapId } from './core/types'
 import { baitBadgeText } from './ui/baitBadgeText'
 import { CollectionPanel } from './ui/collectionPanel'
 import { collectionToasts, snapshotOf } from './ui/collectionToastPolicy'
@@ -86,18 +86,16 @@ async function main(): Promise<void> {
   const core = new CoreLoop(new Rng(seed))
   // 场景素材:图集加载 + 切片(素材文件 → 图集 → 精灵 管线入口)
   const textures = await loadSceneTextures()
-  // 世界(票 #34):村舍场景图 + 地图驱动碰撞注入 + 出生点落位。
-  // 碰撞来源 = 解析器产出的 blocked 网格谓词(水 tile/大件),核心不 import 地图/渲染;
-  // 位置模型为世界像素,出生点来自物件层(村舍图左上空地)。
-  const scene = new WorldScene(app, textures, village)
-  core.setWorldCollision(worldCollisionSource(village))
-  core.px = village.spawn.x
-  core.py = village.spawn.y
+  // 世界(票 #35):三图村舍↔河谷↔湖畔的编排层——开机按位置快照恢复
+  // (位置 + 朝向 + 图级水域推导;无/坏快照回村舍出生点)、地图驱动碰撞
+  // 注入、出口过场(淡黑 300ms,输入锁、不写存档)、仅 idle 落盘。
+  // 核心循环只消费注入的碰撞来源与 setWater,不感知过场与存档。
+  const storage = localStorageKv()
+  const director = new WorldDirector({ app, textures, core, storage })
   const seedEl = document.getElementById('seed')
   if (seedEl) seedEl.textContent = `seed ${seed}`
 
   // 收集册:捕获自动登记,跨会话持久(隐私模式下写入失败自动降级为内存收集)
-  const storage = localStorageKv()
   // 限时单局最高纪录(票 #23 纪录双轨):独立键跨会话持久,损坏按 0 降级。
   // 消费三处,写入只有一处——顶栏限时轨展示(顶栏「最高纪录」,票 #22 review)、
   // 归零结算的破纪录判定源(recordIfHigher,唯一写入点)与模式面板的纪录展示
@@ -213,9 +211,19 @@ async function main(): Promise<void> {
   let prevHolding = false
 
   // —— 交互点系统(票 #36,spec §2.1–2.3):物件层声明 → 触发判定 → 动作 ——
-  // 解析村舍图交互点(钓位/摊位;note 等后续票 kind 不在本票解析范围);
+  // 解析交互点(钓位/摊位;note 等后续票 kind 不在本票解析范围);
   // 触发 = 统一 1.5 tile(radius 属性可覆盖),重叠取最近。
-  const interactions = parseInteractionSpots(village.objects, village.tileWidth)
+  // 交互点随图切换(票 #35 三图):按 mapId 惰性解析缓存,过场换图后即用新图集合。
+  const interactionCache = new Map<string, ReturnType<typeof parseInteractionSpots>>()
+  const interactionsOf = (mapId: MapId): ReturnType<typeof parseInteractionSpots> => {
+    let list = interactionCache.get(mapId)
+    if (!list) {
+      const map = WORLD_MAPS[mapId]
+      list = parseInteractionSpots(map.objects, map.tileWidth)
+      interactionCache.set(mapId, list)
+    }
+    return list
+  }
   // 已开面板(互斥协调器保证至多一个):面板打开时世界动作全歇、浮签全隐、移动锁死
   const openPanel = (): { close(): void } | null =>
     [collectionPanel, shopPanel, modePanel, backpackPanel, storagePanel].find(p => p.isOpen()) ?? null
@@ -224,10 +232,11 @@ async function main(): Promise<void> {
   let nearestTarget: ReturnType<typeof nearestInteraction> = null
   const anyPanelOpen = (): boolean => openPanel() !== null
   // 交互点来源注入(核心门禁:idle 按下须最近交互点是钓位才蓄力;
-  // 面板打开时来源恒 null——动作键优先关面板,同一次按下不会「关面板又开竿」)
+  // 面板打开时来源恒 null——动作键优先关面板,同一次按下不会「关面板又开竿」)。
+  // 钓位微差(票 #38):钓位物件的倍率表随来源透传,抛竿按当前钓位读取
   core.setInteractionSource(() => {
     if (anyPanelOpen()) return null
-    return nearestTarget?.kind === 'spot' ? { kind: 'spot' } : null
+    return nearestTarget?.kind === 'spot' ? { kind: 'spot', spotMul: nearestTarget.spotMul } : null
   })
 
   // —— 输入:鼠标/触摸 + 键盘(动作键 = E/空格/按住鼠标三等效,WASD/方向键 = 移动,ESC = 关面板) ——
@@ -285,17 +294,22 @@ async function main(): Promise<void> {
     prevHolding = holding
     // 范围内最近交互点(本帧单源);面板打开时世界交互全歇(浮签全隐、无动作)
     const panelOpen = anyPanelOpen()
-    nearestTarget = panelOpen ? null : nearestInteraction(interactions, core.px, core.py)
+    nearestTarget = panelOpen ? null : nearestInteraction(interactionsOf(director.mapId), core.px, core.py)
 
+    // 过场中输入锁定(票 #35):组合根停止喂输入,核心停在 idle——
+    // 核心循环不感知过场;位置冻结,存档门禁同样跳过(worldDirector 内判)
     // 面板打开锁移动(spec §2.4):方向分量清零,核心侧无需感知面板
-    core.update(dt, { holding, moveX: panelOpen ? 0 : dx, moveY: panelOpen ? 0 : dy })
+    if (!director.inputLocked) {
+      core.update(dt, { holding, moveX: panelOpen ? 0 : dx, moveY: panelOpen ? 0 : dy })
+    }
 
     // 动作键按下边沿 → 意图(关闭口径优先):关面板 / 摊位开商店 / 储物箱开转移
     // 面板 / 叙事物读彩蛋;钓位蓄力抛竿不经此处——核心已按交互门禁在本帧 update
     // 内处理。
     // 叙事物(票 #37)仅在待机响应:小游戏连按 E 是玩法操作,垂钓中不弹彩蛋
     // (与摊位「仅 idle 可开」同口径);toast 一句静态文案,零奖励、可重复查看
-    if (pressed) {
+    // 过场中同样不响应(输入锁定的组成部分,票 #35)
+    if (pressed && !director.inputLocked) {
       const intent = stallPressAction(panelOpen, nearestTarget?.kind ?? null)
       if (intent === 'close-panel') openPanel()?.close()
       else if (intent === 'open-shop') shopPanel.open()
@@ -307,9 +321,11 @@ async function main(): Promise<void> {
     }
 
     // 钓位走近自动切所属水域(仅 idle;setWater 核心门禁保留,票 #15 禁切口径零改动;
-    // 水域来源 = 钓位物件 area 属性,图级推导待 #35 并入后在此接缝)
+    // 水域来源 = 钓位物件 area 属性;图级兜底推导已随 #35 并入(deriveWaterArea,
+    // 组合根开机/换图落位时调用),此处只做钓位级精修)
     if (
       !panelOpen &&
+      !director.inputLocked &&
       core.phase === 'idle' &&
       nearestTarget?.kind === 'spot' &&
       nearestTarget.area !== undefined &&
@@ -317,11 +333,15 @@ async function main(): Promise<void> {
     ) {
       core.setWater(nearestTarget.area)
     }
-    // 交互浮签供给(idle ∧ 无面板 ∧ 范围内有交互点):渲染层另有非 idle 兜底
+    // 交互浮签供给(idle ∧ 无面板 ∧ 范围内有交互点):渲染层另有非 idle 兜底;
+    // 钓位名进浮签(票 #38,spec §3:「深湾 · 抛竿」),其余 kind 沿动作短词
     const promptState =
       core.phase === 'idle' && nearestTarget
-        ? { x: nearestTarget.x, y: nearestTarget.y, label: interactionLabel(nearestTarget.kind) }
+        ? { x: nearestTarget.x, y: nearestTarget.y, label: interactionPromptText(nearestTarget) }
         : null
+    // 世界推进(票 #35):过场状态机、出口检测、换图落位、存档门禁、场景渲染
+    // (交互浮签随场景渲染一并供给,放最后——过场完成/换图在本帧内生效)
+    director.update(tk.lastTime / 1000, dt, promptState)
     // 结算捕获 → 登记进收集册与成长(两系统无耦合,核心循环自身不感知)。
     // 顺序不可换:先读捕获前快照 → 登记 → 再读快照 → 按纯函数决策弹提示
     if (core.phase === 'caught' && prevPhase !== 'caught' && core.fish) {
@@ -394,7 +414,6 @@ async function main(): Promise<void> {
       toasts.showText(roundSettlementText(score, recordBroken))
     }
     prevRoundActive = core.roundActive
-    scene.update(core, tk.lastTime / 1000, dt, promptState)
     hud.update(core)
     // 经济常驻展示(票 #17 故事 2/10,review 修复):金币余额与装备饵余量上顶栏,
     // 内容变化才重写 DOM(hud 既有守卫);垂钓进行中商店不可开,饵余量由此常驻可见,

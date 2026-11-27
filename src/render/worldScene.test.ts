@@ -2,6 +2,7 @@ import { Application, Container, Graphics, Texture } from 'pixi.js'
 import { describe, expect, it, vi } from 'vitest'
 import type { CoreLoop } from '../core/coreLoop'
 import type { LoopPhase } from '../core/types'
+import { WORLD_MAPS } from '../world/maps'
 import { village } from '../world/village'
 import { WorldScene } from './worldScene'
 import type { SceneTextures } from './textures'
@@ -62,6 +63,7 @@ function fakeCore(phase: LoopPhase): CoreLoop {
   return {
     px: 72,
     py: 64,
+    facing: 'down',
     phase,
     castX: 72,
     castY: 64,
@@ -138,6 +140,27 @@ describe('世界场景 Graphics 指令泄漏守护(接缝:WorldScene 场景图)'
       expect(sceneRoot.position.y).toBeGreaterThanOrEqual(-(416 - 270))
       expect(sceneRoot.position.y).toBeLessThanOrEqual(0)
     }
+  })
+})
+
+describe('湖畔场景(票 #35:不规则湖 blob,逐 cell 水体路径)', () => {
+  it('blob 图可构建并稳定渲染:waiting 阶段 200 帧指令总数不变(逐 cell 精灵不产生指令)', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), WORLD_MAPS.lake)
+    const sceneRoot = world()
+    const core = fakeCore('waiting')
+    const total = () => graphicsNodes(sceneRoot).reduce((sum, g) => sum + g.context.instructions.length, 0)
+    for (let f = 0; f < 4; f++) scene.update(core, f * 0.016, 0.016)
+    const baseline = total()
+    for (let f = 4; f < 204; f++) scene.update(core, f * 0.016, 0.016)
+    expect(total()).toBe(baseline)
+  })
+
+  it('湖畔水域色调随 core.area 切换不抛错(逐 cell tint 路径)', () => {
+    const { app } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), WORLD_MAPS.lake)
+    const core = fakeCore('idle')
+    expect(() => scene.update(core, 0, 0.016)).not.toThrow()
   })
 })
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import villageJson from './village.json'
-import { blockedBox, isBlockedCell, parseWorldMap, type WorldMapData } from './worldMap'
+import { blockedBox, isBlockedCell, parseWorldMap, waterFillsBounds, type WorldMapData } from './worldMap'
 
 /**
  * 村舍地图数据与解析器不变量(票 #34,spec §1.1/§1.2 红线):
@@ -110,12 +110,13 @@ describe('村舍地图 village.json(接缝:parseWorldMap 纯函数)', () => {
     expect(isBlockedCell(map, flower![0], flower![1])).toBe(false)
   })
 
-  it('叙事物(票 #37):路牌 tile(gid 84)立在东路北侧且挡路外行人;东路上不新增阻挡', () => {
+  it('叙事物(票 #37):路牌 tile(gid 84)在图东侧出口走廊旁且挡碰撞;东行土路(行 20)畅通', () => {
     const sign = cellOf(map.deco, map, 84)
     expect(sign).not.toBeNull()
     expect(isBlockedCell(map, sign![0], sign![1])).toBe(true)
-    // 路牌在地图东半(村舍出口方向),且不压在东行土路(行 20)上
+    // 路牌在地图东半(村舍东出口 #35 warp (912,208) 一带),且不压在东行土路(行 20)上
     expect(sign![0]).toBeGreaterThan(map.width / 2)
+    expect(sign![1]).toBeLessThanOrEqual(14)
     expect(isBlockedCell(map, sign![0]!, 20)).toBe(false)
   })
 
@@ -143,6 +144,41 @@ describe('村舍地图 village.json(接缝:parseWorldMap 纯函数)', () => {
     expect(storages).toHaveLength(1)
     expect(storages[0]!.x).toBe(crate![0] * map.tileWidth + map.tileWidth / 2)
     expect(storages[0]!.y).toBe(crate![1] * map.tileWidth + map.tileWidth / 2)
+  })
+})
+
+describe('waterFillsBounds(票 #35:渲染形态分岔依据——矩形水填满 bbox,blob 不填满)', () => {
+  /** 12×12 合成图:水层按给定 cell 集合填 gid 1 */
+  function rawWater(cells: [number, number][]): WorldMapData {
+    const data = new Array(144).fill(0)
+    for (const [tx, ty] of cells) data[ty * 12 + tx] = 1
+    return parseWorldMap({
+      width: 12, height: 12, tilewidth: 16, tileheight: 16,
+      orientation: 'orthogonal', renderorder: 'right-down', type: 'map',
+      layers: [
+        { type: 'tilelayer', name: 'ground', data: new Array(144).fill(1) },
+        { type: 'tilelayer', name: 'water', data },
+        { type: 'tilelayer', name: 'deco', data: new Array(144).fill(0) },
+        { type: 'objectgroup', name: 'objects', objects: [{ name: 'spawn', type: 'spawn', x: 40, y: 40, point: true }] },
+      ],
+      tilesets: [{
+        name: 'tiny-town', image: 'tiny-town.png', imagewidth: 192, imageheight: 176,
+        tilewidth: 16, tileheight: 16, columns: 12, tilecount: 132, firstgid: 1,
+      }],
+    })
+  }
+
+  it('填满 bbox 的矩形水 → true(村舍池塘前提)', () => {
+    const cells: [number, number][] = []
+    for (let ty = 4; ty <= 6; ty++) for (let tx = 3; tx <= 8; tx++) cells.push([tx, ty])
+    expect(waterFillsBounds(rawWater(cells))).toBe(true)
+  })
+
+  it('L 形(同 bbox 有缺口)→ false(湖畔 blob 前提)', () => {
+    const cells: [number, number][] = []
+    for (let tx = 3; tx <= 8; tx++) cells.push([tx, 5])
+    for (let ty = 5; ty <= 7; ty++) cells.push([3, ty])
+    expect(waterFillsBounds(rawWater(cells))).toBe(false)
   })
 })
 

@@ -14,6 +14,10 @@ import type { EnvState, FishDef } from './types'
  * - 浓饵修正(票 #21):richBait 为 true 时难鱼权重提升——与蓄力乘子同形的线性难度
  *   倍率 1 + TUNE.richBaitBias × difficulty(难度 1 ×1.2、难度 5 ×2.0,恒 > 1 永不归零),
  *   不越硬门(被门挡住的鱼不复活);缺省 false = 现行权重逐位一致。
+ * - 钓位微差(票 #38,spec §3):spotMul = {鱼id: 倍率} 的 per-fish 倍率表,乘在
+ *   基底权重上、硬门判定之前的基底段——不在基底鱼池的鱼仍归零(不引新鱼种),
+ *   被硬门挡住的鱼不复活(不越硬门);倍率 ≥ 1 只增不减(解析期校验),
+ *   缺省(无表/该鱼无键)= ×1,现行权重逐位一致。
  */
 export function computePoolWeights(
   fishes: readonly FishDef[],
@@ -22,10 +26,13 @@ export function computePoolWeights(
   power: number,
   /** 浓饵生效标记(票 #21):组合根在抛竿时刻产出;缺省 false = 现行权重 */
   richBait = false,
+  /** 钓位微差倍率表(票 #38):抛竿时刻按当前钓位读入;缺省无修饰 = 现行权重 */
+  spotMul?: Readonly<Record<string, number>>,
 ): number[] {
   return fishes.map(fish => {
-    const base = basePool[fish.id] ?? 0
-    if (base <= 0) return 0 // 不在基底鱼池:进不来
+    // 钓位微差乘子:乘在基底段(×1 缺省不改变任何乘积的浮点位)
+    const base = (basePool[fish.id] ?? 0) * (spotMul?.[fish.id] ?? 1)
+    if (base <= 0) return 0 // 不在基底鱼池:进不来(钓位倍率不引新鱼种)
     const habitat = fish.habitat
     // 硬门:声明的亲和集合不含当前环境值 → 归零
     if (habitat?.areas && !habitat.areas.includes(env.area)) return 0

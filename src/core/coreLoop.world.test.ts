@@ -13,18 +13,26 @@ function clockAt(month: number, hour: number): () => Date {
   return () => new Date(2026, month - 1, 15, hour, 0, 0)
 }
 
-/** 固定环境的核心循环:month/hour/weather 不传 = 夏/日/由种子派生;area 传入即在待机时切好 */
+/** 固定环境的核心循环:month/hour/weather 不传 = 夏/日/由种子派生;area 传入即在待机时切好;
+ * spotMul 传入即随交互点来源注入(票 #38 钓位微差) */
 function newWorldLoop(
   seed: number,
-  world: { month?: number; hour?: number; weather?: Weather; area?: 'pond' | 'river' | 'lake' } = {},
+  world: {
+    month?: number
+    hour?: number
+    weather?: Weather
+    area?: 'pond' | 'river' | 'lake'
+    spotMul?: Readonly<Record<string, number>>
+  } = {},
 ): CoreLoop {
   const loop = new CoreLoop(new Rng(seed), {
     clock: clockAt(world.month ?? 6, world.hour ?? 12),
     weather: world.weather,
   })
   if (world.area) expect(loop.setWater(world.area)).toBe(true)
-  // 票 #36:idle 抛竿须经交互点,助手注入恒定钓位来源(既有用例 = 范围内抛竿)
-  loop.setInteractionSource(() => ({ kind: 'spot' }))
+  // 票 #36:idle 抛竿须经交互点,助手注入恒定钓位来源(既有用例 = 范围内抛竿);
+  // 票 #38:来源携带钓位微差倍率表,抛竿按当前钓位读取
+  loop.setInteractionSource(() => (world.spotMul ? { kind: 'spot', spotMul: world.spotMul } : { kind: 'spot' }))
   return loop
 }
 
@@ -43,13 +51,86 @@ function fishAtBite(loop: CoreLoop): string {
 }
 
 /** 同批种子下统计某鱼上钩次数(环境全固定 → 结果确定性,非统计近似) */
-function countFish(world: { month?: number; hour?: number; weather?: Weather; area?: 'pond' | 'river' | 'lake' }, fishId: string, seeds = 150): number {
+function countFish(
+  world: {
+    month?: number
+    hour?: number
+    weather?: Weather
+    area?: 'pond' | 'river' | 'lake'
+    spotMul?: Readonly<Record<string, number>>
+  },
+  fishId: string,
+  seeds = 150,
+): number {
   let count = 0
   for (let s = 1; s <= seeds; s++) {
     if (fishAtBite(newWorldLoop(s, world)) === fishId) count++
   }
   return count
 }
+
+describe('玩家朝向(票 #35:存档口径 = (mapId, x, y, 朝向);过场保持行进方向)', () => {
+  /** 走 n 帧指定方向 */
+  function walk(loop: CoreLoop, input: UpdateInput, frames = 12): void {
+    for (let i = 0; i < frames; i++) loop.update(DT, input)
+  }
+
+  const dir = (x: number, y: number): UpdateInput => ({ holding: false, moveX: x, moveY: y })
+
+  /** 缺省世界(480×270)中部起步:四向都有位移余量 */
+  function midloop(): CoreLoop {
+    const loop = newWorldLoop(42)
+    loop.px = 240
+    loop.py = 135
+    return loop
+  }
+
+  it('默认朝下;向右走 → 右,向上走 → 上,向左走 → 左,向下走 → 下', () => {
+    const loop = midloop()
+    expect(loop.facing).toBe('down')
+    walk(loop, dir(1, 0))
+    expect(loop.facing).toBe('right')
+    walk(loop, dir(0, -1))
+    expect(loop.facing).toBe('up')
+    walk(loop, dir(-1, 0))
+    expect(loop.facing).toBe('left')
+    walk(loop, dir(0, 1))
+    expect(loop.facing).toBe('down')
+  })
+
+  it('静止不翻转:松开方向键后朝向保持', () => {
+    const loop = midloop()
+    walk(loop, dir(1, 0))
+    expect(loop.facing).toBe('right')
+    walk(loop, dir(0, 0))
+    expect(loop.facing).toBe('right')
+  })
+
+  it('斜向取主轴(与渲染侧行走贴图推导同规则):横向分量 ≥ 纵向 → 横向', () => {
+    const loop = midloop()
+    walk(loop, dir(0.707, 0.707)) // 归一化斜向:两轴位移相等 → 横向优先
+    expect(loop.facing).toBe('right')
+    walk(loop, dir(-0.707, 0.707))
+    expect(loop.facing).toBe('left')
+  })
+
+  it('撞墙滑动时朝向跟随实际位移:被挡轴不计入(可沿墙转头)', () => {
+    // 缺省世界 480×270:贴右缘(横向被钳制)向右下走 → 只有纵向位移 → 朝下
+    const loop = new CoreLoop(new Rng(42))
+    loop.px = 480 - 5
+    loop.py = 135
+    walk(loop, dir(1, 1), 30)
+    expect(loop.facing).toBe('down')
+  })
+
+  it('朝向可外部直改(组合根恢复存档/过场落位用),随后的行走照常推导', () => {
+    const loop = midloop()
+    loop.facing = 'left'
+    expect(loop.facing).toBe('left')
+    walk(loop, dir(1, 0))
+    expect(loop.facing).toBe('right')
+  })
+})
 
 describe('环境状态源接线(接缝:时钟注入,可选形参)', () => {
   it('默认水域 = 池塘;默认时钟 = 真实时间(env 与构造时刻同季节同昼夜)', () => {
@@ -99,6 +180,32 @@ describe('环境状态源接线(接缝:时钟注入,可选形参)', () => {
       return catfish
     }
     expect(count(true)).toBe(count(false))
+  })
+})
+
+describe('钓位微差(接缝:交互来源 spotMul → 抛竿按当前钓位读取,票 #38)', () => {
+  it('修饰进入 cast:河流白昼晴天,同批种子下「深湾」式倍率(铅坠鲶 ×2)命中数高于无修饰钓位', () => {
+    const plain = countFish({ weather: 'sunny', area: 'river' }, 'qianzhuinian')
+    const deep = countFish({ weather: 'sunny', area: 'river', spotMul: { qianzhuinian: 2 } }, 'qianzhuinian')
+    expect(deep).toBeGreaterThan(plain)
+  })
+
+  it('不越硬门:河流钓位倍率表点名气球河豚(河流硬门),150 种子一条也钓不上来', () => {
+    let hetun = 0
+    for (let s = 1; s <= 150; s++) {
+      if (fishAtBite(newWorldLoop(s, { weather: 'sunny', area: 'river', spotMul: { qiqiuHetun: 5 } })) === 'qiqiuHetun') {
+        hetun++
+      }
+    }
+    expect(hetun).toBe(0)
+  })
+
+  it('缺省无修饰 = 现行权重逐位一致:同种子下,来源带空表与不带,连抛三竿上钩鱼逐位一致', () => {
+    const withEmpty = newWorldLoop(42, { weather: 'sunny', area: 'river', spotMul: {} })
+    const without = newWorldLoop(42, { weather: 'sunny', area: 'river' })
+    for (let i = 0; i < 3; i++) {
+      expect(fishAtBite(withEmpty)).toBe(fishAtBite(without))
+    }
   })
 })
 

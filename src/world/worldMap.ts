@@ -247,6 +247,21 @@ export function blockedBox(
 }
 
 /**
+ * 水域是否填满其包围盒(票 #35):渲染层的形态分岔依据——填满(村舍矩形池塘)
+ * 沿用整片 TilingSprite;不填满(河谷横带含凸湾、湖畔 blob)走逐 cell 精灵。
+ * 纯几何判定,与渲染无关。
+ */
+export function waterFillsBounds(map: WorldMapData): boolean {
+  let count = 0
+  for (let i = 0; i < map.water.length; i++) {
+    if (map.water[i] !== 0) count++
+  }
+  const r = map.waterRectPx
+  const t = map.tileWidth
+  return count === (r.width / t) * (r.height / t)
+}
+
+/**
  * 世界碰撞来源(票 #34 注入缝,组合根接线):地图 blocked 网格的谓词封装。
  * 结构性匹配 coreLoop.WorldCollisionSource(核心不 import 地图,方向倒置)。
  */
