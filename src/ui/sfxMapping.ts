@@ -11,6 +11,8 @@
  *
  * 文件标识同时是 public/sfx/ 下的文件名(<标识>.ogg),播放器按标识寻址。
  * 返回 null = 该事件暂无音效(表驱动的扩展位:批三的大满贯/倒计时沿用此签名)。
+ * 大满贯接缝(票 #43 → #44):播放点 = main.ts 捕获沿的 grandSlam.start() 处,
+ * 事件名预留 'grand-slam',配音时加本表行 + SfxEvent 行即可,演出层零改动。
  */
 export type SfxEvent =
   | 'bite'

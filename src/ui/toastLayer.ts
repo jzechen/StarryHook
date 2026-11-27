@@ -1,10 +1,9 @@
-/** 轻提示种类:new-entry = 新收录;grand-slam = 池塘大满贯 */
-export type ToastKind = 'new-entry' | 'grand-slam'
+/** 轻提示种类:new-entry = 新收录(大满贯已随票 #43 升级为画布内全屏演出,不再走 toast) */
+export type ToastKind = 'new-entry'
 
-/** 文案依票面与 GLOSSARY:大满贯只是集齐提示的文案,不是状态名 */
+/** 文案依票面与 GLOSSARY */
 const TOAST_TEXT: Record<ToastKind, string> = {
   'new-entry': '新收录!',
-  'grand-slam': '池塘大满贯',
 }
 
 /** 轻提示生命周期单一来源:淡出结束即移除时刻;index.html 只保留 @keyframes 与视觉样式 */

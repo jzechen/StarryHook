@@ -6,6 +6,9 @@ import type { CoreLoop } from '../core/coreLoop'
 import type { LoopPhase, WaterAreaId } from '../core/types'
 import { BASE_GROUND_GID, waterFillsBounds, type WorldMapData } from '../world/worldMap'
 import { InteractionPrompt } from './interactionPrompt'
+import { ScreenShake, shakeTrigger } from './screenShake'
+import { SplashLayer } from './splash'
+import { shimmerActive, shimmerBand } from './progressShimmer'
 import type { SceneTextures, WaveEdge } from './textures'
 import { FISH_FRAME_COUNT, PLAYER_FRAME_COUNT, TILE, WAVE_FRAME_COUNT, WATER_FRAME_COUNT } from './textures'
 
@@ -18,8 +21,9 @@ import { FISH_FRAME_COUNT, PLAYER_FRAME_COUNT, TILE, WAVE_FRAME_COUNT, WATER_FRA
  * 填满 bbox 的矩形水沿用整片 TilingSprite + 池底/描边静态几何;湖畔 blob/
  * 河谷带状走逐 cell 水精灵)→ 岸线泡沫(逐 tile,由水 cell 邻接现算,
  * 不入地图数据)→ 装饰(deco 层逐 tile Sprite + 视口剔除)→ 实体
- * (角色/浮标/鱼线/蓄力条/咬钩「!」)→ 覆盖 UI(小游戏面板,屏空间,
- * 不随相机滚动)。
+ * (角色/浮标/鱼线/蓄力条/咬钩「!」)→ 捕获水花(票 #43 粒子池)→
+ * 交互浮签 → 覆盖 UI(小游戏面板 + 进度流光,屏空间,不随相机滚动);
+ * 屏幕 shake(票 #43)以整数偏移叠加在两容器的平移上。
  *
  * 坐标系:核心循环输出世界像素(脚部点);画布固定 480×270 逻辑分辨率
  * (视口层信箱缩放),地图 60×26 tile = 960×416px,图内双向卷动。
@@ -119,6 +123,10 @@ export class WorldScene {
   private bang: Text
   /** 交互浮签(票 #36):画布内像素浮签,挂 world 层随相机滚动 */
   private prompt = new InteractionPrompt()
+  /** 捕获水花(票 #43):轻量 sprite 粒子池,挂 world 层,坐标 = 鱼漂世界坐标 */
+  private splash = new SplashLayer()
+  /** 屏幕 shake(票 #43):相机偏移量,像素取整后加到世界/覆盖 UI 两容器 */
+  private shake = new ScreenShake()
   private track = new Graphics()
   private mgBar = new Graphics()
   private mgFishSprite: Sprite
@@ -246,6 +254,7 @@ export class WorldScene {
       this.player,
       this.bobberSprite,
       this.bang,
+      this.splash.container,
       this.prompt.container,
     )
     this.ui.addChild(this.track, this.mgBar, this.mgFishSprite, this.mgProgress)
@@ -333,14 +342,24 @@ export class WorldScene {
     const W = this.app.screen.width
     const H = this.app.screen.height
 
-    // 相机:图内双向跟随 + 四边钳制 + 像素取整(整数平移,无亚像素抖动)
+    // 相机:图内双向跟随 + 四边钳制 + 像素取整(整数平移,无亚像素抖动);
+    // 屏幕 shake(票 #43)以整数偏移叠加在相机位上——世界与覆盖 UI 两容器
+    // 同步平移读作「整屏一抖」,取整纪律不破(无亚像素抖动)
     const cam = computeCamera(core.px, core.py, this.map.widthPx, this.map.heightPx, W, H)
-    this.world.position.set(-cam.x, -cam.y)
+    const shake = this.shake.update(dt)
+    this.world.position.set(Math.round(-cam.x + shake.x), Math.round(-cam.y + shake.y))
+    this.ui.position.set(shake.x, shake.y)
 
-    // 阶段切换检测(渲染侧动画计时)
+    // 阶段切换检测(渲染侧动画计时)+ juice 触发沿(票 #43):shake 仅
+    // 咬钩/捕获两边沿(screenShake.shakeTrigger 单源钉死),水花只随捕获沿
+    // 在鱼漂位置起(spec §5.2 唯二触发点,其余相位零演出)
+    let caughtEdge = false
     if (core.phase !== this.prevPhase) {
       if (core.phase === 'waiting') this.castT = 0
       if (core.phase === 'bite') this.biteT = 0
+      const shakeKind = shakeTrigger(this.prevPhase, core.phase)
+      if (shakeKind) this.shake.trigger(shakeKind)
+      caughtEdge = core.phase === 'caught'
       this.prevPhase = core.phase
     }
     this.castT = Math.min(1, this.castT + dt / 0.22)
@@ -412,6 +431,10 @@ export class WorldScene {
     if (showBobber) {
       this.bobberSprite.position.set(Math.round(bx), Math.round(by))
     }
+    // 捕获水花(票 #43):捕获沿在鱼漂世界坐标(落点 = 浮标回中位置)起一蓬,
+    // 逐帧推进在层内部;生成/回收零依赖(spritePool),寿命 ≤0.6s
+    if (caughtEdge) this.splash.spawn(tx, ty)
+    this.splash.update(dt)
 
     // 鱼线(世界层,随相机滚动)
     this.line.clear()
@@ -512,6 +535,18 @@ export class WorldScene {
         .fill({ color: 0x0c2f3f, alpha: 0.7 })
         .roundRect(pgX, innerY + innerH - fillH, pgW, fillH, 2)
         .fill(pc)
+      // 进度流光(票 #43):≥70% 启动、回落即停——沿已填充段循环上行的亮带
+      // (紧张感信号,非常驻装饰;细条不遮进度读数,阈值/几何单源在 progressShimmer)
+      if (shimmerActive(mg.progress)) {
+        const band = shimmerBand(t)
+        const bandPixH = Math.max(1, band.height * innerH)
+        const fillTop = innerY + innerH - fillH
+        const bandBottom = innerY + innerH - band.pos * fillH
+        const bandTop = Math.max(fillTop, bandBottom - bandPixH)
+        if (bandBottom > bandTop) {
+          this.mgProgress.roundRect(pgX, bandTop, pgW, bandBottom - bandTop, 2).fill({ color: 0xd6ffe8, alpha: 0.5 })
+        }
+      }
     }
   }
 }

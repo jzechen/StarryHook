@@ -204,10 +204,7 @@
         text-shadow: 0 1px 4px rgba(0, 0, 0, .6);
         /* 动画时序由 toastLayer.ts 依 TOAST_LIFETIME_MS 推导后内联写入,此处只留 keyframes */
       }
-      .toast--grand-slam {
-        color: #fff3b0; border-color: rgba(255, 210, 63, .9);
-        background: rgba(96, 69, 12, .92);
-      }
+      /* 池塘大满贯 toast 样式已随票 #43 退役:集齐改为画布内全屏演出(render/grandSlam) */
       @keyframes toast-in { from { opacity: 0; transform: translateY(-10px) scale(.92); } to { opacity: 1; transform: none; } }
       @keyframes toast-out { to { opacity: 0; transform: translateY(-8px); } }
       #hint {

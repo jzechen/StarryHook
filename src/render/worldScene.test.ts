@@ -44,18 +44,20 @@ function fakeTextures(): SceneTextures {
 }
 
 /** 固定逻辑分辨率下的假 Application:只提供 WorldScene 用到的 screen 与 stage */
-function fakeApp(): { app: Application; world: () => Container } {
+function fakeApp(): { app: Application; world: () => Container; ui: () => Container } {
   let world: Container | undefined
+  let ui: Container | undefined
   const app = {
     screen: { width: 480, height: 270 },
     stage: {
       addChild: (...children: Container[]) => {
         world = children[0]
+        ui = children[1]
       },
     },
   } as unknown as Application
   // world 以取值函数返回:WorldScene 构造时才把场景根挂上 stage,返回时还没发生
-  return { app, world: () => world! }
+  return { app, world: () => world!, ui: () => ui! }
 }
 
 /** 最小可用核心状态:字段名与 CoreLoop 公开字段一致,取值为世界像素 */
@@ -220,5 +222,123 @@ describe('交互浮签(接缝:WorldScene.update 第 4 参,票 #36 spec §2.1)', 
       scene.update(core, f * 0.016, 0.016, f % 2 === 0 ? { x: 136, y: 112, label: words[0] } : undefined)
     }
     expect(total()).toBe(baseline)
+  })
+})
+
+/** 按容器标签找节点(公开场景树,不触私有字段) */
+function findLabeled(root: Container, label: string): Container {
+  let found: Container | undefined
+  const walk = (node: Container): void => {
+    if (node.label === label) found = node
+    for (const child of node.children) walk(child)
+  }
+  walk(root)
+  if (!found) throw new Error(`场景树里没有 label=${label} 的容器`)
+  return found
+}
+
+describe('屏幕 shake(票 #43,spec §5.2:相机偏移取整,仅咬钩/捕获)', () => {
+  it('咬钩沿触发:世界/覆盖 UI 容器产生整数偏移;寿命尽回到纯相机位', () => {
+    const { app, world, ui } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const uiRoot = ui()
+    const core = fakeCore('waiting')
+    scene.update(core, 0, 0.016)
+    const restX = sceneRoot.position.x
+    const restY = sceneRoot.position.y
+
+    core.phase = 'bite'
+    let moved = false
+    for (let f = 1; f <= 8; f++) {
+      scene.update(core, f * 0.016, 0.016)
+      expect(Number.isInteger(sceneRoot.position.x)).toBe(true)
+      expect(Number.isInteger(sceneRoot.position.y)).toBe(true)
+      expect(Number.isInteger(uiRoot.position.x)).toBe(true)
+      // 世界与覆盖 UI 同步平移(整屏一抖)
+      expect(uiRoot.position.x).toBe(sceneRoot.position.x - restX)
+      if (sceneRoot.position.x !== restX || sceneRoot.position.y !== restY) moved = true
+    }
+    expect(moved).toBe(true)
+
+    // shake 寿命(0.22s)过后:回到纯相机位(0,0),覆盖 UI 归零
+    for (let f = 9; f < 40; f++) scene.update(core, f * 0.016, 0.016)
+    expect(sceneRoot.position.x).toBe(restX)
+    expect(sceneRoot.position.y).toBe(restY)
+    expect(uiRoot.position.x).toBe(0)
+    expect(uiRoot.position.y).toBe(0)
+  })
+
+  it('捕获沿同样触发(仅两触发点的另一处);等待/收竿等其余沿不抖', () => {
+    const { app, world, ui } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const uiRoot = ui()
+    const restX = sceneRoot.position.x
+    // 收竿沿(waiting→idle):无 shake
+    const core = fakeCore('waiting')
+    scene.update(core, 0, 0.016)
+    core.phase = 'idle'
+    scene.update(core, 0.016, 0.016)
+    expect(uiRoot.position.x).toBe(0)
+    expect(sceneRoot.position.x).toBe(restX)
+  })
+})
+
+describe('捕获水花(票 #43:鱼漂世界坐标,自写池零依赖)', () => {
+  it('捕获沿在 splash 容器起一蓬可见粒子;寿命尽全部回收', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    const core = fakeCore('waiting')
+    scene.update(core, 0, 0.016)
+    expect(findLabeled(sceneRoot, 'splash').children.filter(s => s.visible).length).toBe(0)
+
+    core.phase = 'caught'
+    scene.update(core, 0.016, 0.016)
+    const live = findLabeled(sceneRoot, 'splash').children.filter(s => s.visible).length
+    expect(live).toBeGreaterThan(0)
+
+    // 寿命(≤0.6s)过后:回收归零
+    for (let f = 2; f < 60; f++) scene.update(core, f * 0.016, 0.016)
+    expect(findLabeled(sceneRoot, 'splash').children.filter(s => s.visible).length).toBe(0)
+  })
+
+  it('非捕获沿(咬钩/脱钩)不起水花', () => {
+    const { app, world } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const sceneRoot = world()
+    for (const [from, to] of [
+      ['waiting', 'bite'],
+      ['minigame', 'escaped'],
+    ] as const) {
+      const core = fakeCore(from)
+      scene.update(core, 0, 0.016)
+      core.phase = to
+      scene.update(core, 0.016, 0.016)
+      expect(findLabeled(sceneRoot, 'splash').children.filter(s => s.visible).length).toBe(0)
+    }
+  })
+})
+
+describe('进度流光(票 #43:≥70% 启动、回落即停,渲染层接线)', () => {
+  /** 指定进度下全场景 Graphics 指令总数(流光走 mgProgress 既有重画路径) */
+  function instructionsAt(progress: number): number {
+    const { app, world, ui } = fakeApp()
+    const scene = new WorldScene(app, fakeTextures(), village)
+    const core = fakeCore('minigame')
+    core.mg = { t: 0, timer: 0, barV: 0, barY: 0.5, fishY: 0.4, fishTarget: 0.5, progress }
+    scene.update(core, 0.2, 0.016)
+    const total = (root: Container): number =>
+      graphicsNodes(root).reduce((sum, g) => sum + g.context.instructions.length, 0)
+    return total(world()) + total(ui())
+  }
+
+  it('进度 ≥70% 时指令数增加(亮带被画),低于阈值时与基线一致', () => {
+    const below = instructionsAt(0.5)
+    const near = instructionsAt(0.6999)
+    const at = instructionsAt(0.7)
+    expect(near).toBe(below)
+    expect(at).toBeGreaterThan(below)
   })
 })

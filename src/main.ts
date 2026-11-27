@@ -15,6 +15,7 @@ import { TimedBestStore } from './core/timedBest'
 import type { LoopPhase } from './core/types'
 import { WalletStore } from './core/wallet'
 import { WorldDirector } from './render/worldDirector'
+import { GrandSlamOverlay } from './render/grandSlam'
 import { loadSceneTextures } from './render/textures'
 import { applyViewportToCanvas } from './render/viewport'
 import { interactionPromptText, nearestInteraction, parseInteractionSpots } from './world/interactions'
@@ -201,8 +202,15 @@ async function main(): Promise<void> {
     transferBetween(storageBox, backpack),
     panelExclusion,
   )
-  // 轻提示层:新收录 / 池塘大满贯,顶部居中,不拦截游戏输入
+  // 轻提示层:新收录等常规轻提示,顶部居中,不拦截游戏输入
   const toasts = new ToastLayer()
+  // 大满贯全屏演出(票 #43,spec §5.2):替代既有 toast——画布内横幅 +
+  // 星芒/彩带粒子(约 2s),屏空间挂组合根 stage(场景过场遮罩之上;
+  // 换图时 director 遮罩重新置顶会短暂盖住演出,属可接受边缘)。
+  // 「集齐」状态与一辈子一次的幂等标记沿用 collection 既有
+  // (collectionToasts 决策 + acknowledgeCompletion),本层只管演出本身。
+  const grandSlam = new GrandSlamOverlay()
+  app.stage.addChild(grandSlam.container)
   let prevPhase: LoopPhase = core.phase
   // 限时局进行中边沿基准(票 #24):判定单源在 roundJustEnded(roundEdgePolicy),
   // 此处只存上一帧局标志——true→false 且模式仍限时 = 归零强制结算完成
@@ -355,8 +363,12 @@ async function main(): Promise<void> {
         sfx.play(sfxForEvent('new-entry'))
       }
       if (decision.grandSlam) {
-        toasts.show('grand-slam')
-        // 一辈子只弹一次:弹出的同时置持久化标记,重开/刷新后不再弹
+        // 全屏演出替代既有 toast(票 #43):画布内横幅 + 粒子,约 2s;
+        // 演出中重复触发由演出层幂等(start 不重入),一辈子一次由下行的
+        // 持久化标记保证(重开/刷新后不再触发)
+        grandSlam.start()
+        // 音效接缝(票 #44):播放点 = 演出起点(本处),事件名预留
+        // 'grand-slam'(sfxMapping 注释已有扩展位);本票不配音、不接播放
         collection.acknowledgeCompletion()
       }
       // 成长:按捕获分值登记经验(非幂等,每次都加);竿档变化 → 注入新参数
@@ -414,6 +426,8 @@ async function main(): Promise<void> {
       toasts.showText(roundSettlementText(score, recordBroken))
     }
     prevRoundActive = core.roundActive
+    // 大满贯演出推进(票 #43):时长内推进横幅时间线与粒子,结束自动收场
+    grandSlam.update(dt)
     hud.update(core)
     // 经济常驻展示(票 #17 故事 2/10,review 修复):金币余额与装备饵余量上顶栏,
     // 内容变化才重写 DOM(hud 既有守卫);垂钓进行中商店不可开,饵余量由此常驻可见,
