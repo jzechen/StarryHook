@@ -61,6 +61,13 @@ describe('交互点解析(接缝:parseInteractionSpots,票 #36)', () => {
     expect(spots[0]).toMatchObject({ name: '储物箱', x: 200, y: 200, radiusPx: 24 })
   })
 
+  it('公告板 kind(票 #55)解析进表,无附加属性要求', () => {
+    const spots = parseInteractionSpots([obj({ name: '公告板', type: 'board', x: 552, y: 184 })], 16)
+    expect(spots.map(s => s.kind)).toEqual(['board'])
+    expect(spots[0]).toMatchObject({ name: '公告板', x: 552, y: 184, radiusPx: 24 })
+    expect(spots[0]!.text).toBeUndefined()
+  })
+
   it('叙事物 kind(票 #37:sign/note)解析进表,text 属性透传为彩蛋文案', () => {
     const spots = parseInteractionSpots(
       [
@@ -207,6 +214,10 @@ describe('动作短词(接缝:interactionLabel,浮签文案)', () => {
     expect(interactionLabel('chest')).toBe('开启')
   })
 
+  it('公告板 = 委托(票 #55:浮签用词与票面一致)', () => {
+    expect(interactionLabel('board')).toBe('委托')
+  })
+
   it('未知 kind 无词(空串):浮签不渲染无主文案,后续票按 kind 扩表', () => {
     expect(interactionLabel('nope')).toBe('')
   })
@@ -223,6 +234,7 @@ describe('浮签文案(接缝:interactionPromptText,票 #38 钓位名进浮签)'
     expect(interactionPromptText({ kind: 'sign', name: '东路牌' })).toBe('查看')
     expect(interactionPromptText({ kind: 'note', name: '井' })).toBe('查看')
     expect(interactionPromptText({ kind: 'chest', name: '篱笆角的宝箱' })).toBe('开启')
+    expect(interactionPromptText({ kind: 'board', name: '公告板' })).toBe('委托')
   })
 
   it('未知 kind = 空串(浮签不渲染无主文案;chest 已注册为「开启」,票 #41)', () => {

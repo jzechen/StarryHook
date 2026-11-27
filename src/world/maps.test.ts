@@ -176,6 +176,62 @@ describe('河谷 river.json(河流横带 + 深湾 + 商店摊位)', () => {
   })
 })
 
+describe('河谷公告板(票 #55:摊位旁交互点,浮签「委托」)', () => {
+  const map = WORLD_MAPS.river!
+  const spots = parseInteractionSpots(map.objects, map.tileWidth)
+
+  it('公告板交互点恰一个,锚在木牌 tile (34,11) 中心,默认触发半径', () => {
+    const boards = spots.filter(s => s.kind === 'board')
+    expect(boards).toHaveLength(1)
+    expect(boards[0]).toMatchObject({ name: '公告板', x: 34 * 16 + 8, y: 11 * 16 + 8, radiusPx: 24 })
+  })
+
+  it('木牌 tile 字面量落位:摊位右侧草地 (34,11),带 collision 不压行车道(12–13 行)', () => {
+    const SIGN_GID = 84
+    expect(map.deco[11 * map.width + 34]).toBe(SIGN_GID)
+    expect(isBlockedCell(map, 34, 11)).toBe(true) // 牌子带 collision(叙事物/木牌惯例)
+    expect(isBlockedCell(map, 34, 12)).toBe(false)
+    expect(isBlockedCell(map, 34, 13)).toBe(false)
+  })
+
+  it('立在摊位旁:与摊位物件点相距 48–64px(触发半径不重叠,且「摊位旁」可读)', () => {
+    const board = spots.find(s => s.kind === 'board')!
+    const stall = spots.find(s => s.kind === 'stall')!
+    const dist = Math.hypot(board.x - stall.x, board.y - stall.y)
+    expect(dist).toBeGreaterThanOrEqual(48)
+    expect(dist).toBeLessThanOrEqual(64)
+  })
+
+  it('与同图其它交互点范围互不重叠;物件点不压出口触发区', () => {
+    const board = spots.find(s => s.kind === 'board')!
+    for (const other of spots) {
+      if (other === board) continue
+      const overlap = Math.hypot(other.x - board.x, other.y - board.y) < other.radiusPx + board.radiusPx
+      expect(overlap, `与「${other.name}」重叠`).toBe(false)
+    }
+    for (const warp of warpsOf(map)) {
+      const inside =
+        board.x >= warp.x && board.x < warp.x + warp.width && board.y >= warp.y && board.y < warp.y + warp.height
+      expect(inside, `压出口触发区 → ${warp.target}`).toBe(false)
+    }
+  })
+
+  it('触发半径内有自出生点可达的可行走格(牌子埋墙里就点不到)', () => {
+    const board = spots.find(s => s.kind === 'board')!
+    const seen = flood(map, cellOfPoint(map, map.spawn.x, map.spawn.y))
+    let reachable = 0
+    for (let ty = 0; ty < map.height; ty++) {
+      for (let tx = 0; tx < map.width; tx++) {
+        if (isBlockedCell(map, tx, ty)) continue
+        const cx = tx * map.tileWidth + map.tileWidth / 2
+        const cy = ty * map.tileWidth + map.tileWidth / 2
+        if (Math.hypot(cx - board.x, cy - board.y) <= board.radiusPx && seen.has(ty * map.width + tx)) reachable++
+      }
+    }
+    expect(reachable).toBeGreaterThan(0)
+  })
+})
+
 describe('湖畔 lake.json(不规则湖 + 湖心)', () => {
   const map = WORLD_MAPS.lake!
 

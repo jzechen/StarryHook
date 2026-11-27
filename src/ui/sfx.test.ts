@@ -1,18 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { MuteAwareSfxPlayer, type AmbientLoopPlayer, type SfxPlayer } from './sfx'
+import { MuteAwareSfxPlayer, type AmbientLoopPlayer, type BgmPlayer, type BgmTrack, type SfxPlayer } from './sfx'
 
-/** 录制型测试替身:记录每次 play / setAmbient 调用,验证门控逻辑(不触真实音频) */
-function recordingPlayer(): SfxPlayer & AmbientLoopPlayer & { calls: (string | null)[]; ambientCalls: [string | null, number][] } {
+/** 录制型测试替身:记录每次 play / setAmbient / setBgm 调用,验证门控逻辑(不触真实音频) */
+function recordingPlayer(): SfxPlayer & AmbientLoopPlayer & BgmPlayer & {
+  calls: (string | null)[]
+  ambientCalls: [string | null, number][]
+  bgmCalls: [BgmTrack | null, BgmTrack | null][]
+} {
   const calls: (string | null)[] = []
   const ambientCalls: [string | null, number][] = []
+  const bgmCalls: [BgmTrack | null, BgmTrack | null][] = []
   return {
     calls,
     ambientCalls,
+    bgmCalls,
     play(id) {
       calls.push(id)
     },
     setAmbient(id, level) {
       ambientCalls.push([id, level])
+    },
+    setBgm(outgoing, incoming) {
+      bgmCalls.push([outgoing, incoming])
     },
   }
 }
@@ -75,6 +84,34 @@ describe('MuteAwareSfxPlayer.setAmbient(接缝:环境声静音门)', () => {
       [null, 0],
       [null, 0],
       [null, 0],
+    ])
+  })
+})
+
+/**
+ * 接缝:BGM 通道的静音门(票 #54)。BGM 是常驻循环(且切轨时双轨并存),
+ * 静音必须对整条通道显式停(outgoing 与 incoming 一并置空)——
+ * 与环境声通道同一纪律:停,而不是放任音量 0 空转;非静音时供给原样透传,
+ * 交叉淡入淡出的数值语义归纯函数/通道(bgm.ts),门只管通断。
+ */
+describe('MuteAwareSfxPlayer.setBgm(接缝:BGM 静音门)', () => {
+  it('非静音:双轨供给原样透传给底层播放器', () => {
+    const inner = recordingPlayer()
+    const player = new MuteAwareSfxPlayer(inner, () => false)
+    const outgoing = { id: 'bgm-village', level: 0.5 }
+    const incoming = { id: 'bgm-river', level: 0.25 }
+    player.setBgm(outgoing, incoming)
+    expect(inner.bgmCalls).toEqual([[outgoing, incoming]])
+  })
+
+  it('静音:整条通道显式停(双 null),不放任任一轨空转', () => {
+    const inner = recordingPlayer()
+    const player = new MuteAwareSfxPlayer(inner, () => true)
+    player.setBgm({ id: 'bgm-village', level: 0.5 }, { id: 'bgm-river', level: 0.25 })
+    player.setBgm(null, { id: 'bgm-river', level: 0.6 })
+    expect(inner.bgmCalls).toEqual([
+      [null, null],
+      [null, null],
     ])
   })
 })
